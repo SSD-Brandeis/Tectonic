@@ -2,11 +2,17 @@
   "$schema": "../../workload_schema.json",
   "sections": [
     {
-      "inserts": {
-        "op_count": 1,
-        "key_len": 1,
-        "val_len": 1
-      }
+      "groups": [
+        {
+          "inserts": {
+            "key": "hi",
+            "val": "no",
+            "op_count": 2,
+            "key_len": 1,
+            "val_len": 1
+          }
+        }
+      ]
     }
   ]
 }

@@ -55,7 +55,11 @@ fn spec_path_to_workload_name(spec_path: impl AsRef<Path>) -> String {
         return spec_path
             .file_name()
             .and_then(|stem| stem.to_str())
-            .map(|stem| stem.rsplitn(3, '.').collect::<Vec<_>>()[2]) // file.spec.json -> file
+            .map(|stem| {
+                let temp = stem.rsplitn(3, '.').collect::<Vec<_>>();
+                println!("{:#?}", temp);
+                temp[1]
+            }) // file.spec.json -> file
             .map(|stem| format!("{stem}.txt")) // file -> file.txt
             .unwrap_or_else(|| {
                 let filename = spec_path.file_name().unwrap().to_string_lossy();

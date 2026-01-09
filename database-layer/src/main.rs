@@ -79,6 +79,7 @@ fn main() {
             "P" => "Point Query",
             "U" => "Update",
             "S" => "Range Query",
+            "D" => "Delete",
             "M" => "Merge",
             "R" => "Range Delete",
             _ => panic!("Unknown operation in statistics set"),
@@ -188,21 +189,6 @@ fn parse_line(
             start_time = std::time::Instant::now();
             db_layer.update(key, value)?;
         }
-        "S" => {
-            let start_key = line_iter
-                .next()
-                .ok_or(anyhow!("Missing Argument"))?
-                .to_string();
-            let bound = line_iter.next().ok_or(anyhow!("Missing Argument"))?;
-
-            op_key = "S";
-            start_time = time::Instant::now();
-            if let Ok(range) = bound.parse::<usize>() {
-                db_layer.range_query_count(start_key, range)?;
-            } else {
-                db_layer.range_query(start_key, bound.to_string())?;
-            }
-        }
         "M" => {
             let key = line_iter
                 .next()
@@ -217,6 +203,30 @@ fn parse_line(
             start_time = time::Instant::now();
 
             db_layer.merge(key, value)?;
+        }
+        "D" => {
+            let key = line_iter
+                .next()
+                .ok_or(anyhow!("Missing Argument"))?
+                .to_string();
+            op_key = "D";
+            start_time = std::time::Instant::now();
+            db_layer.point_delete(key)?;
+        }
+        "S" => {
+            let start_key = line_iter
+                .next()
+                .ok_or(anyhow!("Missing Argument"))?
+                .to_string();
+            let bound = line_iter.next().ok_or(anyhow!("Missing Argument"))?;
+
+            op_key = "S";
+            start_time = time::Instant::now();
+            if let Ok(range) = bound.parse::<usize>() {
+                db_layer.range_query_count(start_key, range)?;
+            } else {
+                db_layer.range_query(start_key, bound.to_string())?;
+            }
         }
         "R" => {
             // Range delete
@@ -235,7 +245,7 @@ fn parse_line(
                 db_layer.range_delete(start_key, bound.to_string())?;
             }
         }
-        _ => bail!("Unknown operation"),
+        _ => bail!("Unknown operation \"{}\"", operation),
     };
 
     let latency = std::time::Instant::now()

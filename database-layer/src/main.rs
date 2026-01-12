@@ -356,8 +356,22 @@ struct RocksDB {
 impl RocksDB {
     fn new() -> Result<Self, Error> {
         let dir = temp_dir();
+        let mut opts = rocksdb::Options::default();
+        let merge_fn = |_key: &[u8],
+                        existing_value: Option<&[u8]>,
+                        operands: &rocksdb::MergeOperands|
+         -> Option<Vec<u8>> {
+            let mut new = existing_value.map(|v| v.to_vec()).unwrap_or_default();
+            for op in operands {
+                new.extend_from_slice(op);
+            }
+
+            return Some(new);
+        };
+        opts.set_merge_operator_associative("Merge", merge_fn);
+        opts.create_if_missing(true);
         Ok(Self {
-            db: rocksdb::DB::open_default(dir.as_path())?,
+            db: rocksdb::DB::open(&opts, dir.as_path())?,
         })
     }
 }

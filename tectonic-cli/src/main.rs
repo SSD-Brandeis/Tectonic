@@ -1,6 +1,7 @@
 #![allow(clippy::needless_return)]
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
+use db_layer::{benchmark_db, get_database_layer};
 use rayon::iter::ParallelIterator;
 use rayon::prelude::ParallelBridge;
 use std::{
@@ -33,6 +34,12 @@ enum Command {
     },
     /// Prints the JSON schema for IDE integration.
     Schema,
+    Benchmark {
+        #[arg(short = 'i', long = "input-workload")]
+        input_file: String,
+        #[arg(short = 'd', long = "database")]
+        database: String,
+    },
 }
 
 fn main() -> Result<()> {
@@ -47,6 +54,13 @@ fn main() -> Result<()> {
             output,
         } => invoke_generate(&workload_path, output.as_deref()),
         Command::Schema => invoke_schema(),
+        Command::Benchmark {
+            input_file,
+            database,
+        } => {
+            let db_layer = get_database_layer(&database)?;
+            benchmark_db(db_layer.as_ref(), input_file)
+        }
     }
 }
 
@@ -137,4 +151,5 @@ fn invoke_schema() -> Result<()> {
     let schema_str = generate_workload_spec_schema().context("Schema generation failed.")?;
     println!("{schema_str}");
     return Ok(());
+    Ok(())
 }

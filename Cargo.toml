@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
 
-members = ["database-layer","tectonic", "tectonic-cli"]
+members = ["database-layer", "db-layer","tectonic", "tectonic-cli"]
 
 [workspace.dependencies]
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }

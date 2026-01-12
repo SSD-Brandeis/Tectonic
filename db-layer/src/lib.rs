@@ -1,62 +1,78 @@
 #![allow(clippy::needless_return)]
 #![feature(duration_millis_float)]
 
-use anyhow::{Error, Result, anyhow, bail};
+use anyhow::{Result, anyhow, bail};
 use std::collections::HashMap;
 use std::env::temp_dir;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::time::{self};
 
-fn main() -> Result<()> {
-    // Ask for an input file (workflow file) and database layer
-    // Init database layer
-    // Read through the workflow file line by line and call operations from intialized database
-    // layer
-    //
-    //
-    // TODO: Keep track of:
-    // average operation latency and for each operation
-    // Total Throughout
-    // Successful operations (think about point queries)
-    // Number of operations for each operation and total
-    // Min latency
-    // Max latency
-    // 50th percentile latency for operations
-    // 95th percentile latency for operations
-    // 99th percentile latency for operations
-    //
-    // TODO: Windowed version of operations for printing status?
-    //
-    // Easiest way to do this is a hashmap
+// fn main() -> Result<()> {
+//     // Ask for an input file (workflow file) and database layer
+//     // Init database layer
+//     // Read through the workflow file line by line and call operations from intialized database
+//     // layer
+//     //
+//     //
+//     // TODO: Keep track of:
+//     // average operation latency and for each operation
+//     // Total Throughout
+//     // Successful operations (think about point queries)
+//     // Number of operations for each operation and total
+//     // Min latency
+//     // Max latency
+//     // 50th percentile latency for operations
+//     // 95th percentile latency for operations
+//     // 99th percentile latency for operations
+//     //
+//     // TODO: Windowed version of operations for printing status?
+//     //
+//     // Easiest way to do this is a hashmap
+//
+//     let args: Vec<String> = std::env::args().collect();
+//     if args.len() != 3 {
+//         bail!("Format: {} <db_name> <workload_file>", { args[0].clone() });
+//     }
+//
+//     let file_path = args[2].clone();
+//
+//     let db_layer: Box<dyn DBTranslationLayer> = match &*args[1].clone().to_ascii_lowercase() {
+//         "printdb" => match PrintDB::new() {
+//             Ok(db) => Box::new(db),
+//             Err(err) => {
+//                 bail!("Failed to create db because of error {err}");
+//             }
+//         },
+//         "rocksdb" => match RocksDB::new() {
+//             Ok(db) => Box::new(db),
+//             Err(err) => {
+//                 bail!("Failed to create db because of error {err}");
+//             }
+//         },
+//         _ => panic!("Unsupported database. Supported databases are printdb and rocksdb"),
+//     };
+//     benchmark_db(db_layer.as_ref(), file_path)?;
+//     return Ok(());
+// }
 
-    let args: Vec<String> = std::env::args().collect();
-    if args.len() != 3 {
-        bail!("Format: {} <db_name> <workload_file>", { args[0].clone() });
-    }
-
-    let file_path = args[2].clone();
-
-    let db_layer: Box<dyn DBTranslationLayer> = match &*args[1].clone().to_ascii_lowercase() {
-        "printdb" => match PrintDB::new() {
-            Ok(db) => Box::new(db),
-            Err(err) => {
-                bail!("Failed to create db because of error {err}");
-            }
-        },
-        "rocksdb" => match RocksDB::new() {
-            Ok(db) => Box::new(db),
-            Err(err) => {
-                bail!("Failed to create db because of error {err}");
-            }
-        },
-        _ => panic!("Unsupported database. Supported databases are printdb and rocksdb"),
+pub fn get_database_layer(name: &str) -> Result<Box<dyn DBTranslationLayer>> {
+    let db: Box<dyn DBTranslationLayer> = match name {
+        "printdb" => Box::new(PrintDB::new()?),
+        // Err(err) => {
+        //     bail!("Failed to create db because of error {err}");
+        // }
+        "rocksdb" => Box::new(RocksDB::new()?),
+        // Err(err) => {
+        //     bail!("Failed to create db because of error {err}");
+        // }
+        _ => bail!("Unsupported database. Supported databases are printdb and rocksdb"),
     };
-    benchmark_db(db_layer.as_ref(), file_path)?;
-    return Ok(());
+
+    Ok(db)
 }
 
-fn benchmark_db(db_layer: &dyn DBTranslationLayer, input_file: String) -> Result<()> {
+pub fn benchmark_db(db_layer: &dyn DBTranslationLayer, input_file: String) -> Result<()> {
     let file = File::open(input_file)?;
     let buf_reader = BufReader::new(file);
 
@@ -257,7 +273,7 @@ fn process_line(
     Ok(())
 }
 
-trait DBTranslationLayer {
+pub trait DBTranslationLayer {
     // Setup
     fn init(&mut self) -> Result<()>;
     fn cleanup(self) -> Result<()>;
@@ -354,7 +370,7 @@ struct RocksDB {
 }
 
 impl RocksDB {
-    fn new() -> Result<Self, Error> {
+    fn new() -> Result<Self> {
         let dir = temp_dir();
         let mut opts = rocksdb::Options::default();
         let merge_fn = |_key: &[u8],

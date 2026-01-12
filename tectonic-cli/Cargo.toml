@@ -8,6 +8,7 @@ anyhow = "1.0.98"
 clap = { version = "4.5.40", features = ["derive"] }
 walkdir = "2.5.0"
 tectonic = { path = "../tectonic/" }
+db-layer = { path = "../db-layer/" }
 tracing-subscriber.workspace = true
 tracing.workspace = true
 rayon = "1.11.0"

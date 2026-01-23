@@ -33,7 +33,7 @@ pub mod spec;
 use crate::keyset::{
     Key, KeySet, VecBloomFilterKeySet, VecHashMapIndexKeySet, VecKeySet, VecOptionKeySet,
 };
-use crate::spec::{CharacterSet, RangeFormat, StringExpr, WorkloadSpec};
+use crate::spec::{CharacterSet, RangeFormat, StringExpr, WorkloadSpec, WorkloadSpecGroup};
 
 struct AsciiOperationFormatter;
 impl AsciiOperationFormatter {
@@ -136,7 +136,8 @@ impl AsciiOperationFormatter {
 
 #[derive(Debug, Copy, Clone, Eq, Ord, PartialOrd, PartialEq)]
 enum Op {
-    Insert,
+    UniqueInsert,
+    Upsert,
     Update,
     Merge,
     PointDelete,
@@ -161,8 +162,13 @@ pub fn write_operations(writer: &mut impl Write, workload: &WorkloadSpec) -> Res
             || workload.has_query_point_empty()
             || workload.has_delete_point_empty());
 
+    // WARN: This doesn't make sense to me
+    // Shouldn't we be using bloom filters or a hash_map if we have empty queries
+    // Also why do we need a vector if we don't have range queries, can't we just use a hashmap, or
+    // just a set
     return if (has_nonempty_deletes) && (has_sort_heavy) {
         info!("Using VecOptionKeySet");
+        // WARN: Is this a skiplist
         write_operations_with_keyset(writer, workload, VecOptionKeySet::new)
     } else if has_nonempty_deletes {
         info!("Using VecHashMapIndexKeySet");
@@ -176,6 +182,12 @@ pub fn write_operations(writer: &mut impl Write, workload: &WorkloadSpec) -> Res
     };
 }
 
+// TODO: Make it so that writer is more like operation_handler
+// Can either run operations against benchmark or write to a file
+// Enum for operation handler
+// Problem? Handling generation timings
+// Do we want to report generation timings, operation timings, or both
+// For now will only keep track of operation timings (like YCSB)
 pub fn write_operations_with_keyset<KeySetT: KeySet>(
     writer: &mut impl Write,
     workload: &WorkloadSpec,
@@ -198,7 +210,7 @@ pub fn write_operations_with_keyset<KeySetT: KeySet>(
             .groups
             .iter()
             .map(|g| {
-                g.inserts
+                g.unique_inserts
                     .as_ref()
                     .map_or(0, |is| is.op_count.evaluate(&mut rng) as usize)
             })
@@ -215,10 +227,10 @@ pub fn write_operations_with_keyset<KeySetT: KeySet>(
                 .or(section.character_set)
                 .or(workload.character_set);
 
-            // let insert_count = group
-            //     .inserts
-            //     .as_ref()
-            //     .map_or(0, |is| is.amount.evaluate(rng_ref) as usize);
+            let upsert_count = group
+                .inserts
+                .as_ref()
+                .map_or(0, |is| is.op_count.evaluate(rng_ref) as usize);
             let update_count = group
                 .updates
                 .as_ref()
@@ -271,7 +283,7 @@ pub fn write_operations_with_keyset<KeySetT: KeySet>(
 
             let mut key_pool = if let Some(sorted) = &group.sorted {
                 let is = group
-                    .inserts
+                    .unique_inserts
                     .as_ref()
                     .ok_or_else(|| anyhow!("Insert spec must exist if sorted config exists"))?;
                 let mut pool = Vec::with_capacity(insert_count);
@@ -296,18 +308,35 @@ pub fn write_operations_with_keyset<KeySetT: KeySet>(
                 None
             };
 
+            if let WorkloadSpecGroup {
+                unique_inserts: None,
+                updates: None,
+                merges: None,
+                point_deletes: None,
+                empty_point_deletes: None,
+                range_deletes: None,
+                point_queries: None,
+                empty_point_queries: None,
+                range_queries: None,
+                ..
+            } = group
+            {
+                if upsert_count == 0 {
+                    bail!("Invalid workload spec. Group cannot be empty")
+                }
+            }
             // A group must have at least 1 valid key before any other operation can occur.
-            if keys_valid.is_empty() {
+            else if keys_valid.is_empty() {
                 if insert_count == 0 {
                     bail!(
                         "Invalid workload spec. Group must have existing valid keys or have insert operations."
                     );
                 }
                 let is = group
-                    .inserts
+                    .unique_inserts
                     .as_ref()
                     .expect("inserts to exist if insert count > 0");
-                markers.extend(repeat_n(Op::Insert, insert_count - 1));
+                markers.extend(repeat_n(Op::UniqueInsert, insert_count - 1));
 
                 let key = key_pool
                     .as_mut()
@@ -325,8 +354,9 @@ pub fn write_operations_with_keyset<KeySetT: KeySet>(
                 )?;
                 keys_valid.push(key);
             } else {
-                markers.extend(repeat_n(Op::Insert, insert_count));
+                markers.extend(repeat_n(Op::UniqueInsert, insert_count));
             }
+            markers.extend(repeat_n(Op::Upsert, upsert_count));
             markers.extend(repeat_n(Op::Update, update_count));
             markers.extend(repeat_n(Op::Merge, merge_count));
             markers.extend(repeat_n(Op::PointDelete, delete_point_count));
@@ -346,9 +376,9 @@ pub fn write_operations_with_keyset<KeySetT: KeySet>(
                 }
 
                 match marker {
-                    Op::Insert => {
+                    Op::UniqueInsert => {
                         let start = Instant::now();
-                        let is = group.inserts.as_ref().ok_or_else(|| {
+                        let is = group.unique_inserts.as_ref().ok_or_else(|| {
                             anyhow!("Insert marker can only appear when inserts is not None")
                         })?;
                         let key = key_pool
@@ -366,6 +396,32 @@ pub fn write_operations_with_keyset<KeySetT: KeySet>(
                             is.character_set.or(character_set),
                         )?;
                         keys_valid.push(key);
+                        let duration = Instant::now().duration_since(start);
+                        time_insert += duration;
+                        if duration > Duration::from_millis(1) {
+                            trace!(?marker, ?duration);
+                        }
+                    }
+                    Op::Upsert => {
+                        let start = Instant::now();
+                        // TODO: Rename to either insert or upsert
+                        let is = group.inserts.as_ref().ok_or_else(|| {
+                            anyhow!("Upsert marker can only appear when upserts is not None")
+                        })?;
+                        let key = key_pool
+                            .as_mut()
+                            .and_then(|pool| pool.pop())
+                            .unwrap_or_else(|| {
+                                is.key.generate(rng_ref, is.character_set.or(character_set))
+                            });
+                        AsciiOperationFormatter::write_insert(
+                            writer,
+                            rng_ref,
+                            &key,
+                            &is.val,
+                            is.character_set.or(character_set),
+                        )?;
+
                         let duration = Instant::now().duration_since(start);
                         time_insert += duration;
                         if duration > Duration::from_millis(1) {
@@ -421,7 +477,9 @@ pub fn write_operations_with_keyset<KeySetT: KeySet>(
                     Op::PointDelete => {
                         let start = Instant::now();
                         let pds = group.point_deletes.as_ref().ok_or_else(|| {
-                            anyhow!("Point delete marker can only appear when updates is not None")
+                            anyhow!(
+                                "Point delete marker can only appear when point deletes is not None"
+                            )
                         })?;
                         // keys_valid.sort();
                         let key = keys_valid.remove_random(rng_ref, &pds.selection);

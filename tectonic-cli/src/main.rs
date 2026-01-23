@@ -1,7 +1,7 @@
 #![allow(clippy::needless_return)]
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
-use db_layer::{benchmark_db, get_database_layer};
+use db_layer::{benchmark_db, invoke_benchmark};
 use rayon::iter::ParallelIterator;
 use rayon::prelude::ParallelBridge;
 use std::{
@@ -58,8 +58,8 @@ fn main() -> Result<()> {
             input_file,
             database,
         } => {
-            let db_layer = get_database_layer(&database)?;
-            benchmark_db(db_layer.as_ref(), input_file)
+            invoke_benchmark(&database, input_file)?;
+            Ok(())
         }
     }
 }

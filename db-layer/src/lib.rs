@@ -60,23 +60,24 @@ use rocksdb::RocksDB;
 //     return Ok(());
 // }
 
-pub fn get_database_layer(name: &str) -> Result<Box<dyn DBTranslationLayer>> {
-    let db: Box<dyn DBTranslationLayer> = match name {
-        "printdb" => Box::new(PrintDB::new()?),
+// FIX: Can have this function call the benchmark function associated instead
+pub fn invoke_benchmark(name: &str, input_file: String) -> Result<()> {
+    match name {
+        "printdb" => benchmark_db(PrintDB::new()?, input_file)?,
         // Err(err) => {
         //     bail!("Failed to create db because of error {err}");
         // }
-        "rocksdb" => Box::new(RocksDB::new()?),
+        "rocksdb" => benchmark_db(RocksDB::new()?, input_file)?,
         // Err(err) => {
         //     bail!("Failed to create db because of error {err}");
         // }
         _ => bail!("Unsupported database. Supported databases are printdb and rocksdb"),
     };
 
-    Ok(db)
+    Ok(())
 }
 
-pub fn benchmark_db(db_layer: &dyn DBTranslationLayer, input_file: String) -> Result<()> {
+pub fn benchmark_db<DB: DBTranslationLayer>(db_layer: DB, input_file: String) -> Result<()> {
     let file = File::open(input_file)?;
     let buf_reader = BufReader::new(file);
 
@@ -84,7 +85,7 @@ pub fn benchmark_db(db_layer: &dyn DBTranslationLayer, input_file: String) -> Re
 
     let start_time = std::time::Instant::now();
     for line in buf_reader.lines() {
-        process_line(line, db_layer, &mut operation_statistics)?;
+        process_line(line, &db_layer, &mut operation_statistics)?;
     }
 
     let end_time = std::time::Instant::now();
@@ -160,9 +161,9 @@ impl Statistics {
     }
 }
 
-fn process_line(
+fn process_line<DB: DBTranslationLayer>(
     line: Result<String, std::io::Error>,
-    db_layer: &dyn DBTranslationLayer,
+    db_layer: &DB,
     operation_statistics_map: &mut HashMap<&str, Statistics>,
 ) -> Result<()> {
     let line = line?;

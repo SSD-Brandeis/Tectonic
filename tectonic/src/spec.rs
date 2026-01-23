@@ -526,6 +526,7 @@ impl StringExpr {
 }
 
 #[derive(serde::Deserialize, JsonSchema, Clone, Debug)]
+// TODO: Update these to be unique Inserts and add Upserts
 /// Inserts specification.
 pub struct Inserts {
     /// Number of inserts
@@ -664,6 +665,7 @@ pub struct Sorted {
 #[derive(serde::Deserialize, JsonSchema, Clone, Debug)]
 pub struct WorkloadSpecGroup {
     pub sorted: Option<Sorted>,
+    pub unique_inserts: Option<Inserts>,
     pub inserts: Option<Inserts>,
     pub updates: Option<Updates>,
     pub merges: Option<Merges>,
@@ -712,7 +714,7 @@ impl WorkloadSpecSection {
     fn has_insert(&self) -> bool {
         return self.groups.iter().any(|group| {
             group
-                .inserts
+                .unique_inserts
                 .as_ref()
                 .is_some_and(|is| is.op_count.expected_value() > 0.)
         });

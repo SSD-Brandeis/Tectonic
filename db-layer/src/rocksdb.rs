@@ -1,4 +1,5 @@
-use crate::DBTranslationLayer;
+use crate::Key;
+use crate::{DBTranslationLayer, Value};
 use anyhow::Result;
 use std::collections::HashMap;
 use std::env::temp_dir;
@@ -43,27 +44,27 @@ impl DBTranslationLayer for RocksDB {
         return Ok(());
     }
 
-    fn point_query(&self, key: String) -> Result<()> {
+    fn point_query(&self, key: &Key) -> Result<()> {
         let _ = self.db.get(key);
         return Ok(());
     }
 
-    fn update(&self, key: String, value: String) -> Result<()> {
+    fn update(&self, key: &Key, value: &Value) -> Result<()> {
         self.insert(key, value)?;
         return Ok(());
     }
 
-    fn insert(&self, key: String, value: String) -> Result<()> {
-        let _ = self.db.put(key.clone(), value.clone());
+    fn insert(&self, key: &Key, value: &Value) -> Result<()> {
+        let _ = self.db.put(key, value);
         return Ok(());
     }
 
-    fn range_query(&self, start_key: String, end_key: String) -> Result<()> {
+    fn range_query(&self, start_key: &Key, end_key: &Value) -> Result<()> {
         let mut opts = rocksdb::ReadOptions::default();
-        opts.set_iterate_upper_bound(end_key);
+        opts.set_iterate_upper_bound(end_key.as_ref());
         let mut res = HashMap::<Box<[u8]>, Box<[u8]>>::new();
         let db_iter = self.db.iterator_opt(
-            rocksdb::IteratorMode::From(start_key.as_bytes(), rocksdb::Direction::Forward),
+            rocksdb::IteratorMode::From(start_key, rocksdb::Direction::Forward),
             opts,
         );
 
@@ -74,13 +75,13 @@ impl DBTranslationLayer for RocksDB {
         return Ok(());
     }
 
-    fn range_query_count(&self, start_key: String, range: usize) -> Result<()> {
+    fn range_query_count(&self, start_key: &Key, range: usize) -> Result<()> {
         let mut db_iter = self.db.iterator(rocksdb::IteratorMode::From(
-            start_key.as_bytes(),
+            start_key,
             rocksdb::Direction::Forward,
         ));
         let mut res = HashMap::<Box<[u8]>, Box<[u8]>>::new();
-        for i in 0..range {
+        for _ in 0..range {
             let item = db_iter.next();
             if let Some(item) = item {
                 let (key, value) = item?;
@@ -92,26 +93,26 @@ impl DBTranslationLayer for RocksDB {
         return Ok(());
     }
 
-    fn point_delete(&self, key: String) -> Result<()> {
+    fn point_delete(&self, key: &Key) -> Result<()> {
         self.db.delete(key)?;
         return Ok(());
     }
 
-    fn merge(&self, key: String, value: String) -> Result<()> {
+    fn merge(&self, key: &Key, value: &Value) -> Result<()> {
         self.db.merge(key, value)?;
         return Ok(());
     }
 
-    fn range_delete(&self, start_key: String, end_key: String) -> Result<()> {
+    fn range_delete(&self, start_key: &Key, end_key: &Value) -> Result<()> {
         let mut write_batch = rocksdb::WriteBatch::default();
-        write_batch.delete_range(start_key.as_bytes(), end_key.as_bytes());
+        write_batch.delete_range(start_key, end_key);
         self.db.write(write_batch)?;
         return Ok(());
     }
 
-    fn range_delete_count(&self, start_key: String, range: usize) -> Result<()> {
+    fn range_delete_count(&self, start_key: &Key, range: usize) -> Result<()> {
         let mut db_iter = self.db.iterator(rocksdb::IteratorMode::From(
-            start_key.as_bytes(),
+            start_key,
             rocksdb::Direction::Forward,
         ));
         let mut end_key: Option<Box<[u8]>> = None;
@@ -129,7 +130,7 @@ impl DBTranslationLayer for RocksDB {
 
         if let Some(end_key) = end_key {
             let mut write_batch = rocksdb::WriteBatch::default();
-            write_batch.delete_range(start_key.as_bytes(), end_key.as_ref());
+            write_batch.delete_range(start_key.as_ref(), end_key.as_ref());
             self.db.write(write_batch)?;
         }
 

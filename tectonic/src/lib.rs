@@ -6,6 +6,7 @@
 #![allow(dead_code)]
 
 use anyhow::{Context, Result, anyhow, bail};
+use db_layer::{Benchmarker, DBTranslationLayer, Db};
 use rand::prelude::SliceRandom;
 use rand::{Rng, SeedableRng};
 use rand_xoshiro::Xoshiro256Plus;
@@ -20,7 +21,8 @@ mod keyset;
 pub mod spec;
 
 // Operation order to be kept for each enum/match statement
-// - insert
+// - unique insert
+// - upsert
 // - update
 // - merge
 // - delete point
@@ -35,49 +37,125 @@ use crate::keyset::{
 };
 use crate::spec::{CharacterSet, RangeFormat, StringExpr, WorkloadSpec, WorkloadSpecGroup};
 
-struct AsciiOperationFormatter;
-impl AsciiOperationFormatter {
-    fn write_insert(
-        w: &mut impl Write,
+pub trait OperationHandler {
+    fn handle_insert(
+        &mut self,
+        rng: &mut impl Rng,
+        key: &Key,
+        val: &StringExpr,
+        character_set: Option<CharacterSet>,
+    ) -> Result<()>;
+    fn handle_update(
+        &mut self,
+        rng: &mut impl Rng,
+        key: &Key,
+        val: &StringExpr,
+        character_set: Option<CharacterSet>,
+    ) -> Result<()>;
+    fn handle_merge(
+        &mut self,
+        rng: &mut impl Rng,
+        key: &Key,
+        val: &StringExpr,
+        character_set: Option<CharacterSet>,
+    ) -> Result<()>;
+    fn handle_point_delete(&mut self, key: &Key) -> Result<()>;
+    fn handle_point_query(&mut self, key: &Key) -> Result<()>;
+    fn handle_range_query(&mut self, key1: &Key, key2: &Key) -> Result<()>;
+    fn handle_range_query_count(&mut self, key1: &Key, count: usize) -> Result<()>;
+    fn handle_range_delete(&mut self, key1: &Key, key2: &Key) -> Result<()>;
+    fn handle_range_delete_count(&mut self, key1: &Key, count: usize) -> Result<()>;
+}
+
+struct WriteHandler<'a, W: Write>(&'a mut W);
+
+impl<'a, W: Write> OperationHandler for WriteHandler<'a, W> {
+    fn handle_insert(
+        &mut self,
         rng: &mut impl Rng,
         key: &Key,
         val: &StringExpr,
         character_set: Option<CharacterSet>,
     ) -> Result<()> {
+        let value = val.generate(rng, character_set);
+        AsciiOperationFormatter::write_insert(self.0, key, value.as_ref())
+    }
+
+    fn handle_update(
+        &mut self,
+        rng: &mut impl Rng,
+        key: &Key,
+        val: &StringExpr,
+        character_set: Option<CharacterSet>,
+    ) -> Result<()> {
+        let value = val.generate(rng, character_set);
+        AsciiOperationFormatter::write_update(self.0, key, value.as_ref())
+    }
+
+    fn handle_merge(
+        &mut self,
+        rng: &mut impl Rng,
+        key: &Key,
+        val: &StringExpr,
+        character_set: Option<CharacterSet>,
+    ) -> Result<()> {
+        let value = val.generate(rng, character_set);
+        AsciiOperationFormatter::write_merge(self.0, key, value.as_ref())
+    }
+
+    fn handle_point_delete(&mut self, key: &Key) -> Result<()> {
+        AsciiOperationFormatter::write_point_delete(self.0, key)
+    }
+
+    fn handle_point_query(&mut self, key: &Key) -> Result<()> {
+        AsciiOperationFormatter::write_point_query(self.0, key)
+    }
+
+    fn handle_range_query(&mut self, key1: &Key, key2: &Key) -> Result<()> {
+        AsciiOperationFormatter::write_range_query(self.0, key1, key2)
+    }
+
+    fn handle_range_query_count(&mut self, key1: &Key, count: usize) -> Result<()> {
+        AsciiOperationFormatter::write_range_query_count(self.0, key1, count)
+    }
+
+    fn handle_range_delete(&mut self, key1: &Key, key2: &Key) -> Result<()> {
+        AsciiOperationFormatter::write_range_delete(self.0, key1, key2)
+    }
+
+    fn handle_range_delete_count(&mut self, key1: &Key, count: usize) -> Result<()> {
+        AsciiOperationFormatter::write_range_delete_count(self.0, key1, count)
+    }
+}
+
+struct AsciiOperationFormatter;
+impl AsciiOperationFormatter {
+    fn write_insert(w: &mut impl Write, key: &Key, value: &[u8]) -> Result<()> {
         w.write_all("I ".as_bytes())?;
         w.write_all(key)?;
         w.write_all(" ".as_bytes())?;
-        val.write_all(w, rng, character_set)?;
+        // val.write_all(w, rng, character_set)?;
+        w.write_all(value)?;
         w.write_all("\n".as_bytes())?;
 
         return Ok(());
     }
-    fn write_update(
-        w: &mut impl Write,
-        rng: &mut impl Rng,
-        key: &Key,
-        val: &StringExpr,
-        character_set: Option<CharacterSet>,
-    ) -> Result<()> {
+    fn write_update(w: &mut impl Write, key: &Key, value: &[u8]) -> Result<()> {
         w.write_all("U ".as_bytes())?;
         w.write_all(key)?;
         w.write_all(" ".as_bytes())?;
-        val.write_all(w, rng, character_set)?;
+        // val.write_all(w, rng, character_set)?;
+        w.write_all(value)?;
         w.write_all("\n".as_bytes())?;
 
         return Ok(());
     }
-    fn write_merge(
-        w: &mut impl Write,
-        rng: &mut impl Rng,
-        key: &Key,
-        val: &StringExpr,
-        character_set: Option<CharacterSet>,
-    ) -> Result<()> {
+    fn write_merge(w: &mut impl Write, key: &Key, value: &[u8]) -> Result<()> {
         w.write_all("M ".as_bytes())?;
         w.write_all(key)?;
         w.write_all(" ".as_bytes())?;
-        val.write_all(w, rng, character_set)?;
+        // val.write_all(w, rng, character_set)?;
+        w.write_all(value)?;
         w.write_all("\n".as_bytes())?;
 
         return Ok(());
@@ -134,6 +212,67 @@ impl AsciiOperationFormatter {
     }
 }
 
+struct DBHandler<'a, 'b>(&'a mut Benchmarker<'b>);
+
+impl<'a, 'b> OperationHandler for DBHandler<'a, 'b> {
+    fn handle_insert(
+        &mut self,
+        rng: &mut impl Rng,
+        key: &Key,
+        val: &StringExpr,
+        character_set: Option<CharacterSet>,
+    ) -> Result<()> {
+        let value = val.generate(rng, character_set);
+        self.0.handle_insert(key, value.as_ref())
+    }
+
+    fn handle_update(
+        &mut self,
+        rng: &mut impl Rng,
+        key: &Key,
+        val: &StringExpr,
+        character_set: Option<CharacterSet>,
+    ) -> Result<()> {
+        let value = val.generate(rng, character_set);
+        self.0.handle_update(key, value.as_ref())
+    }
+
+    fn handle_merge(
+        &mut self,
+        rng: &mut impl Rng,
+        key: &Key,
+        val: &StringExpr,
+        character_set: Option<CharacterSet>,
+    ) -> Result<()> {
+        let value = val.generate(rng, character_set);
+        self.0.handle_merge(key, value.as_ref())
+    }
+
+    fn handle_point_delete(&mut self, key: &Key) -> Result<()> {
+        self.0.handle_point_delete(key)
+    }
+
+    fn handle_point_query(&mut self, key: &Key) -> Result<()> {
+        self.0.handle_point_query(key)
+    }
+
+    fn handle_range_query(&mut self, key1: &Key, key2: &Key) -> Result<()> {
+        self.0.handle_range_query(key1, key2)
+    }
+
+    fn handle_range_query_count(&mut self, key1: &Key, count: usize) -> Result<()> {
+        self.0.handle_range_query_count(key1, count)
+    }
+
+    fn handle_range_delete(&mut self, key1: &Key, key2: &Key) -> Result<()> {
+        self.0.handle_range_delete(key1, key2)
+    }
+
+    fn handle_range_delete_count(&mut self, key1: &Key, count: usize) -> Result<()> {
+        self.0.handle_range_delete_count(key1, count)
+    }
+}
+
 #[derive(Debug, Copy, Clone, Eq, Ord, PartialOrd, PartialEq)]
 enum Op {
     UniqueInsert,
@@ -149,7 +288,10 @@ enum Op {
 }
 
 /// Generates a workload given the spec and writes it to the given writer.
-pub fn write_operations(writer: &mut impl Write, workload: &WorkloadSpec) -> Result<()> {
+pub fn generate_operations<OP: OperationHandler>(
+    operation_handler: OP,
+    workload: &WorkloadSpec,
+) -> Result<()> {
     // write_operations_with_keyset(writer, workload, VecBloomFilterKeySet::new)
     let has_nonempty_deletes = workload.has_delete_point() || workload.has_delete_range();
     let has_sort_heavy = workload.has_update()
@@ -166,19 +308,20 @@ pub fn write_operations(writer: &mut impl Write, workload: &WorkloadSpec) -> Res
     // Shouldn't we be using bloom filters or a hash_map if we have empty queries
     // Also why do we need a vector if we don't have range queries, can't we just use a hashmap, or
     // just a set
+
     return if (has_nonempty_deletes) && (has_sort_heavy) {
         info!("Using VecOptionKeySet");
         // WARN: Is this a skiplist
-        write_operations_with_keyset(writer, workload, VecOptionKeySet::new)
+        write_operations_with_keyset(operation_handler, workload, VecOptionKeySet::new)
     } else if has_nonempty_deletes {
         info!("Using VecHashMapIndexKeySet");
-        write_operations_with_keyset(writer, workload, VecHashMapIndexKeySet::new)
+        write_operations_with_keyset(operation_handler, workload, VecHashMapIndexKeySet::new)
     } else if has_contains_check {
         info!("Using VecBloomFilterKeySet");
-        write_operations_with_keyset(writer, workload, VecBloomFilterKeySet::new)
+        write_operations_with_keyset(operation_handler, workload, VecBloomFilterKeySet::new)
     } else {
         info!("Using VecKeySet");
-        write_operations_with_keyset(writer, workload, VecKeySet::new)
+        write_operations_with_keyset(operation_handler, workload, VecKeySet::new)
     };
 }
 
@@ -188,8 +331,10 @@ pub fn write_operations(writer: &mut impl Write, workload: &WorkloadSpec) -> Res
 // Problem? Handling generation timings
 // Do we want to report generation timings, operation timings, or both
 // For now will only keep track of operation timings (like YCSB)
-pub fn write_operations_with_keyset<KeySetT: KeySet>(
-    writer: &mut impl Write,
+// A little difficult because have to split up write_all method()
+// Need to generate value here so that it is passed to the operation handler
+pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
+    mut operation_handler: OP,
     workload: &WorkloadSpec,
     keyset_constructor: impl Fn(usize) -> KeySetT,
 ) -> Result<()> {
@@ -345,8 +490,7 @@ pub fn write_operations_with_keyset<KeySetT: KeySet>(
                         is.key.generate(rng_ref, is.character_set.or(character_set))
                     });
                 // let key = is.key.generate(rng_ref, is.character_set);
-                AsciiOperationFormatter::write_insert(
-                    writer,
+                operation_handler.handle_insert(
                     rng_ref,
                     &key,
                     &is.val,
@@ -388,8 +532,7 @@ pub fn write_operations_with_keyset<KeySetT: KeySet>(
                                 is.key.generate(rng_ref, is.character_set.or(character_set))
                             });
                         // let key = is.key.generate(rng_ref, is.character_set);
-                        AsciiOperationFormatter::write_insert(
-                            writer,
+                        operation_handler.handle_insert(
                             rng_ref,
                             &key,
                             &is.val,
@@ -414,8 +557,7 @@ pub fn write_operations_with_keyset<KeySetT: KeySet>(
                             .unwrap_or_else(|| {
                                 is.key.generate(rng_ref, is.character_set.or(character_set))
                             });
-                        AsciiOperationFormatter::write_insert(
-                            writer,
+                        operation_handler.handle_insert(
                             rng_ref,
                             &key,
                             &is.val,
@@ -438,8 +580,7 @@ pub fn write_operations_with_keyset<KeySetT: KeySet>(
                         }
                         // keys_valid.sort();
                         let key = keys_valid.get_random(rng_ref, &us.selection);
-                        AsciiOperationFormatter::write_update(
-                            writer,
+                        operation_handler.handle_update(
                             rng_ref,
                             key,
                             &us.val,
@@ -461,8 +602,7 @@ pub fn write_operations_with_keyset<KeySetT: KeySet>(
                         }
                         // keys_valid.sort();
                         let key = keys_valid.get_random(rng_ref, &ms.selection);
-                        AsciiOperationFormatter::write_merge(
-                            writer,
+                        operation_handler.handle_merge(
                             rng_ref,
                             key,
                             &ms.val,
@@ -484,7 +624,7 @@ pub fn write_operations_with_keyset<KeySetT: KeySet>(
                         // keys_valid.sort();
                         let key = keys_valid.remove_random(rng_ref, &pds.selection);
 
-                        AsciiOperationFormatter::write_point_delete(writer, &key)?;
+                        operation_handler.handle_point_delete(&key)?;
                         let duration = Instant::now().duration_since(start);
                         time_delete_point += duration;
                         if duration > Duration::from_millis(1) {
@@ -501,7 +641,7 @@ pub fn write_operations_with_keyset<KeySetT: KeySet>(
                         })?;
                         // keys_valid.sort();
                         let key = keys_valid.get_random(rng_ref, &pqs.selection);
-                        AsciiOperationFormatter::write_point_query(writer, key)?;
+                        operation_handler.handle_point_query(key)?;
                         let duration = Instant::now().duration_since(start);
                         time_query_point += duration;
                         if duration > Duration::from_millis(1) {
@@ -522,7 +662,7 @@ pub fn write_operations_with_keyset<KeySetT: KeySet>(
                             }
                         };
 
-                        AsciiOperationFormatter::write_point_delete(writer, &key)?;
+                        operation_handler.handle_point_delete(&key)?;
                         let duration = Instant::now().duration_since(start);
                         time_delete_point_empty += duration;
                         if duration > Duration::from_millis(1) {
@@ -542,7 +682,7 @@ pub fn write_operations_with_keyset<KeySetT: KeySet>(
                             }
                         };
 
-                        AsciiOperationFormatter::write_point_query(writer, &key)?;
+                        operation_handler.handle_point_query(&key)?;
                         let duration = Instant::now().duration_since(start);
                         time_query_point_empty += duration;
                         if duration > Duration::from_millis(1) {
@@ -566,16 +706,14 @@ pub fn write_operations_with_keyset<KeySetT: KeySet>(
                                 let key = keys_valid.get_random(rng_ref, &rqs.selection);
 
                                 let count = (sel * keys_valid.len() as f64) as usize;
-                                AsciiOperationFormatter::write_range_query_count(
-                                    writer, key, count,
-                                )?
+                                operation_handler.handle_range_query_count(key, count)?
                             }
                             RangeFormat::StartEnd => {
                                 keys_valid.sort();
                                 let (key1, key2) =
                                     keys_valid.get_range_random(sel, rng_ref, &rqs.selection);
 
-                                AsciiOperationFormatter::write_range_query(writer, key1, key2)?
+                                operation_handler.handle_range_query(key1, key2)?
                             }
                         }
                         let duration = Instant::now().duration_since(start);
@@ -601,16 +739,14 @@ pub fn write_operations_with_keyset<KeySetT: KeySet>(
                                 let key = keys_valid.get_random(rng_ref, &rds.selection);
 
                                 let count = (sel * keys_valid.len() as f64) as usize;
-                                AsciiOperationFormatter::write_range_delete_count(
-                                    writer, key, count,
-                                )?
+                                operation_handler.handle_range_delete_count(key, count)?
                             }
                             RangeFormat::StartEnd => {
                                 keys_valid.sort();
                                 let (key1, key2) =
                                     keys_valid.get_range_random(sel, rng_ref, &rds.selection);
 
-                                AsciiOperationFormatter::write_range_delete(writer, key1, key2)?
+                                operation_handler.handle_range_delete(key1, key2)?
                             }
                         }
                         let duration = Instant::now().duration_since(start);
@@ -644,7 +780,8 @@ pub fn generate_workload(workload_spec_string: &str, output_file: &PathBuf) -> R
     let workload_spec: WorkloadSpec =
         serde_json::from_str(workload_spec_string).context("Parsing spec file")?;
     let mut buf_writer = BufWriter::with_capacity(1024 * 1024, File::create(output_file)?);
-    write_operations(&mut buf_writer, &workload_spec)?;
+    let write_handler = WriteHandler(&mut buf_writer);
+    generate_operations(write_handler, &workload_spec)?;
     buf_writer.flush()?;
 
     Ok(())
@@ -653,4 +790,15 @@ pub fn generate_workload(workload_spec_string: &str, output_file: &PathBuf) -> R
 pub fn generate_workload_spec_schema() -> serde_json::Result<String> {
     let schema = schemars::schema_for!(WorkloadSpec);
     return serde_json::to_string_pretty(&schema);
+}
+
+pub fn benchmark_workload(workload_spec_string: &str, database_name: &str) -> Result<()> {
+    let workload_spec: WorkloadSpec =
+        serde_json::from_str(workload_spec_string).context("Parsing spec file")?;
+    let mut benchmarker = Benchmarker::new(Db::new(database_name)?);
+    benchmarker.start();
+    generate_operations(DBHandler(&mut benchmarker), &workload_spec)?;
+    benchmarker.end();
+    benchmarker.print_summary();
+    Ok(())
 }

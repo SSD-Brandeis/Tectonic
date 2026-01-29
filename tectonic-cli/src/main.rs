@@ -1,14 +1,14 @@
 #![allow(clippy::needless_return)]
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
-use db_layer::{benchmark_db, invoke_benchmark};
+use db_layer::{benchmark_db, execute_operations};
 use rayon::iter::ParallelIterator;
 use rayon::prelude::ParallelBridge;
 use std::{
     fs,
     path::{Path, PathBuf},
 };
-use tectonic::{generate_workload, generate_workload_spec_schema};
+use tectonic::{benchmark_workload, generate_workload, generate_workload_spec_schema};
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 use walkdir::WalkDir;
@@ -34,9 +34,20 @@ enum Command {
     },
     /// Prints the JSON schema for IDE integration.
     Schema,
-    Benchmark {
+    /// Execute a generated workload on a specific database
+    Execute {
+        /// Tectonic generated workload file
         #[arg(short = 'i', long = "input-workload")]
         input_file: String,
+        /// Name of the database on which to execute operations
+        #[arg(short = 'd', long = "database")]
+        database: String,
+    },
+    /// Generate and Execute a workload from a file against a specific database
+    Benchmark {
+        /// File or folder of workload spec files
+        #[arg(short = 'w', long = "workload")]
+        workload_path: String,
         #[arg(short = 'd', long = "database")]
         database: String,
     },
@@ -54,13 +65,17 @@ fn main() -> Result<()> {
             output,
         } => invoke_generate(&workload_path, output.as_deref()),
         Command::Schema => invoke_schema(),
-        Command::Benchmark {
+        Command::Execute {
             input_file,
             database,
         } => {
-            invoke_benchmark(&database, input_file)?;
+            execute_operations(&database, input_file)?;
             Ok(())
         }
+        Command::Benchmark {
+            workload_path,
+            database,
+        } => invoke_benchmark(&workload_path, &database),
     }
 }
 
@@ -139,6 +154,53 @@ fn invoke_generate(workload_path: &str, output: Option<&str>) -> Result<()> {
         let contents = fs::read_to_string(&workload_path)?;
 
         generate_workload(&contents, &output_file)?;
+    } else {
+        unreachable!("Path is neither a file nor a directory");
+    };
+
+    return Ok(());
+}
+
+/// Generate workload(s) from a file or folder of workload specifications.
+fn invoke_benchmark(workload_path: &str, database_name: &str) -> Result<()> {
+    let workload_path = PathBuf::from(workload_path);
+    if !workload_path.exists() {
+        bail!("File or folder does not exist {}", workload_path.display());
+    }
+
+    if workload_path.is_dir() {
+        // FIX: Make this work for a directory of workloads. Doesn't make sense to just print to
+        // console, maybe write results to file?
+        todo!();
+        WalkDir::new(&workload_path)
+            .follow_links(true)
+            .into_iter()
+            .filter_map(Result::ok)
+            .filter(|file| {
+                file.file_type().is_file()
+                    && file
+                        .path()
+                        .file_name()
+                        .and_then(|name| name.to_str())
+                        .map(
+                            |name| name.ends_with(".spec.json"), // || name.ends_with(".spec.jsonc")
+                        )
+                        .unwrap_or(false)
+            })
+            .par_bridge()
+            .map(|entry| -> Result<_> {
+                let path = entry.path();
+                info!("Benchmarking workload for: {}", path.display());
+                let contents = fs::read_to_string(path)?;
+                let output_file = spec_path_to_workload_name(path);
+
+                return benchmark_workload(&contents, database_name);
+            })
+            .collect::<Result<Vec<_>>>()?;
+    } else if workload_path.is_file() {
+        let contents = fs::read_to_string(&workload_path)?;
+
+        benchmark_workload(&contents, database_name)?;
     } else {
         unreachable!("Path is neither a file nor a directory");
     };

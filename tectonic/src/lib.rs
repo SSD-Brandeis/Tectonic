@@ -77,8 +77,7 @@ impl<'a, W: Write> OperationHandler for WriteHandler<'a, W> {
         val: &StringExpr,
         character_set: Option<CharacterSet>,
     ) -> Result<()> {
-        let value = val.generate(rng, character_set);
-        AsciiOperationFormatter::write_insert(self.0, key, value.as_ref())
+        AsciiOperationFormatter::write_insert(self.0, rng, key, val, character_set)
     }
 
     fn handle_update(
@@ -88,8 +87,7 @@ impl<'a, W: Write> OperationHandler for WriteHandler<'a, W> {
         val: &StringExpr,
         character_set: Option<CharacterSet>,
     ) -> Result<()> {
-        let value = val.generate(rng, character_set);
-        AsciiOperationFormatter::write_update(self.0, key, value.as_ref())
+        AsciiOperationFormatter::write_update(self.0, rng, key, val, character_set)
     }
 
     fn handle_merge(
@@ -99,8 +97,7 @@ impl<'a, W: Write> OperationHandler for WriteHandler<'a, W> {
         val: &StringExpr,
         character_set: Option<CharacterSet>,
     ) -> Result<()> {
-        let value = val.generate(rng, character_set);
-        AsciiOperationFormatter::write_merge(self.0, key, value.as_ref())
+        AsciiOperationFormatter::write_merge(self.0, rng, key, val, character_set)
     }
 
     fn handle_point_delete(&mut self, key: &Key) -> Result<()> {
@@ -130,32 +127,47 @@ impl<'a, W: Write> OperationHandler for WriteHandler<'a, W> {
 
 struct AsciiOperationFormatter;
 impl AsciiOperationFormatter {
-    fn write_insert(w: &mut impl Write, key: &Key, value: &[u8]) -> Result<()> {
+    fn write_insert(
+        w: &mut impl Write,
+        rng: &mut impl Rng,
+        key: &Key,
+        val: &StringExpr,
+        character_set: Option<CharacterSet>,
+    ) -> Result<()> {
         w.write_all("I ".as_bytes())?;
         w.write_all(key)?;
         w.write_all(" ".as_bytes())?;
-        // val.write_all(w, rng, character_set)?;
-        w.write_all(value)?;
+        val.write_all(w, rng, character_set)?;
         w.write_all("\n".as_bytes())?;
 
         return Ok(());
     }
-    fn write_update(w: &mut impl Write, key: &Key, value: &[u8]) -> Result<()> {
+    fn write_update(
+        w: &mut impl Write,
+        rng: &mut impl Rng,
+        key: &Key,
+        val: &StringExpr,
+        character_set: Option<CharacterSet>,
+    ) -> Result<()> {
         w.write_all("U ".as_bytes())?;
         w.write_all(key)?;
         w.write_all(" ".as_bytes())?;
-        // val.write_all(w, rng, character_set)?;
-        w.write_all(value)?;
+        val.write_all(w, rng, character_set)?;
         w.write_all("\n".as_bytes())?;
 
         return Ok(());
     }
-    fn write_merge(w: &mut impl Write, key: &Key, value: &[u8]) -> Result<()> {
+    fn write_merge(
+        w: &mut impl Write,
+        rng: &mut impl Rng,
+        key: &Key,
+        val: &StringExpr,
+        character_set: Option<CharacterSet>,
+    ) -> Result<()> {
         w.write_all("M ".as_bytes())?;
         w.write_all(key)?;
         w.write_all(" ".as_bytes())?;
-        // val.write_all(w, rng, character_set)?;
-        w.write_all(value)?;
+        val.write_all(w, rng, character_set)?;
         w.write_all("\n".as_bytes())?;
 
         return Ok(());

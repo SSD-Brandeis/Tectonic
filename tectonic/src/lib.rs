@@ -311,11 +311,13 @@ pub fn generate_operations<OP: OperationHandler>(
         || workload.has_query_point()
         || workload.has_query_range();
 
+    // TODO: Update this so it works properly with upserts
     let has_contains_check = !workload.skip_contains_check_all()
-        && (workload.has_insert()
+        && (workload.has_unique_insert()
             || workload.has_query_point_empty()
             || workload.has_delete_point_empty());
 
+    // TODO: If is only upsert only workload, use empty keyset
     // WARN: This doesn't make sense to me
     // Shouldn't we be using bloom filters or a hash_map if we have empty queries
     // Also why do we need a vector if we don't have range queries, can't we just use a hashmap, or
@@ -465,54 +467,77 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                 None
             };
 
-            if let WorkloadSpecGroup {
-                unique_inserts: None,
-                updates: None,
-                merges: None,
-                point_deletes: None,
-                empty_point_deletes: None,
-                range_deletes: None,
-                point_queries: None,
-                empty_point_queries: None,
-                range_queries: None,
-                ..
-            } = group
-            {
-                if upsert_count == 0 {
-                    bail!("Invalid workload spec. Group cannot be empty")
-                }
-            }
+            // if let WorkloadSpecGroup {
+            //     unique_inserts: None,
+            //     updates: None,
+            //     merges: None,
+            //     point_deletes: None,
+            //     empty_point_deletes: None,
+            //     range_deletes: None,
+            //     point_queries: None,
+            //     empty_point_queries: None,
+            //     range_queries: None,
+            //     ..
+            // } = group
+            // {
+            //     if upsert_count == 0 {
+            //         bail!("Invalid workload spec. Group cannot be empty")
+            //     }
+            // }
             // A group must have at least 1 valid key before any other operation can occur.
-            else if keys_valid.is_empty() {
-                if insert_count == 0 {
+            if keys_valid.is_empty() {
+                if insert_count + upsert_count == 0 {
                     bail!(
                         "Invalid workload spec. Group must have existing valid keys or have insert operations."
                     );
                 }
-                let is = group
-                    .unique_inserts
+                if let Some(is) = group.unique_inserts.as_ref() {
+                    // .expect("inserts to exist if insert count > 0");
+                    markers.extend(repeat_n(Op::UniqueInsert, insert_count - 1));
+                    let key = key_pool
+                        .as_mut()
+                        .and_then(|pool| pool.pop())
+                        .unwrap_or_else(|| {
+                            is.key.generate(rng_ref, is.character_set.or(character_set))
+                        });
+                    // let key = is.key.generate(rng_ref, is.character_set);
+                    operation_handler.handle_insert(
+                        rng_ref,
+                        &key,
+                        &is.val,
+                        is.character_set.or(character_set),
+                    )?;
+                    keys_valid.push(key);
+                };
+            } else {
+                markers.extend(repeat_n(Op::UniqueInsert, insert_count));
+            }
+            if keys_valid.is_empty() {
+                let ups = group
+                    .inserts
                     .as_ref()
-                    .expect("inserts to exist if insert count > 0");
-                markers.extend(repeat_n(Op::UniqueInsert, insert_count - 1));
+                    .expect("upserts to exist if no unique inserts and insert + upsert count > 0");
+                markers.extend(repeat_n(Op::Upsert, insert_count - 1));
 
                 let key = key_pool
                     .as_mut()
                     .and_then(|pool| pool.pop())
                     .unwrap_or_else(|| {
-                        is.key.generate(rng_ref, is.character_set.or(character_set))
+                        ups.key
+                            .generate(rng_ref, ups.character_set.or(character_set))
                     });
                 // let key = is.key.generate(rng_ref, is.character_set);
                 operation_handler.handle_insert(
                     rng_ref,
                     &key,
-                    &is.val,
-                    is.character_set.or(character_set),
+                    &ups.val,
+                    ups.character_set.or(character_set),
                 )?;
                 keys_valid.push(key);
             } else {
-                markers.extend(repeat_n(Op::UniqueInsert, insert_count));
+                markers.extend(repeat_n(Op::Upsert, upsert_count));
             }
-            markers.extend(repeat_n(Op::Upsert, upsert_count));
+
             markers.extend(repeat_n(Op::Update, update_count));
             markers.extend(repeat_n(Op::Merge, merge_count));
             markers.extend(repeat_n(Op::PointDelete, delete_point_count));
@@ -537,12 +562,17 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                         let is = group.unique_inserts.as_ref().ok_or_else(|| {
                             anyhow!("Insert marker can only appear when inserts is not None")
                         })?;
-                        let key = key_pool
-                            .as_mut()
-                            .and_then(|pool| pool.pop())
-                            .unwrap_or_else(|| {
-                                is.key.generate(rng_ref, is.character_set.or(character_set))
-                            });
+                        let key = loop {
+                            let key = key_pool
+                                .as_mut()
+                                .and_then(|pool| pool.pop())
+                                .unwrap_or_else(|| {
+                                    is.key.generate(rng_ref, is.character_set.or(character_set))
+                                });
+                            if !keys_valid.contains(&key) {
+                                break key;
+                            }
+                        };
                         // let key = is.key.generate(rng_ref, is.character_set);
                         operation_handler.handle_insert(
                             rng_ref,
@@ -559,7 +589,6 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                     }
                     Op::Upsert => {
                         let start = Instant::now();
-                        // TODO: Rename to either insert or upsert
                         let is = group.inserts.as_ref().ok_or_else(|| {
                             anyhow!("Upsert marker can only appear when upserts is not None")
                         })?;
@@ -576,6 +605,7 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                             is.character_set.or(character_set),
                         )?;
 
+                        keys_valid.push(key);
                         let duration = Instant::now().duration_since(start);
                         time_insert += duration;
                         if duration > Duration::from_millis(1) {

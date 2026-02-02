@@ -711,7 +711,7 @@ pub struct WorkloadSpecSection {
 }
 
 impl WorkloadSpecSection {
-    fn has_insert(&self) -> bool {
+    fn has_unique_insert(&self) -> bool {
         return self.groups.iter().any(|group| {
             group
                 .unique_inserts
@@ -795,9 +795,13 @@ pub struct WorkloadSpec {
 }
 
 impl WorkloadSpec {
-    pub fn has_insert(&self) -> bool {
-        return self.sections.iter().any(WorkloadSpecSection::has_insert);
+    pub fn has_unique_insert(&self) -> bool {
+        return self
+            .sections
+            .iter()
+            .any(WorkloadSpecSection::has_unique_insert);
     }
+
     pub fn has_update(&self) -> bool {
         return self.sections.iter().any(WorkloadSpecSection::has_update);
     }

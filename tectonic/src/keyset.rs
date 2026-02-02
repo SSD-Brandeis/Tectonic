@@ -128,6 +128,47 @@ pub trait KeySet {
     );
 }
 
+pub struct EmptyKeySet();
+
+impl KeySet for EmptyKeySet {
+    fn new(_capacity: usize) -> Self {
+        Self()
+    }
+
+    fn len(&self) -> usize {
+        0
+    }
+
+    fn is_empty(&self) -> bool {
+        true
+    }
+
+    fn push(&mut self, _key: Key) {}
+
+    fn remove(&mut self, _idx: usize) -> Key {
+        panic!("Tried to remove from empty keyset")
+    }
+
+    fn remove_range(&mut self, _idx_range: Range<usize>) -> (Key, Key) {
+        panic!("Tried to remove range from empty keyset")
+    }
+
+    fn get(&self, _idx: usize) -> &Key {
+        panic!("Tried to get from empty keyset")
+    }
+
+    fn contains(&self, _key: &Key) -> bool {
+        false
+    }
+
+    fn sort(
+        &mut self,
+        // sort_by: SortBy
+    ) {
+        panic!("Tried to sort empty keyset")
+    }
+}
+
 pub struct VecKeySet {
     keys: Vec<Key>,
     sorted: bool,

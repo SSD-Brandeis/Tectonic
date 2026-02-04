@@ -65,14 +65,27 @@ impl Statistics {
 
 pub fn benchmark_db(db_layer: Db, input_file: String) -> Result<()> {
     let file = File::open(input_file)?;
-    let buf_reader = BufReader::new(file);
+    let mut buf_reader = BufReader::new(file);
 
     let mut benchmarker = Benchmarker::new(db_layer);
 
     benchmarker.start();
-    for line in buf_reader.lines() {
-        process_line(line, &mut benchmarker)?;
+    // for line in buf_reader.lines() {
+    //     process_line(&line?, &mut benchmarker)?;
+    // }
+
+    let mut buf = String::new();
+    while buf_reader.read_line(&mut buf)? > 0 {
+        if buf.ends_with('\n') {
+            buf.pop();
+            if buf.ends_with('\r') {
+                buf.pop();
+            }
+        }
+
+        process_line(&buf, &mut benchmarker)?;
     }
+
     benchmarker.end();
 
     // Print out statistics
@@ -81,10 +94,12 @@ pub fn benchmark_db(db_layer: Db, input_file: String) -> Result<()> {
     return Ok(());
 }
 
-fn process_line(line: Result<String, std::io::Error>, benchmarker: &mut Benchmarker) -> Result<()> {
-    let line = line?;
+fn process_line(line: &str, benchmarker: &mut Benchmarker) -> Result<()> {
     let mut line_iter = line.split_whitespace();
-    let operation = line_iter.next().unwrap();
+    let operation = match line_iter.next() {
+        Some(op) => op,
+        None => return Ok(()),
+    };
 
     match operation {
         "I" => {

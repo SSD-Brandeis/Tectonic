@@ -22,6 +22,7 @@ trait Latency = Counter + AddAssign + Default;
 
 struct Statistics {
     histogram: Histogram<u64>,
+    failed_count: usize,
     count: usize,
     sum: u64,
 }
@@ -32,6 +33,7 @@ impl Default for Statistics {
             Histogram::new_with_bounds(1, 60000000, 5).expect("Could not create histogram");
         Self {
             histogram,
+            failed_count: Default::default(),
             count: Default::default(),
             sum: Default::default(),
         }
@@ -46,11 +48,12 @@ impl Statistics {
             eprintln!("Latency {} exceeds max latency", latency)
         };
     }
+
+    fn add_error(&mut self) {
+        self.failed_count += 1;
+    }
 }
 //     // TODO: Keep track of:
-//     // average operation latency and for each operation
-//     // Successful operations (think about point queries)
-//     // Number of operations for each operation and total
 //     // 50th percentile latency for operations
 //     //
 
@@ -186,13 +189,16 @@ macro_rules! measure {
     ($self:ident, $op_key:expr, $call:expr) => {
         let start_time = time::Instant::now();
 
-        $call;
+        let res = $call;
 
         let latency = std::time::Instant::now()
             .duration_since(start_time)
             .as_micros();
         let map = $self.operation_statistics_map.entry($op_key).or_default();
         map.add_latency(latency as u64);
+        if res.is_err() {
+            map.add_error();
+        }
     };
 }
 
@@ -232,6 +238,11 @@ impl<'a> Benchmarker<'a> {
             };
             total_operation_counts += stats.count;
             println!("[{}] Count: {}", operation, stats.count);
+            println!(
+                "[{}] Successful Operations Count: {}",
+                operation,
+                stats.count - stats.failed_count
+            );
             println!("[{}] Total Latency: {}us", operation, stats.sum);
             println!(
                 "[{}] Average Latency: {}us",
@@ -263,6 +274,17 @@ impl<'a> Benchmarker<'a> {
             );
         }
 
+        if total_operation_timing_sum == 0 {
+            eprintln!("No Operations");
+            return;
+        }
+
+        println!("[Overall] Total Operations: {}", total_operation_counts);
+        println!(
+            "[Overall] Average Latency: {}us",
+            total_operation_timing_sum as f64 / total_operation_counts as f64
+        );
+
         if let (Some(start_time), Some(end_time)) = (self.start_time, self.end_time) {
             println!(
                 "[Overall] Throughput (using start and end time) (ops/ms): {}",
@@ -289,48 +311,48 @@ impl<'a> Benchmarker<'a> {
     pub fn handle_insert(&mut self, key: &Key, value: &Value) -> Result<()> {
         // Generate value from string expression
         // Either insert value into database or write to file based on match
-        measure!(self, "I", self.db_layer.insert(key, value)?);
+        measure!(self, "I", self.db_layer.insert(key, value));
 
         return Ok(());
     }
 
     pub fn handle_update(&mut self, key: &Key, value: &Value) -> Result<()> {
-        measure!(self, "U", self.db_layer.update(key, value)?);
+        measure!(self, "U", self.db_layer.update(key, value));
 
         return Ok(());
     }
 
     pub fn handle_merge(&mut self, key: &Key, value: &Value) -> Result<()> {
-        measure!(self, "M", self.db_layer.merge(key, value)?);
+        measure!(self, "M", self.db_layer.merge(key, value));
 
         return Ok(());
     }
 
     pub fn handle_point_delete(&mut self, key: &Key) -> Result<()> {
-        measure!(self, "D", self.db_layer.point_delete(key)?);
+        measure!(self, "D", self.db_layer.point_delete(key));
 
         return Ok(());
     }
 
     pub fn handle_point_query(&mut self, key: &Key) -> Result<()> {
-        measure!(self, "P", self.db_layer.point_query(key)?);
+        measure!(self, "P", self.db_layer.point_query(key));
 
         return Ok(());
     }
 
     pub fn handle_range_query(&mut self, key1: &Key, key2: &Key) -> Result<()> {
-        measure!(self, "S", self.db_layer.range_query(key1, key2)?);
+        measure!(self, "S", self.db_layer.range_query(key1, key2));
 
         return Ok(());
     }
 
     pub fn handle_range_query_count(&mut self, key1: &Key, count: usize) -> Result<()> {
-        measure!(self, "S", self.db_layer.range_query_count(key1, count)?);
+        measure!(self, "S", self.db_layer.range_query_count(key1, count));
         return Ok(());
     }
 
     pub fn handle_range_delete(&mut self, start_key: &Key, end_key: &Key) -> Result<()> {
-        measure!(self, "R", self.db_layer.range_delete(start_key, end_key)?);
+        measure!(self, "R", self.db_layer.range_delete(start_key, end_key));
 
         return Ok(());
     }
@@ -339,7 +361,7 @@ impl<'a> Benchmarker<'a> {
         measure!(
             self,
             "R",
-            self.db_layer.range_delete_count(start_key, count)?
+            self.db_layer.range_delete_count(start_key, count)
         );
 
         return Ok(());

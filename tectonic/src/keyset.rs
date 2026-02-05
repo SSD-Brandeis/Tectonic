@@ -4,7 +4,7 @@
 use rand::Rng;
 
 use crate::spec::Distribution;
-use bloom::{ASMS, BloomFilter};
+use bloom::{ASMS, BloomFilter, CountingBloomFilter};
 use std::cmp::max;
 use std::collections::{HashMap, HashSet};
 use std::ops::{Bound, Range};
@@ -443,6 +443,63 @@ pub struct VecBloomFilterKeySet {
     keys: Vec<Key>,
     bf: BloomFilter,
     sorted: bool,
+}
+
+pub struct BloomFilterKeySet {
+    bf: BloomFilter,
+    len: usize,
+}
+
+impl KeySet for BloomFilterKeySet {
+    fn new(capacity: usize) -> Self {
+        return Self {
+            bf: BloomFilter::with_rate(0.01, max(1, capacity) as u32),
+            len: 0,
+        };
+    }
+
+    fn len(&self) -> usize {
+        return self.len;
+    }
+
+    fn is_empty(&self) -> bool {
+        return self.len == 0;
+    }
+
+    fn push(&mut self, key: Key) {
+        self.bf.insert(&key);
+        self.len += 1
+    }
+
+    fn remove(&mut self, _idx: usize) -> Key {
+        panic!("BloomFilterKeySet does not support deletion")
+        // NOTE: leaving this out is an optimization for the case when the keyspace is much larger than the number of keys being generated.
+        // self.bf.clear();
+        // for k in &self.keys {
+        //     self.bf.insert(k);
+        // }
+    }
+
+    fn remove_range(&mut self, _idx_range: Range<usize>) -> (Key, Key) {
+        panic!("BloomFilterKeySet does not support deletion")
+        // NOTE: leaving this out is an optimization for the case when the keyspace is much larger than the number of keys being generated.
+        // self.bf.clear();
+        // for k in &self.keys {
+        //     self.bf.insert(k);
+        // }
+    }
+
+    fn get(&self, _idx: usize) -> &Key {
+        panic!("BloomFilterKeySet does not support get")
+    }
+
+    fn contains(&self, key: &Key) -> bool {
+        return self.bf.contains(key);
+    }
+
+    fn sort(&mut self) {
+        panic!("BloomFilterKeySet does not support sorting")
+    }
 }
 
 impl KeySet for VecBloomFilterKeySet {

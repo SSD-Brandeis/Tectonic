@@ -3,6 +3,7 @@ use crate::{DBTranslationLayer, Value};
 use anyhow::Result;
 use std::collections::HashMap;
 use std::env::temp_dir;
+use std::fs::DirBuilder;
 
 pub struct RocksDB {
     db: rocksdb::DB,
@@ -10,7 +11,11 @@ pub struct RocksDB {
 
 impl RocksDB {
     pub fn new() -> Result<Self> {
-        let dir = temp_dir();
+        let mut dir = temp_dir();
+        dir.push("tectonic-rocksdb/");
+        let dir_builder = DirBuilder::new();
+        // This error means the directory already exists, which is what we want
+        let _ = dir_builder.create(&dir);
         let mut opts = rocksdb::Options::default();
         let merge_fn = |_key: &[u8],
                         existing_value: Option<&[u8]>,

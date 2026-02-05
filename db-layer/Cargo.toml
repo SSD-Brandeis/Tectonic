@@ -6,4 +6,5 @@ edition = "2024"
 [dependencies]
 anyhow = "1.0.100"
 enum_dispatch = "0.3.13"
+hdrhistogram = "7.5.4"
 rocksdb = "0.24.0"

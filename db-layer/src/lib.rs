@@ -1,11 +1,13 @@
 #![allow(clippy::needless_return)]
-#![feature(duration_millis_float)]
+#![feature(duration_millis_float, trait_alias)]
 
 use anyhow::{Result, anyhow, bail};
 use enum_dispatch::enum_dispatch;
+use hdrhistogram::{Counter, Histogram};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
+use std::ops::AddAssign;
 use std::time::{self};
 
 mod printdb;
@@ -16,52 +18,41 @@ use rocksdb::RocksDB;
 pub type Key = [u8];
 pub type Value = [u8];
 
-#[derive(Default)]
+trait Latency = Counter + AddAssign + Default;
+
 struct Statistics {
-    operation_latencies: Vec<f64>,
+    histogram: Histogram<u64>,
     count: usize,
-    sum: f64,
-    min: Option<f64>,
-    max: Option<f64>,
+    sum: u64,
+}
+
+impl Default for Statistics {
+    fn default() -> Self {
+        let histogram =
+            Histogram::new_with_bounds(1, 60000000, 5).expect("Could not create histogram");
+        Self {
+            histogram,
+            count: Default::default(),
+            sum: Default::default(),
+        }
+    }
 }
 
 impl Statistics {
-    fn add_latency(&mut self, latency: f64) {
+    fn add_latency(&mut self, latency: u64) {
         self.count += 1;
         self.sum += latency;
-        match &mut self.min {
-            Some(min) => {
-                if *min > latency {
-                    *min = latency;
-                }
-            }
-            None => self.min = Some(latency),
-        }
-
-        match &mut self.max {
-            Some(max) => {
-                if *max < latency {
-                    *max = latency;
-                }
-            }
-            None => self.max = Some(latency),
-        }
-
-        self.operation_latencies.push(latency);
+        if self.histogram.record(latency).is_err() {
+            eprintln!("Latency {} exceeds max latency", latency)
+        };
     }
 }
 //     // TODO: Keep track of:
 //     // average operation latency and for each operation
-//     // Total Throughout
 //     // Successful operations (think about point queries)
 //     // Number of operations for each operation and total
-//     // Min latency
-//     // Max latency
 //     // 50th percentile latency for operations
-//     // 95th percentile latency for operations
-//     // 99th percentile latency for operations
 //     //
-//     // TODO: Windowed version of operations for printing status?
 
 pub fn benchmark_db(db_layer: Db, input_file: String) -> Result<()> {
     let file = File::open(input_file)?;
@@ -199,9 +190,9 @@ macro_rules! measure {
 
         let latency = std::time::Instant::now()
             .duration_since(start_time)
-            .as_millis_f64();
+            .as_micros();
         let map = $self.operation_statistics_map.entry($op_key).or_default();
-        map.add_latency(latency);
+        map.add_latency(latency as u64);
     };
 }
 
@@ -223,11 +214,11 @@ impl<'a> Benchmarker<'a> {
         self.end_time = Some(time::Instant::now());
     }
 
-    pub fn print_summary(&self) {
+    pub fn print_summary(&mut self) {
         let mut total_operation_counts = 0;
-        let mut total_operation_timing_sum = 0.0;
+        let mut total_operation_timing_sum = 0;
         // Print out statistics
-        for (&operation, stats) in self.operation_statistics_map.iter() {
+        for (&operation, stats) in self.operation_statistics_map.iter_mut() {
             total_operation_timing_sum += stats.sum;
             let operation = match operation {
                 "I" => "Insert",
@@ -241,18 +232,35 @@ impl<'a> Benchmarker<'a> {
             };
             total_operation_counts += stats.count;
             println!("[{}] Count: {}", operation, stats.count);
-            println!("[{}] Total Latency: {}ms", operation, stats.sum);
+            println!("[{}] Total Latency: {}us", operation, stats.sum);
             println!(
                 "[{}] Average Latency: {}us",
                 operation,
-                stats.sum / stats.count as f64 * 1000.0
+                stats.histogram.mean()
             );
-            if let Some(min) = stats.min {
-                println!("[{}] Minimum Latency: {}us", operation, min * 1000.0);
-            }
-            if let Some(max) = stats.max {
-                println!("[{}] Maximum Latency: {}us", operation, max * 1000.0);
-            }
+
+            println!(
+                "[{}] Minimum Latency: {}us",
+                operation,
+                stats.histogram.min()
+            );
+            println!(
+                "[{}] Maximum Latency: {}us",
+                operation,
+                stats.histogram.max()
+            );
+
+            println!(
+                "[{}] 95th Percentile Latency: {}us",
+                operation,
+                stats.histogram.value_at_percentile(95.0)
+            );
+
+            println!(
+                "[{}] 99th Percentile Latency: {}us",
+                operation,
+                stats.histogram.value_at_percentile(99.0)
+            );
         }
 
         if let (Some(start_time), Some(end_time)) = (self.start_time, self.end_time) {
@@ -263,7 +271,18 @@ impl<'a> Benchmarker<'a> {
         }
         println!(
             "[Overall] Throughput (using aggregate operation times) (ops/ms): {}",
-            total_operation_counts as f64 / total_operation_timing_sum
+            total_operation_counts as f64 / (total_operation_timing_sum as f64 / 1000.0)
+        );
+
+        if let (Some(start_time), Some(end_time)) = (self.start_time, self.end_time) {
+            println!(
+                "[Overall] Total Time Spent (using start and end time): {}ms",
+                end_time.duration_since(start_time).as_millis_f64()
+            );
+        }
+        println!(
+            "[Overall] Aggregate Operation Time: {}ms",
+            total_operation_timing_sum as f64 / 1000.0
         );
     }
 

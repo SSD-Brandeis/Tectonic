@@ -517,7 +517,7 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                     .inserts
                     .as_ref()
                     .expect("upserts to exist if no unique inserts and insert + upsert count > 0");
-                markers.extend(repeat_n(Op::Upsert, insert_count - 1));
+                markers.extend(repeat_n(Op::Upsert, upsert_count - 1));
 
                 let key = key_pool
                     .as_mut()

@@ -1,7 +1,7 @@
 #![allow(clippy::needless_return)]
 #![feature(duration_millis_float, trait_alias)]
 
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Context, Result, anyhow, bail};
 use enum_dispatch::enum_dispatch;
 use hdrhistogram::{Counter, Histogram};
 use std::collections::HashMap;
@@ -68,16 +68,21 @@ pub fn benchmark_db(db_layer: Db, input_file: String) -> Result<()> {
     //     process_line(&line?, &mut benchmarker)?;
     // }
 
-    let mut buf = String::new();
-    while buf_reader.read_line(&mut buf)? > 0 {
-        if buf.ends_with('\n') {
+    let mut buf = Vec::<u8>::new();
+    while buf_reader.read_until(b'\n', &mut buf)? > 0 {
+        let end = buf.len() - 1;
+        if buf[end] == b'\n' {
             buf.pop();
-            if buf.ends_with('\r') {
+            if buf[end - 1] == b'\r' {
                 buf.pop();
             }
         }
+        // println!("Line: {}", unsafe {
+        //     String::from_utf8_unchecked(buf.clone())
+        // });
 
         process_line(&buf, &mut benchmarker)?;
+        buf.clear();
     }
 
     benchmarker.end();
@@ -88,91 +93,68 @@ pub fn benchmark_db(db_layer: Db, input_file: String) -> Result<()> {
     return Ok(());
 }
 
-fn process_line(line: &str, benchmarker: &mut Benchmarker) -> Result<()> {
-    let mut line_iter = line.split_whitespace();
+fn process_line(line: &[u8], benchmarker: &mut Benchmarker) -> Result<()> {
+    let mut line_iter = line.split(|&b| b == b' ').filter(|s| !s.is_empty());
     let operation = match line_iter.next() {
         Some(op) => op,
         None => return Ok(()),
     };
 
     match operation {
-        "I" => {
-            let key = line_iter
-                .next()
-                .ok_or(anyhow!("Missing Argument"))?
-                .as_bytes();
-            let value = line_iter
-                .next()
-                .ok_or(anyhow!("Missing Argument"))?
-                .as_bytes();
+        [b'I'] => {
+            let key = line_iter.next().ok_or(anyhow!("Missing Argument"))?;
+            let value = line_iter.next().ok_or(anyhow!("Missing Argument"))?;
 
             benchmarker.handle_insert(key, value)?;
         }
-        "P" => {
-            let key = line_iter
-                .next()
-                .ok_or(anyhow!("Missing Argument"))?
-                .as_bytes();
+        [b'P'] => {
+            let key = line_iter.next().ok_or(anyhow!("Missing Argument"))?;
             benchmarker.handle_point_query(key)?;
         }
-        "U" => {
-            let key = line_iter
-                .next()
-                .ok_or(anyhow!("Missing Argument"))?
-                .as_bytes();
-            let value = line_iter
-                .next()
-                .ok_or(anyhow!("Missing Argument"))?
-                .as_bytes();
+        [b'U'] => {
+            let key = line_iter.next().ok_or(anyhow!("Missing Argument"))?;
+            let value = line_iter.next().ok_or(anyhow!("Missing Argument"))?;
             benchmarker.handle_update(key, value)?;
         }
-        "M" => {
-            let key = line_iter
-                .next()
-                .ok_or(anyhow!("Missing Argument"))?
-                .as_bytes();
-            let value = line_iter
-                .next()
-                .ok_or(anyhow!("Missing Argument"))?
-                .as_bytes();
+        [b'M'] => {
+            let key = line_iter.next().ok_or(anyhow!("Missing Argument"))?;
+            let value = line_iter.next().ok_or(anyhow!("Missing Argument"))?;
 
             benchmarker.handle_merge(key, value)?;
         }
-        "D" => {
-            let key = line_iter
-                .next()
-                .ok_or(anyhow!("Missing Argument"))?
-                .as_bytes();
+        [b'D'] => {
+            let key = line_iter.next().ok_or(anyhow!("Missing Argument"))?;
             benchmarker.handle_point_delete(key)?;
         }
-        "S" => {
-            let start_key = line_iter
-                .next()
-                .ok_or(anyhow!("Missing Argument"))?
-                .as_bytes();
+        [b'S'] => {
+            let start_key = line_iter.next().ok_or(anyhow!("Missing Argument"))?;
             let bound = line_iter.next().ok_or(anyhow!("Missing Argument"))?;
 
-            if let Ok(range) = bound.parse::<usize>() {
+            if let Ok(str) = str::from_utf8(bound)
+                && let Ok(range) = str.parse::<usize>()
+            {
                 benchmarker.handle_range_query_count(start_key, range)?;
             } else {
-                benchmarker.handle_range_query(start_key, bound.as_bytes())?;
+                benchmarker.handle_range_query(start_key, bound)?;
             }
         }
-        "R" => {
+        [b'R'] => {
             // Range delete
-            let start_key = line_iter
-                .next()
-                .ok_or(anyhow!("Missing Argument"))?
-                .as_bytes();
+            let start_key = line_iter.next().ok_or(anyhow!("Missing Argument"))?;
             let bound = line_iter.next().ok_or(anyhow!("Missing Argument"))?;
 
-            if let Ok(range) = bound.parse::<usize>() {
+            if let Ok(bound) = str::from_utf8(bound)
+                && let Ok(range) = bound.parse::<usize>()
+            {
                 benchmarker.handle_range_delete_count(start_key, range)?;
             } else {
-                benchmarker.handle_range_delete(start_key, bound.as_bytes())?;
+                benchmarker.handle_range_delete(start_key, bound)?;
             }
         }
-        _ => bail!("Unknown operation \"{}\"", operation),
+        _ => bail!(
+            "Unknown operation \"{}\"",
+            str::from_utf8(operation).context("Operation is not valid utf8")?
+        ),
     };
 
     Ok(())

@@ -285,6 +285,36 @@ impl<'a, 'b> OperationHandler for DBHandler<'a, 'b> {
     }
 }
 
+pub struct OperationTimings {
+    time_insert: Duration,
+    time_upsert: Duration,
+    time_update: Duration,
+    time_merge: Duration,
+    time_delete_point: Duration,
+    time_delete_point_empty: Duration,
+    time_delete_range: Duration,
+    time_query_point: Duration,
+    time_query_point_empty: Duration,
+    time_query_range: Duration,
+}
+
+impl Default for OperationTimings {
+    fn default() -> Self {
+        Self {
+            time_insert: Duration::from_secs(0),
+            time_upsert: Duration::from_secs(0),
+            time_update: Duration::from_secs(0),
+            time_merge: Duration::from_secs(0),
+            time_delete_point: Duration::from_secs(0),
+            time_delete_point_empty: Duration::from_secs(0),
+            time_delete_range: Duration::from_secs(0),
+            time_query_point: Duration::from_secs(0),
+            time_query_point_empty: Duration::from_secs(0),
+            time_query_range: Duration::from_secs(0),
+        }
+    }
+}
+
 #[derive(Debug, Copy, Clone, Eq, Ord, PartialOrd, PartialEq)]
 enum Op {
     UniqueInsert,
@@ -299,12 +329,15 @@ enum Op {
     RangeQuery,
 }
 
+// TODO: Allow for different sections to use different keysets
+
 /// Generates a workload given the spec and writes it to the given writer.
 pub fn generate_operations<OP: OperationHandler>(
     operation_handler: OP,
     workload: &WorkloadSpec,
 ) -> Result<()> {
     // write_operations_with_keyset(writer, workload, VecBloomFilterKeySet::new)
+    // let insert_only = workload.has_unique_insert();
     let has_nonempty_deletes = workload.has_delete_point() || workload.has_delete_range();
     let has_sort_heavy = workload.has_update()
         || workload.has_merge()
@@ -322,47 +355,52 @@ pub fn generate_operations<OP: OperationHandler>(
     // Shouldn't we be using bloom filters or a hash_map if we have empty queries
     // Also why do we need a vector if we don't have range queries, can't we just use a hashmap, or
     // just a set
+    let mut operation_timings = OperationTimings::default();
 
     return if (has_nonempty_deletes) && (has_sort_heavy) {
         info!("Using VecOptionKeySet");
         // WARN: Is this a skiplist
-        write_operations_with_keyset(operation_handler, workload, VecOptionKeySet::new)
+        write_operations_with_keyset(
+            operation_handler,
+            workload,
+            VecOptionKeySet::new,
+            &mut operation_timings,
+        )
     } else if has_nonempty_deletes {
         info!("Using VecHashMapIndexKeySet");
-        write_operations_with_keyset(operation_handler, workload, VecHashMapIndexKeySet::new)
+        write_operations_with_keyset(
+            operation_handler,
+            workload,
+            VecHashMapIndexKeySet::new,
+            &mut operation_timings,
+        )
     } else if has_contains_check {
         info!("Using VecBloomFilterKeySet");
-        write_operations_with_keyset(operation_handler, workload, VecBloomFilterKeySet::new)
+        write_operations_with_keyset(
+            operation_handler,
+            workload,
+            VecBloomFilterKeySet::new,
+            &mut operation_timings,
+        )
     } else {
         info!("Using VecKeySet");
-        write_operations_with_keyset(operation_handler, workload, VecKeySet::new)
+        write_operations_with_keyset(
+            operation_handler,
+            workload,
+            VecKeySet::new,
+            &mut operation_timings,
+        )
     };
 }
 
-// TODO: Make it so that writer is more like operation_handler
-// Can either run operations against benchmark or write to a file
-// Enum for operation handler
-// Problem? Handling generation timings
-// Do we want to report generation timings, operation timings, or both
-// For now will only keep track of operation timings (like YCSB)
-// A little difficult because have to split up write_all method()
-// Need to generate value here so that it is passed to the operation handler
 pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
     mut operation_handler: OP,
     workload: &WorkloadSpec,
     keyset_constructor: impl Fn(usize) -> KeySetT,
+    operation_timings: &mut OperationTimings,
 ) -> Result<()> {
     let mut rng = Xoshiro256Plus::from_os_rng();
     // let mut keys_prev_sections = BloomFilter::with_rate(0.01, todo!());
-    let mut time_insert = Duration::from_secs(0);
-    let mut time_update = Duration::from_secs(0);
-    let mut time_merge = Duration::from_secs(0);
-    let mut time_delete_point = Duration::from_secs(0);
-    let mut time_delete_point_empty = Duration::from_secs(0);
-    let mut time_delete_range = Duration::from_secs(0);
-    let mut time_query_point = Duration::from_secs(0);
-    let mut time_query_point_empty = Duration::from_secs(0);
-    let mut time_query_range = Duration::from_secs(0);
 
     for section in &workload.sections {
         let insert_counts: Vec<usize> = section
@@ -582,7 +620,7 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                         )?;
                         keys_valid.push(key);
                         let duration = Instant::now().duration_since(start);
-                        time_insert += duration;
+                        operation_timings.time_insert += duration;
                         if duration > Duration::from_millis(1) {
                             trace!(?marker, ?duration);
                         }
@@ -607,7 +645,7 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
 
                         keys_valid.push(key);
                         let duration = Instant::now().duration_since(start);
-                        time_insert += duration;
+                        operation_timings.time_upsert += duration;
                         if duration > Duration::from_millis(1) {
                             trace!(?marker, ?duration);
                         }
@@ -629,7 +667,7 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                             us.character_set.or(character_set),
                         )?;
                         let duration = Instant::now().duration_since(start);
-                        time_update += duration;
+                        operation_timings.time_update += duration;
                         if duration > Duration::from_millis(1) {
                             trace!(?marker, ?duration);
                         }
@@ -651,7 +689,7 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                             ms.character_set.or(character_set),
                         )?;
                         let duration = Instant::now().duration_since(start);
-                        time_merge += duration;
+                        operation_timings.time_merge += duration;
                         if duration > Duration::from_millis(1) {
                             trace!(?marker, ?duration);
                         }
@@ -668,7 +706,7 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
 
                         operation_handler.handle_point_delete(&key)?;
                         let duration = Instant::now().duration_since(start);
-                        time_delete_point += duration;
+                        operation_timings.time_delete_point += duration;
                         if duration > Duration::from_millis(1) {
                             trace!(?marker, ?duration);
                         }
@@ -685,7 +723,7 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                         let key = keys_valid.get_random(rng_ref, &pqs.selection);
                         operation_handler.handle_point_query(key)?;
                         let duration = Instant::now().duration_since(start);
-                        time_query_point += duration;
+                        operation_timings.time_query_point += duration;
                         if duration > Duration::from_millis(1) {
                             trace!(?marker, ?duration);
                         }
@@ -706,7 +744,7 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
 
                         operation_handler.handle_point_delete(&key)?;
                         let duration = Instant::now().duration_since(start);
-                        time_delete_point_empty += duration;
+                        operation_timings.time_delete_point_empty += duration;
                         if duration > Duration::from_millis(1) {
                             trace!(?marker, ?duration);
                         }
@@ -726,7 +764,7 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
 
                         operation_handler.handle_point_query(&key)?;
                         let duration = Instant::now().duration_since(start);
-                        time_query_point_empty += duration;
+                        operation_timings.time_query_point_empty += duration;
                         if duration > Duration::from_millis(1) {
                             trace!(?marker, ?duration);
                         }
@@ -759,7 +797,7 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                             }
                         }
                         let duration = Instant::now().duration_since(start);
-                        time_query_range += duration;
+                        operation_timings.time_query_range += duration;
                         if duration > Duration::from_millis(1) {
                             trace!(?marker, ?duration);
                         }
@@ -792,7 +830,7 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                             }
                         }
                         let duration = Instant::now().duration_since(start);
-                        time_delete_range += duration;
+                        operation_timings.time_delete_range += duration;
                         if duration > Duration::from_millis(1) {
                             trace!(?marker, ?duration);
                         }
@@ -802,15 +840,15 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
         }
     }
     debug!(
-        insert = %time_insert.as_secs_f64(),
-        update = %time_update.as_secs_f64(),
-        merge = %time_merge.as_secs_f64(),
-        delete_point = %time_delete_point.as_secs_f64(),
-        delete_point_empty = %time_delete_point_empty.as_secs_f64(),
-        delete_range = %time_delete_range.as_secs_f64(),
-        query_point = %time_query_point.as_secs_f64(),
-        query_point_empty = %time_query_point_empty.as_secs_f64(),
-        query_range = %time_query_range.as_secs_f64(),
+        insert = %operation_timings.time_insert.as_secs_f64(),
+        update = %operation_timings.time_update.as_secs_f64(),
+        merge = %operation_timings.time_merge.as_secs_f64(),
+        delete_point = %operation_timings.time_delete_point.as_secs_f64(),
+        delete_point_empty = %operation_timings.time_delete_point_empty.as_secs_f64(),
+        delete_range = %operation_timings.time_delete_range.as_secs_f64(),
+        query_point = %operation_timings.time_query_point.as_secs_f64(),
+        query_point_empty = %operation_timings.time_query_point_empty.as_secs_f64(),
+        query_range = %operation_timings.time_query_range.as_secs_f64(),
         "operation generation timings (in seconds)"
     );
 

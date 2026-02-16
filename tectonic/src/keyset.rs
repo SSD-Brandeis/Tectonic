@@ -140,7 +140,9 @@ impl KeySet for EmptyKeySet {
     }
 
     fn is_empty(&self) -> bool {
-        true
+        // NOTE: This needs to be false so that we don't try to do the initial inserts into the
+        // keyset
+        false
     }
 
     fn push(&mut self, _key: Key) {}

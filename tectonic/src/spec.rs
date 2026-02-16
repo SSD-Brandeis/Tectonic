@@ -711,7 +711,7 @@ pub struct WorkloadSpecSection {
 }
 
 impl WorkloadSpecSection {
-    fn has_unique_insert(&self) -> bool {
+    pub fn has_unique_insert(&self) -> bool {
         return self.groups.iter().any(|group| {
             group
                 .unique_inserts
@@ -719,7 +719,17 @@ impl WorkloadSpecSection {
                 .is_some_and(|is| is.op_count.expected_value() > 0.)
         });
     }
-    fn has_update(&self) -> bool {
+
+    pub fn has_upsert(&self) -> bool {
+        return self.groups.iter().any(|group| {
+            group
+                .inserts
+                .as_ref()
+                .is_some_and(|is| is.op_count.expected_value() > 0.)
+        });
+    }
+
+    pub fn has_update(&self) -> bool {
         return self.groups.iter().any(|group| {
             group
                 .updates
@@ -727,7 +737,7 @@ impl WorkloadSpecSection {
                 .is_some_and(|us| us.op_count.expected_value() > 0.)
         });
     }
-    fn has_merge(&self) -> bool {
+    pub fn has_merge(&self) -> bool {
         return self.groups.iter().any(|group| {
             group
                 .merges
@@ -735,7 +745,7 @@ impl WorkloadSpecSection {
                 .is_some_and(|ms| ms.op_count.expected_value() > 0.)
         });
     }
-    fn has_delete_point(&self) -> bool {
+    pub fn has_delete_point(&self) -> bool {
         return self.groups.iter().any(|group| {
             group
                 .point_deletes
@@ -743,7 +753,7 @@ impl WorkloadSpecSection {
                 .is_some_and(|pds| pds.op_count.expected_value() > 0.)
         });
     }
-    fn has_delete_point_empty(&self) -> bool {
+    pub fn has_delete_point_empty(&self) -> bool {
         return self.groups.iter().any(|group| {
             group
                 .empty_point_deletes
@@ -751,7 +761,7 @@ impl WorkloadSpecSection {
                 .is_some_and(|epds| epds.op_count.expected_value() > 0.)
         });
     }
-    fn has_delete_range(&self) -> bool {
+    pub fn has_delete_range(&self) -> bool {
         return self.groups.iter().any(|group| {
             group
                 .range_deletes
@@ -759,7 +769,7 @@ impl WorkloadSpecSection {
                 .is_some_and(|rds| rds.op_count.expected_value() > 0.)
         });
     }
-    fn has_query_point(&self) -> bool {
+    pub fn has_query_point(&self) -> bool {
         return self.groups.iter().any(|group| {
             group
                 .point_queries
@@ -767,7 +777,7 @@ impl WorkloadSpecSection {
                 .is_some_and(|pqs| pqs.op_count.expected_value() > 0.)
         });
     }
-    fn has_query_point_empty(&self) -> bool {
+    pub fn has_query_point_empty(&self) -> bool {
         return self.groups.iter().any(|group| {
             group
                 .empty_point_queries
@@ -775,13 +785,17 @@ impl WorkloadSpecSection {
                 .is_some_and(|epqs| epqs.op_count.expected_value() > 0.)
         });
     }
-    fn has_query_range(&self) -> bool {
+    pub fn has_query_range(&self) -> bool {
         return self.groups.iter().any(|group| {
             group
                 .range_queries
                 .as_ref()
                 .is_some_and(|rqs| rqs.op_count.expected_value() > 0.)
         });
+    }
+
+    pub fn skip_contains_check(&self) -> bool {
+        return self.skip_key_contains_check;
     }
 }
 
@@ -849,6 +863,6 @@ impl WorkloadSpec {
         return self
             .sections
             .iter()
-            .all(|section| section.skip_key_contains_check);
+            .all(|section| section.skip_contains_check());
     }
 }

@@ -33,7 +33,8 @@ pub mod spec;
 // - query range
 
 use crate::keyset::{
-    Key, KeySet, VecBloomFilterKeySet, VecHashMapIndexKeySet, VecKeySet, VecOptionKeySet,
+    BloomFilterKeySet, EmptyKeySet, Key, KeySet, VecBloomFilterKeySet, VecHashMapIndexKeySet,
+    VecKeySet, VecOptionKeySet,
 };
 use crate::spec::{
     CharacterSet, RangeFormat, StringExpr, WorkloadSpec, WorkloadSpecGroup, WorkloadSpecSection,
@@ -340,7 +341,6 @@ pub fn generate_operations<OP: OperationHandler>(
 ) -> Result<()> {
     // write_operations_with_keyset(writer, workload, VecBloomFilterKeySet::new)
 
-    // TODO: If is only upsert only workload, use empty keyset
     // WARN: This doesn't make sense to me
     // Shouldn't we be using bloom filters or a hash_map if we have empty queries
     // Also why do we need a vector if we don't have range queries, can't we just use a hashmap, or
@@ -350,21 +350,42 @@ pub fn generate_operations<OP: OperationHandler>(
     for section in &workload.sections {
         // TODO: Maybe use an enum here, as in have a function return what should be used, and then
         // have it pick based off an enum
-        // let insert_only = workload.has_unique_insert();
-        let has_nonempty_deletes = workload.has_delete_point() || workload.has_delete_range();
-        let has_sort_heavy = workload.has_update()
-            || workload.has_merge()
-            || workload.has_query_point()
-            || workload.has_query_range();
+        let has_inserts_only = section.has_unique_insert()
+            || section.has_upsert()
+                && !(section.has_update()
+                    && section.has_merge()
+                    && section.has_query_point()
+                    && section.has_query_point_empty()
+                    && section.has_delete_point()
+                    && section.has_delete_point_empty()
+                    && section.has_query_range()
+                    && section.has_delete_range());
 
-        // TODO: Update this so it works properly with upserts
-        let has_contains_check = !workload.skip_contains_check_all()
-            && (workload.has_unique_insert()
-                || workload.has_query_point_empty()
-                || workload.has_delete_point_empty());
-        if (has_nonempty_deletes) && (has_sort_heavy) {
+        let requires_deletion = section.has_delete_point() || section.has_delete_range();
+        let requires_sorting = section.has_query_range() || section.has_delete_range();
+
+        let requires_contains_check = !section.skip_contains_check()
+            && (section.has_unique_insert()
+                || section.has_query_point_empty()
+                || section.has_delete_point_empty());
+        let requires_random_element = section.has_update()
+            || section.has_merge()
+            || section.has_delete_point()
+            || section.has_query_range()
+            || section.has_delete_range();
+
+        if has_inserts_only {
+            info!("Using EmptyKeySet");
+            write_operations_with_keyset(
+                &mut operation_handler,
+                &mut operation_timings,
+                workload,
+                section,
+                EmptyKeySet::new,
+            )?
+        } else if (requires_deletion) && (requires_sorting) {
+            // TODO: Should use skip list or b+ tree
             info!("Using VecOptionKeySet");
-            // WARN: Is this a skiplist
             write_operations_with_keyset(
                 &mut operation_handler,
                 &mut operation_timings,
@@ -372,7 +393,7 @@ pub fn generate_operations<OP: OperationHandler>(
                 section,
                 VecOptionKeySet::new,
             )?
-        } else if has_nonempty_deletes {
+        } else if requires_deletion {
             info!("Using VecHashMapIndexKeySet");
             write_operations_with_keyset(
                 &mut operation_handler,
@@ -381,7 +402,7 @@ pub fn generate_operations<OP: OperationHandler>(
                 section,
                 VecHashMapIndexKeySet::new,
             )?
-        } else if has_contains_check {
+        } else if requires_contains_check && requires_random_element {
             info!("Using VecBloomFilterKeySet");
             write_operations_with_keyset(
                 &mut operation_handler,
@@ -389,6 +410,15 @@ pub fn generate_operations<OP: OperationHandler>(
                 workload,
                 section,
                 VecBloomFilterKeySet::new,
+            )?
+        } else if requires_contains_check {
+            info!("Using VecBloomFilterKeySet");
+            write_operations_with_keyset(
+                &mut operation_handler,
+                &mut operation_timings,
+                workload,
+                section,
+                BloomFilterKeySet::new,
             )?
         } else {
             info!("Using VecKeySet");
@@ -530,23 +560,6 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
             None
         };
 
-        // if let WorkloadSpecGroup {
-        //     unique_inserts: None,
-        //     updates: None,
-        //     merges: None,
-        //     point_deletes: None,
-        //     empty_point_deletes: None,
-        //     range_deletes: None,
-        //     point_queries: None,
-        //     empty_point_queries: None,
-        //     range_queries: None,
-        //     ..
-        // } = group
-        // {
-        //     if upsert_count == 0 {
-        //         bail!("Invalid workload spec. Group cannot be empty")
-        //     }
-        // }
         // A group must have at least 1 valid key before any other operation can occur.
         if keys_valid.is_empty() {
             if insert_count + upsert_count == 0 {

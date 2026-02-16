@@ -350,16 +350,15 @@ pub fn generate_operations<OP: OperationHandler>(
     for section in &workload.sections {
         // TODO: Maybe use an enum here, as in have a function return what should be used, and then
         // have it pick based off an enum
-        let has_inserts_only = section.has_unique_insert()
-            || section.has_upsert()
-                && !(section.has_update()
-                    && section.has_merge()
-                    && section.has_query_point()
-                    && section.has_query_point_empty()
-                    && section.has_delete_point()
-                    && section.has_delete_point_empty()
-                    && section.has_query_range()
-                    && section.has_delete_range());
+        let has_inserts_only = (section.has_unique_insert() || section.has_upsert())
+            && !(section.has_update()
+                || section.has_merge()
+                || section.has_query_point()
+                || section.has_query_point_empty()
+                || section.has_delete_point()
+                || section.has_delete_point_empty()
+                || section.has_query_range()
+                || section.has_delete_range());
 
         let requires_deletion = section.has_delete_point() || section.has_delete_range();
         let requires_sorting = section.has_query_range() || section.has_delete_range();
@@ -371,8 +370,9 @@ pub fn generate_operations<OP: OperationHandler>(
         let requires_random_element = section.has_update()
             || section.has_merge()
             || section.has_delete_point()
-            || section.has_query_range()
-            || section.has_delete_range();
+            || section.has_delete_range()
+            || section.has_query_point()
+            || section.has_query_range();
 
         if has_inserts_only {
             info!("Using EmptyKeySet");
@@ -412,7 +412,7 @@ pub fn generate_operations<OP: OperationHandler>(
                 VecBloomFilterKeySet::new,
             )?
         } else if requires_contains_check {
-            info!("Using VecBloomFilterKeySet");
+            info!("Using BloomFilterKeySet");
             write_operations_with_keyset(
                 &mut operation_handler,
                 &mut operation_timings,
@@ -433,7 +433,8 @@ pub fn generate_operations<OP: OperationHandler>(
     }
 
     debug!(
-        insert = %operation_timings.time_insert.as_secs_f64(),
+        unique_insert = %operation_timings.time_insert.as_secs_f64(),
+        upsert = %operation_timings.time_upsert.as_secs_f64(),
         update = %operation_timings.time_update.as_secs_f64(),
         merge = %operation_timings.time_merge.as_secs_f64(),
         delete_point = %operation_timings.time_delete_point.as_secs_f64(),
@@ -458,7 +459,7 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
     let mut rng = Xoshiro256Plus::from_os_rng();
     // let mut keys_prev_sections = BloomFilter::with_rate(0.01, todo!());
 
-    let insert_counts: Vec<usize> = section
+    let unique_insert_counts: Vec<usize> = section
         .groups
         .iter()
         .map(|g| {
@@ -468,10 +469,11 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
         })
         .collect();
 
-    let mut keys_valid =
-        keyset_constructor(insert_counts.iter().sum() /*section.insert_count()*/);
+    let mut keys_valid = keyset_constructor(
+        unique_insert_counts.iter().sum(), /*section.insert_count()*/
+    );
 
-    for (group, insert_count) in std::iter::zip(&section.groups, insert_counts) {
+    for (group, unique_insert_count) in std::iter::zip(&section.groups, unique_insert_counts) {
         let rng_ref = &mut rng;
         let mut markers: Vec<Op> = Vec::with_capacity(0 /*group.operation_count()*/);
         let character_set = group
@@ -517,7 +519,8 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
             .map_or(0, |drs| drs.op_count.evaluate(rng_ref) as usize);
 
         debug!(
-            ?insert_count,
+            ?unique_insert_count,
+            ?upsert_count,
             ?update_count,
             ?merge_count,
             ?delete_point_count,
@@ -538,8 +541,8 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                 .unique_inserts
                 .as_ref()
                 .ok_or_else(|| anyhow!("Insert spec must exist if sorted config exists"))?;
-            let mut pool = Vec::with_capacity(insert_count);
-            for _ in 0..insert_count {
+            let mut pool = Vec::with_capacity(unique_insert_count);
+            for _ in 0..unique_insert_count {
                 let key = is.key.generate(rng_ref, is.character_set.or(character_set));
                 pool.push(key);
             }
@@ -562,14 +565,14 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
 
         // A group must have at least 1 valid key before any other operation can occur.
         if keys_valid.is_empty() {
-            if insert_count + upsert_count == 0 {
+            if unique_insert_count + upsert_count == 0 {
                 bail!(
                     "Invalid workload spec. Group must have existing valid keys or have insert operations."
                 );
             }
             if let Some(is) = group.unique_inserts.as_ref() {
                 // .expect("inserts to exist if insert count > 0");
-                markers.extend(repeat_n(Op::UniqueInsert, insert_count - 1));
+                markers.extend(repeat_n(Op::UniqueInsert, unique_insert_count - 1));
                 let key = key_pool
                     .as_mut()
                     .and_then(|pool| pool.pop())
@@ -586,7 +589,7 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                 keys_valid.push(key);
             };
         } else {
-            markers.extend(repeat_n(Op::UniqueInsert, insert_count));
+            markers.extend(repeat_n(Op::UniqueInsert, unique_insert_count));
         }
         if keys_valid.is_empty() {
             let ups = group

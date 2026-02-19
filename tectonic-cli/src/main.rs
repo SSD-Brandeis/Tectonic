@@ -143,7 +143,7 @@ fn invoke_generate(workload_path: &str, output: Option<&str>) -> Result<()> {
                 let mut output_file_path = output_dir.clone();
                 output_file_path.push(output_file);
 
-                return generate_workload(&contents, &output_file_path);
+                return generate_workload(contents, &output_file_path);
             })
             .collect::<Result<Vec<_>>>()?;
     } else if workload_path.is_file() {
@@ -153,7 +153,7 @@ fn invoke_generate(workload_path: &str, output: Option<&str>) -> Result<()> {
 
         let contents = fs::read_to_string(&workload_path)?;
 
-        generate_workload(&contents, &output_file)?;
+        generate_workload(contents, &output_file)?;
     } else {
         unreachable!("Path is neither a file nor a directory");
     };

@@ -6,7 +6,7 @@
 #![allow(dead_code)]
 
 use anyhow::{Context, Result, anyhow, bail};
-use db_layer::{Benchmarker, DBTranslationLayer, Db};
+use db_layer::{Benchmarker, Db};
 use rand::prelude::SliceRandom;
 use rand::{Rng, SeedableRng};
 use rand_xoshiro::Xoshiro256Plus;
@@ -36,9 +36,7 @@ use crate::keyset::{
     BloomFilterKeySet, EmptyKeySet, Key, KeySet, VecBloomFilterKeySet, VecHashMapIndexKeySet,
     VecKeySet, VecOptionKeySet,
 };
-use crate::spec::{
-    CharacterSet, RangeFormat, StringExpr, WorkloadSpec, WorkloadSpecGroup, WorkloadSpecSection,
-};
+use crate::spec::{CharacterSet, RangeFormat, StringExpr, WorkloadSpec, WorkloadSpecSection};
 
 pub trait OperationHandler {
     fn handle_insert(
@@ -299,6 +297,9 @@ pub struct OperationTimings {
     time_query_point: Duration,
     time_query_point_empty: Duration,
     time_query_range: Duration,
+    time_blind_point_query: Duration,
+    time_blind_point_delete: Duration,
+    time_blind_range_query: Duration,
 }
 
 impl Default for OperationTimings {
@@ -314,6 +315,9 @@ impl Default for OperationTimings {
             time_query_point: Duration::from_secs(0),
             time_query_point_empty: Duration::from_secs(0),
             time_query_range: Duration::from_secs(0),
+            time_blind_point_query: Duration::from_secs(0),
+            time_blind_point_delete: Duration::from_secs(0),
+            time_blind_range_query: Duration::from_secs(0),
         }
     }
 }
@@ -330,6 +334,9 @@ enum Op {
     PointQuery,
     EmptyPointQuery,
     RangeQuery,
+    BlindPointQuery,
+    BlindPointDelete,
+    BlindRangeQuery,
 }
 
 // TODO: Allow for different sections to use different keysets
@@ -350,15 +357,14 @@ pub fn generate_operations<OP: OperationHandler>(
     for section in &workload.sections {
         // TODO: Maybe use an enum here, as in have a function return what should be used, and then
         // have it pick based off an enum
-        let has_inserts_only = (section.has_unique_insert() || section.has_upsert())
-            && !(section.has_update()
-                || section.has_merge()
-                || section.has_query_point()
-                || section.has_query_point_empty()
-                || section.has_delete_point()
-                || section.has_delete_point_empty()
-                || section.has_query_range()
-                || section.has_delete_range());
+        let no_keyset = !(section.has_update()
+            || section.has_merge()
+            || section.has_query_point()
+            || section.has_query_point_empty()
+            || section.has_delete_point()
+            || section.has_delete_point_empty()
+            || section.has_query_range()
+            || section.has_delete_range());
 
         let requires_deletion = section.has_delete_point() || section.has_delete_range();
         let requires_sorting = section.has_query_range() || section.has_delete_range();
@@ -374,7 +380,7 @@ pub fn generate_operations<OP: OperationHandler>(
             || section.has_query_point()
             || section.has_query_range();
 
-        if has_inserts_only {
+        if no_keyset {
             info!("Using EmptyKeySet");
             write_operations_with_keyset(
                 &mut operation_handler,
@@ -469,11 +475,25 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
         })
         .collect();
 
+    let upsert_counts: Vec<usize> = section
+        .groups
+        .iter()
+        .map(|g| {
+            g.inserts
+                .as_ref()
+                .map_or(0, |is| is.op_count.evaluate(&mut rng) as usize)
+        })
+        .collect();
+    let total_upserts: usize = upsert_counts.iter().sum();
+
     let mut keys_valid = keyset_constructor(
         unique_insert_counts.iter().sum(), /*section.insert_count()*/
     );
 
-    for (group, unique_insert_count) in std::iter::zip(&section.groups, unique_insert_counts) {
+    for (group, (unique_insert_count, upsert_count)) in std::iter::zip(
+        &section.groups,
+        std::iter::zip(unique_insert_counts, upsert_counts),
+    ) {
         let rng_ref = &mut rng;
         let mut markers: Vec<Op> = Vec::with_capacity(0 /*group.operation_count()*/);
         let character_set = group
@@ -481,10 +501,6 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
             .or(section.character_set)
             .or(workload.character_set);
 
-        let upsert_count = group
-            .inserts
-            .as_ref()
-            .map_or(0, |is| is.op_count.evaluate(rng_ref) as usize);
         let update_count = group
             .updates
             .as_ref()
@@ -537,14 +553,29 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
         }
 
         let mut key_pool = if let Some(sorted) = &group.sorted {
-            let is = group
-                .unique_inserts
-                .as_ref()
-                .ok_or_else(|| anyhow!("Insert spec must exist if sorted config exists"))?;
+            let is = group.unique_inserts.as_ref();
+            let ups = group.inserts.as_ref();
+
+            if ups.is_none() && is.is_none() {
+                bail!("Insert spec must exist if sorted config exists");
+            };
+
             let mut pool = Vec::with_capacity(unique_insert_count);
-            for _ in 0..unique_insert_count {
-                let key = is.key.generate(rng_ref, is.character_set.or(character_set));
-                pool.push(key);
+
+            if let Some(is) = is {
+                for _ in 0..unique_insert_count {
+                    let key = is.key.generate(rng_ref, is.character_set.or(character_set));
+                    pool.push(key);
+                }
+            }
+
+            if let Some(ups) = ups {
+                for _ in 0..upsert_count {
+                    let key = ups
+                        .key
+                        .generate(rng_ref, ups.character_set.or(character_set));
+                    pool.push(key);
+                }
             }
 
             // reverse sort so that we can pop from the end
@@ -871,6 +902,70 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                     }
                     let duration = Instant::now().duration_since(start);
                     operation_timings.time_delete_range += duration;
+                    if duration > Duration::from_millis(1) {
+                        trace!(?marker, ?duration);
+                    }
+                }
+                Op::BlindPointQuery => {
+                    let start = Instant::now();
+                    let bpq = group.blind_point_queries.as_ref().ok_or_else(||
+                        anyhow!("BlindPointQuery marker can only appear when blind_point_queries is not None"))?;
+
+                    if keys_valid.is_empty() {
+                        bail!("Cannot have range deletes when there are no valid keys.");
+                    }
+
+                    let key = bpq
+                        .key
+                        .generate(rng_ref, bpq.character_set.or(character_set));
+
+                    operation_handler.handle_point_query(&key)?;
+
+                    let duration = Instant::now().duration_since(start);
+                    operation_timings.time_blind_point_query += duration;
+                    if duration > Duration::from_millis(1) {
+                        trace!(?marker, ?duration);
+                    }
+                }
+                Op::BlindPointDelete => {
+                    let start = Instant::now();
+                    let bpd = group.blind_point_deletes.as_ref().ok_or_else(
+                        || anyhow!("BlindPointDelete marker can only appear when blind_point_queries is not None"))?;
+
+                    if keys_valid.is_empty() {
+                        bail!("Cannot have range deletes when there are no valid keys.");
+                    }
+
+                    let key = bpd
+                        .key
+                        .generate(rng_ref, bpd.character_set.or(character_set));
+
+                    operation_handler.handle_point_query(&key)?;
+
+                    let duration = Instant::now().duration_since(start);
+                    operation_timings.time_blind_point_delete += duration;
+                    if duration > Duration::from_millis(1) {
+                        trace!(?marker, ?duration);
+                    }
+                }
+                Op::BlindRangeQuery => {
+                    let start = Instant::now();
+                    let brq = group.blind_range_queries.as_ref().ok_or_else(
+                        || anyhow!("BlindPointDelete marker can only appear when blind_point_queries is not None"))?;
+
+                    if keys_valid.is_empty() {
+                        bail!("Cannot have range deletes when there are no valid keys.");
+                    }
+
+                    let key = brq
+                        .key
+                        .generate(rng_ref, brq.character_set.or(character_set));
+
+                    let count = (brq.selectivity.evaluate(rng_ref) * total_upserts as f64) as usize;
+                    operation_handler.handle_range_query_count(&key, count)?;
+
+                    let duration = Instant::now().duration_since(start);
+                    operation_timings.time_blind_range_query += duration;
                     if duration > Duration::from_millis(1) {
                         trace!(?marker, ?duration);
                     }

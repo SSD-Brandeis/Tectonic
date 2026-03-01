@@ -526,7 +526,6 @@ impl StringExpr {
 }
 
 #[derive(serde::Deserialize, JsonSchema, Clone, Debug)]
-// TODO: Update these to be unique Inserts and add Upserts
 /// Inserts specification.
 pub struct Inserts {
     /// Number of inserts
@@ -655,6 +654,29 @@ pub struct RangeQueries {
 }
 
 #[derive(serde::Deserialize, JsonSchema, Clone, Debug)]
+/// Blind Point Query Specification
+pub struct BlindPointQueries {
+    /// Number of blind point queries
+    pub op_count: NumberExpr,
+    /// Key
+    pub key: StringExpr,
+    #[serde(default)]
+    pub character_set: Option<CharacterSet>,
+}
+
+#[derive(serde::Deserialize, JsonSchema, Clone, Debug)]
+pub struct BlindRangeQueries {
+    /// Number of blind range queries
+    pub op_count: NumberExpr,
+    /// Key
+    pub key: StringExpr,
+    /// Selectivity of range queries. Based off of the range of valid keys, not the full key-space.
+    pub selectivity: NumberExpr,
+    #[serde(default)]
+    pub character_set: Option<CharacterSet>,
+}
+
+#[derive(serde::Deserialize, JsonSchema, Clone, Debug)]
 pub struct Sorted {
     /// The number of displaced operations.
     pub k: NumberExpr,
@@ -675,6 +697,9 @@ pub struct WorkloadSpecGroup {
     pub point_queries: Option<PointQueries>,
     pub empty_point_queries: Option<EmptyPointQueries>,
     pub range_queries: Option<RangeQueries>,
+    pub blind_point_queries: Option<BlindPointQueries>,
+    pub blind_point_deletes: Option<BlindPointQueries>,
+    pub blind_range_queries: Option<BlindRangeQueries>,
     #[serde(default)]
     pub character_set: Option<CharacterSet>,
 }

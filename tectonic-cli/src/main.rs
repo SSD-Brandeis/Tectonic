@@ -1,7 +1,7 @@
 #![allow(clippy::needless_return)]
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
-use db_layer::{benchmark_db, execute_operations};
+use db_layer::execute_operations;
 use rayon::iter::ParallelIterator;
 use rayon::prelude::ParallelBridge;
 use std::{
@@ -212,6 +212,6 @@ fn invoke_benchmark(workload_path: &str, database_name: &str) -> Result<()> {
 fn invoke_schema() -> Result<()> {
     let schema_str = generate_workload_spec_schema().context("Schema generation failed.")?;
     println!("{schema_str}");
+
     return Ok(());
-    Ok(())
 }

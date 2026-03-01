@@ -4,7 +4,7 @@
 use rand::Rng;
 
 use crate::spec::Distribution;
-use bloom::{ASMS, BloomFilter, CountingBloomFilter};
+use bloom::{ASMS, BloomFilter};
 use std::cmp::max;
 use std::collections::{HashMap, HashSet};
 use std::ops::{Bound, Range};

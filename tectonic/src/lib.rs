@@ -573,7 +573,8 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                 .map_or(0, |is| is.op_count.evaluate(&mut rng) as usize)
         })
         .collect();
-    let total_upserts: usize = upsert_counts.iter().sum();
+    let total_entries: usize =
+        upsert_counts.iter().sum::<usize>() + unique_insert_counts.iter().sum::<usize>();
 
     let mut keys_valid = keyset_constructor(
         unique_insert_counts.iter().sum(), /*section.insert_count()*/
@@ -765,16 +766,17 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
         markers.add_op_count(Op::BlindPointDelete, blind_point_delete_count);
         markers.add_op_count(Op::BlindRangeQuery, blind_range_query_count);
         markers.calculate_total();
+        let total_markers = markers.total;
 
         for (i, marker) in markers.enumerate() {
             // FIX: Add this back (need to get total number of operations and store it somewhere)
 
-            // if i.is_multiple_of(markers.len() / 10) {
-            //     debug!(
-            //         "Generating operation {i} ({}%)",
-            //         (i as f64 * 100.0 / markers.len() as f64).round()
-            //     );
-            // }
+            if i.is_multiple_of(total_markers / 10) {
+                debug!(
+                    "Generating operation {i} ({}%)",
+                    (i as f64 * 100.0 / total_markers as f64).round()
+                );
+            }
 
             match marker {
                 Op::UniqueInsert => {
@@ -1071,7 +1073,7 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                         .key
                         .generate(rng_ref, brq.character_set.or(character_set));
 
-                    let count = (brq.selectivity.evaluate(rng_ref) * total_upserts as f64) as usize;
+                    let count = (brq.selectivity.evaluate(rng_ref) * total_entries as f64) as usize;
                     operation_handler.handle_range_query_count(&key, count)?;
 
                     let duration = Instant::now().duration_since(start);

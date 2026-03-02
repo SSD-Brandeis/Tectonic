@@ -2,6 +2,7 @@
 #![feature(btree_cursors)]
 #![feature(trusted_random_access)]
 #![feature(trait_alias)]
+#![feature(variant_count)]
 #![allow(clippy::needless_return)]
 #![allow(dead_code)]
 
@@ -12,7 +13,7 @@ use rand::{Rng, SeedableRng};
 use rand_xoshiro::Xoshiro256Plus;
 use std::fs::File;
 use std::io::{BufWriter, Write};
-use std::iter::repeat_n;
+use std::mem::variant_count;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 use tracing::{debug, info, trace};
@@ -461,6 +462,84 @@ pub fn generate_operations<OP: OperationHandler>(
     return Ok(());
 }
 
+// TODO: Eliminate Marker Array
+// How to do this?
+// Make a new iter that generates the next operation based on how many operations are remaining
+// How to do this? Simple
+// Each operation has a count, and a threshold
+// We also can sum up all remaining operations
+// Then we generate a random value between 0 (or maybe 1) and the current number of operations remaining
+// Whichever threshold the number lands on is the operation we choose
+// We then decrement the count of the operation we chose
+// If all operations have a count of 0, we are done
+
+struct OpCount {
+    op_type: Op,
+    remaining_count: usize,
+}
+
+struct MarkerIter {
+    rng: Xoshiro256Plus,
+    // op_counts: OpCounts,
+    op_count: Vec<OpCount>,
+    total: usize,
+}
+
+impl MarkerIter {
+    fn new(rng: Xoshiro256Plus) -> Self {
+        Self {
+            rng,
+            op_count: Vec::with_capacity(variant_count::<Op>()),
+            total: 0,
+        }
+    }
+
+    fn add_op_count(&mut self, op_type: Op, count: usize) {
+        self.op_count.push(OpCount {
+            op_type,
+            remaining_count: count,
+        });
+    }
+
+    fn calculate_total(&mut self) {
+        self.total = self.op_count.iter().map(|data| data.remaining_count).sum();
+    }
+}
+
+impl Iterator for MarkerIter {
+    type Item = Op;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.total == 0 {
+            return None;
+        }
+        // Generate a random number between 0 and total - 1
+        let num = {
+            if self.total > 1 {
+                self.rng.random_range(0..(self.total - 1))
+            } else {
+                0
+            }
+        };
+        // Check which threshold this number corresponds to
+        let mut threshold = 0;
+        for data in &mut self.op_count {
+            if data.remaining_count == 0 {
+                continue;
+            }
+
+            threshold += data.remaining_count;
+            if num < threshold {
+                data.remaining_count -= 1;
+                self.total -= 1;
+                return Some(data.op_type);
+            }
+        }
+
+        unreachable!("Failed to generate next operation");
+    }
+}
+
 pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
     operation_handler: &mut OP,
     operation_timings: &mut OperationTimings,
@@ -509,7 +588,7 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
         }
 
         let rng_ref = &mut rng;
-        let mut markers: Vec<Op> = Vec::with_capacity(0 /*group.operation_count()*/);
+        let mut markers = MarkerIter::new(rng_ref.clone());
         let character_set = group
             .character_set
             .or(section.character_set)
@@ -545,6 +624,18 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
             .map_or(0, |qpes| qpes.op_count.evaluate(rng_ref) as usize);
         let query_range_count = group
             .range_queries
+            .as_ref()
+            .map_or(0, |drs| drs.op_count.evaluate(rng_ref) as usize);
+        let blind_point_query_count = group
+            .blind_point_queries
+            .as_ref()
+            .map_or(0, |drs| drs.op_count.evaluate(rng_ref) as usize);
+        let blind_point_delete_count = group
+            .blind_point_deletes
+            .as_ref()
+            .map_or(0, |drs| drs.op_count.evaluate(rng_ref) as usize);
+        let blind_range_query_count = group
+            .blind_range_queries
             .as_ref()
             .map_or(0, |drs| drs.op_count.evaluate(rng_ref) as usize);
 
@@ -617,7 +708,7 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
             }
             if let Some(is) = group.unique_inserts.as_ref() {
                 // .expect("inserts to exist if insert count > 0");
-                markers.extend(repeat_n(Op::UniqueInsert, unique_insert_count - 1));
+                markers.add_op_count(Op::UniqueInsert, unique_insert_count - 1);
                 let key = key_pool
                     .as_mut()
                     .and_then(|pool| pool.pop())
@@ -634,14 +725,14 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                 keys_valid.push(key);
             };
         } else {
-            markers.extend(repeat_n(Op::UniqueInsert, unique_insert_count));
+            markers.add_op_count(Op::UniqueInsert, unique_insert_count);
         }
         if keys_valid.is_empty() {
             let ups = group
                 .inserts
                 .as_ref()
                 .expect("upserts to exist if no unique inserts and insert + upsert count > 0");
-            markers.extend(repeat_n(Op::Upsert, upsert_count - 1));
+            markers.add_op_count(Op::Upsert, upsert_count - 1);
 
             let key = key_pool
                 .as_mut()
@@ -659,26 +750,31 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
             )?;
             keys_valid.push(key);
         } else {
-            markers.extend(repeat_n(Op::Upsert, upsert_count));
+            markers.add_op_count(Op::Upsert, upsert_count);
         }
 
-        markers.extend(repeat_n(Op::Update, update_count));
-        markers.extend(repeat_n(Op::Merge, merge_count));
-        markers.extend(repeat_n(Op::PointDelete, delete_point_count));
-        markers.extend(repeat_n(Op::PointDeleteEmpty, delete_point_empty_count));
-        markers.extend(repeat_n(Op::RangeDelete, delete_range_count));
-        markers.extend(repeat_n(Op::PointQuery, query_point_count));
-        markers.extend(repeat_n(Op::EmptyPointQuery, query_point_empty_count));
-        markers.extend(repeat_n(Op::RangeQuery, query_range_count));
-        markers.shuffle(rng_ref);
+        markers.add_op_count(Op::Update, update_count);
+        markers.add_op_count(Op::Merge, merge_count);
+        markers.add_op_count(Op::PointDelete, delete_point_count);
+        markers.add_op_count(Op::PointDeleteEmpty, delete_point_empty_count);
+        markers.add_op_count(Op::RangeDelete, delete_range_count);
+        markers.add_op_count(Op::PointQuery, query_point_count);
+        markers.add_op_count(Op::EmptyPointQuery, query_point_empty_count);
+        markers.add_op_count(Op::RangeQuery, query_range_count);
+        markers.add_op_count(Op::BlindPointQuery, blind_point_query_count);
+        markers.add_op_count(Op::BlindPointDelete, blind_point_delete_count);
+        markers.add_op_count(Op::BlindRangeQuery, blind_range_query_count);
+        markers.calculate_total();
 
-        for (i, marker) in markers.iter().enumerate() {
-            if i.is_multiple_of(markers.len() / 10) {
-                debug!(
-                    "Generating operation {i} ({}%)",
-                    (i as f64 * 100.0 / markers.len() as f64).round()
-                );
-            }
+        for (i, marker) in markers.enumerate() {
+            // FIX: Add this back (need to get total number of operations and store it somewhere)
+
+            // if i.is_multiple_of(markers.len() / 10) {
+            //     debug!(
+            //         "Generating operation {i} ({}%)",
+            //         (i as f64 * 100.0 / markers.len() as f64).round()
+            //     );
+            // }
 
             match marker {
                 Op::UniqueInsert => {

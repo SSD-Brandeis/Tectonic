@@ -126,30 +126,56 @@ fn process_line(line: &[u8], benchmarker: &mut Benchmarker) -> Result<()> {
             let key = line_iter.next().ok_or(anyhow!("Missing Argument"))?;
             benchmarker.handle_point_delete(key)?;
         }
+        [b'S', b'C'] => {
+            let start_key = line_iter.next().ok_or(anyhow!("Missing Argument"))?;
+            let count: usize =
+                str::from_utf8(line_iter.next().ok_or(anyhow!("Missing Argument"))?)?.parse()?;
+
+            benchmarker.handle_range_query_count(start_key, count)?;
+        }
         [b'S'] => {
             let start_key = line_iter.next().ok_or(anyhow!("Missing Argument"))?;
             let bound = line_iter.next().ok_or(anyhow!("Missing Argument"))?;
 
-            if let Ok(str) = str::from_utf8(bound)
-                && let Ok(range) = str.parse::<usize>()
-            {
-                benchmarker.handle_range_query_count(start_key, range)?;
-            } else {
-                benchmarker.handle_range_query(start_key, bound)?;
-            }
+            benchmarker.handle_range_query(start_key, bound)?;
+        }
+        [b'R', b'C'] => {
+            // Range delete
+            let start_key = line_iter.next().ok_or(anyhow!("Missing Argument"))?;
+            let count: usize =
+                str::from_utf8(line_iter.next().ok_or(anyhow!("Missing Argument"))?)?.parse()?;
+
+            benchmarker.handle_range_delete_count(start_key, count)?;
         }
         [b'R'] => {
             // Range delete
             let start_key = line_iter.next().ok_or(anyhow!("Missing Argument"))?;
             let bound = line_iter.next().ok_or(anyhow!("Missing Argument"))?;
 
-            if let Ok(bound) = str::from_utf8(bound)
-                && let Ok(range) = bound.parse::<usize>()
-            {
-                benchmarker.handle_range_delete_count(start_key, range)?;
-            } else {
-                benchmarker.handle_range_delete(start_key, bound)?;
+            benchmarker.handle_range_delete(start_key, bound)?;
+        }
+        [b'F', b'S'] => {
+            let which_benchmarker = match line_iter.next().ok_or(anyhow!("Missing Argument"))? {
+                [b'O'] => BenchmarkerType::Overall,
+                [b'S'] => BenchmarkerType::Section,
+                [b'G'] => BenchmarkerType::Group,
+                _ => bail!("Unknown Benchmarker Type"),
+            };
+            benchmarker.start_stat_flush(which_benchmarker);
+        }
+        [b'F', b'E'] => {
+            let which_benchmarker = match line_iter.next().ok_or(anyhow!("Missing Argument"))? {
+                [b'O'] => BenchmarkerType::Overall,
+                [b'S'] => BenchmarkerType::Section,
+                [b'G'] => BenchmarkerType::Group,
+                _ => bail!("Unknown Benchmarker Type"),
+            };
+            let remaining = line_iter.collect::<Vec<&[u8]>>().join(" ".as_bytes());
+            if remaining.is_empty() {
+                bail!("Missing Argument")
             }
+            let name = str::from_utf8(&remaining)?;
+            benchmarker.end_stat_flush(name, which_benchmarker)?;
         }
         _ => bail!(
             "Unknown operation \"{}\"",
@@ -160,49 +186,29 @@ fn process_line(line: &[u8], benchmarker: &mut Benchmarker) -> Result<()> {
     Ok(())
 }
 
-pub struct Benchmarker<'a> {
-    db_layer: Db,
+#[derive(Default)]
+pub struct BenchmarkerInner<'a> {
     operation_statistics_map: HashMap<&'a str, Statistics>,
     start_time: Option<time::Instant>,
     end_time: Option<time::Instant>,
 }
 
-macro_rules! measure {
-    ($self:ident, $op_key:expr, $call:expr) => {
-        let start_time = time::Instant::now();
-
-        let res = $call;
-
-        let latency = std::time::Instant::now()
-            .duration_since(start_time)
-            .as_micros();
-        let map = $self.operation_statistics_map.entry($op_key).or_default();
-        map.add_latency(latency as u64);
-        if res.is_err() {
-            map.add_error();
-        }
-    };
-}
-
-impl<'a> Benchmarker<'a> {
-    pub fn new(db_layer: Db) -> Self {
-        Self {
-            db_layer,
-            operation_statistics_map: HashMap::new(),
-            start_time: None,
-            end_time: None,
-        }
-    }
-
-    pub fn start(&mut self) {
+impl<'a> BenchmarkerInner<'a> {
+    fn start(&mut self) {
         self.start_time = Some(time::Instant::now());
     }
 
-    pub fn end(&mut self) {
+    fn end(&mut self) {
         self.end_time = Some(time::Instant::now());
     }
 
-    pub fn print_summary(&mut self) {
+    pub fn reset(&mut self) {
+        self.start_time = None;
+        self.end_time = None;
+        self.operation_statistics_map.clear();
+    }
+
+    pub fn print_stats(&mut self) {
         let mut total_operation_counts = 0;
         let mut total_operation_timing_sum = 0;
         // Print out statistics
@@ -289,6 +295,85 @@ impl<'a> Benchmarker<'a> {
             total_operation_timing_sum as f64 / 1000.0
         );
     }
+}
+
+macro_rules! measure {
+    ($self:ident, $op_key:expr, $call:expr) => {
+        let start_time = time::Instant::now();
+        let res = $call;
+        let latency = std::time::Instant::now()
+            .duration_since(start_time)
+            .as_micros();
+        let op_stats = $self
+            .overall
+            .operation_statistics_map
+            .entry($op_key)
+            .or_default();
+        op_stats.add_latency(latency as u64);
+
+        if res.is_err() {
+            op_stats.add_error();
+        };
+
+        if let Some(section_bencher) = &mut $self.section {
+            let op_stats = section_bencher
+                .operation_statistics_map
+                .entry($op_key)
+                .or_default();
+            op_stats.add_latency(latency as u64);
+            if res.is_err() {
+                op_stats.add_error();
+            }
+        }
+
+        if let Some(group_bencher) = &mut $self.group {
+            let op_stats = group_bencher
+                .operation_statistics_map
+                .entry($op_key)
+                .or_default();
+            op_stats.add_latency(latency as u64);
+            if res.is_err() {
+                op_stats.add_error();
+            }
+        }
+    };
+}
+
+pub enum BenchmarkerType {
+    Overall,
+    Section,
+    Group,
+}
+
+pub struct Benchmarker<'a> {
+    db_layer: Db,
+    pub overall: BenchmarkerInner<'a>,
+    pub section: Option<Box<BenchmarkerInner<'a>>>,
+    pub group: Option<Box<BenchmarkerInner<'a>>>,
+}
+
+impl<'a> Benchmarker<'a> {
+    pub fn new(db_layer: Db) -> Self {
+        Self {
+            db_layer,
+            overall: BenchmarkerInner::default(),
+            section: None,
+            group: None,
+        }
+    }
+
+    pub fn start(&mut self) {
+        self.overall.start();
+    }
+
+    pub fn end(&mut self) {
+        self.overall.end();
+    }
+
+    pub fn print_summary(&mut self) {
+        println!("[[***Overall Stats***]]");
+        self.overall.print_stats();
+    }
 
     pub fn handle_insert(&mut self, key: &Key, value: &Value) -> Result<()> {
         // Generate value from string expression
@@ -347,6 +432,54 @@ impl<'a> Benchmarker<'a> {
         );
 
         return Ok(());
+    }
+
+    pub fn start_stat_flush(&mut self, benchmarker: BenchmarkerType) {
+        let new = Box::new(BenchmarkerInner::default());
+
+        let bench_ref = {
+            match benchmarker {
+                BenchmarkerType::Overall => {
+                    panic!("Attempted to initialize flush of overall stats")
+                }
+                BenchmarkerType::Section => {
+                    self.section = Some(new);
+                    self.section
+                        .as_mut()
+                        .expect("Section benchmarker should be some")
+                }
+                BenchmarkerType::Group => {
+                    self.group = Some(new);
+                    self.group
+                        .as_mut()
+                        .expect("Group benchmarker should be some")
+                }
+            }
+            .as_mut()
+        };
+
+        bench_ref.start();
+    }
+
+    pub fn end_stat_flush(&mut self, name: &str, benchmarker: BenchmarkerType) -> Result<()> {
+        println!("[[***Stats for {}***]]", name);
+        let benchmarker = match benchmarker {
+            BenchmarkerType::Overall => bail!("Attempted to flush overall stats"),
+            BenchmarkerType::Section => self
+                .section
+                .as_mut()
+                .ok_or_else(|| anyhow!("No Section Benchmarker"))?,
+            BenchmarkerType::Group => self
+                .group
+                .as_mut()
+                .ok_or_else(|| anyhow!("No Group Benchmarker"))?,
+        };
+        benchmarker.end();
+        benchmarker.print_stats();
+        println!();
+        benchmarker.reset();
+
+        Ok(())
     }
 }
 

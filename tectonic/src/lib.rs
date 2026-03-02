@@ -6,7 +6,7 @@
 #![allow(dead_code)]
 
 use anyhow::{Context, Result, anyhow, bail};
-use db_layer::{Benchmarker, Db};
+use db_layer::{Benchmarker, BenchmarkerType, Db};
 use rand::prelude::SliceRandom;
 use rand::{Rng, SeedableRng};
 use rand_xoshiro::Xoshiro256Plus;
@@ -66,6 +66,8 @@ pub trait OperationHandler {
     fn handle_range_query_count(&mut self, key1: &Key, count: usize) -> Result<()>;
     fn handle_range_delete(&mut self, key1: &Key, key2: &Key) -> Result<()>;
     fn handle_range_delete_count(&mut self, key1: &Key, count: usize) -> Result<()>;
+    fn start_stat_flush(&mut self, benchmarker: BenchmarkerType) -> Result<()>;
+    fn end_stat_flush(&mut self, name: &str, benchmarker: BenchmarkerType) -> Result<()>;
 }
 
 struct WriteHandler<'a, W: Write>(&'a mut W);
@@ -78,7 +80,14 @@ impl<'a, W: Write> OperationHandler for WriteHandler<'a, W> {
         val: &StringExpr,
         character_set: Option<CharacterSet>,
     ) -> Result<()> {
-        AsciiOperationFormatter::write_insert(self.0, rng, key, val, character_set)
+        let w = &mut self.0;
+        w.write_all("I ".as_bytes())?;
+        w.write_all(key)?;
+        w.write_all(" ".as_bytes())?;
+        val.write_all(w, rng, character_set)?;
+        w.write_all("\n".as_bytes())?;
+
+        return Ok(());
     }
 
     fn handle_update(
@@ -88,7 +97,14 @@ impl<'a, W: Write> OperationHandler for WriteHandler<'a, W> {
         val: &StringExpr,
         character_set: Option<CharacterSet>,
     ) -> Result<()> {
-        AsciiOperationFormatter::write_update(self.0, rng, key, val, character_set)
+        let w = &mut self.0;
+        w.write_all("U ".as_bytes())?;
+        w.write_all(key)?;
+        w.write_all(" ".as_bytes())?;
+        val.write_all(w, rng, character_set)?;
+        w.write_all("\n".as_bytes())?;
+
+        return Ok(());
     }
 
     fn handle_merge(
@@ -98,73 +114,7 @@ impl<'a, W: Write> OperationHandler for WriteHandler<'a, W> {
         val: &StringExpr,
         character_set: Option<CharacterSet>,
     ) -> Result<()> {
-        AsciiOperationFormatter::write_merge(self.0, rng, key, val, character_set)
-    }
-
-    fn handle_point_delete(&mut self, key: &Key) -> Result<()> {
-        AsciiOperationFormatter::write_point_delete(self.0, key)
-    }
-
-    fn handle_point_query(&mut self, key: &Key) -> Result<()> {
-        AsciiOperationFormatter::write_point_query(self.0, key)
-    }
-
-    fn handle_range_query(&mut self, key1: &Key, key2: &Key) -> Result<()> {
-        AsciiOperationFormatter::write_range_query(self.0, key1, key2)
-    }
-
-    fn handle_range_query_count(&mut self, key1: &Key, count: usize) -> Result<()> {
-        AsciiOperationFormatter::write_range_query_count(self.0, key1, count)
-    }
-
-    fn handle_range_delete(&mut self, key1: &Key, key2: &Key) -> Result<()> {
-        AsciiOperationFormatter::write_range_delete(self.0, key1, key2)
-    }
-
-    fn handle_range_delete_count(&mut self, key1: &Key, count: usize) -> Result<()> {
-        AsciiOperationFormatter::write_range_delete_count(self.0, key1, count)
-    }
-}
-
-struct AsciiOperationFormatter;
-impl AsciiOperationFormatter {
-    fn write_insert(
-        w: &mut impl Write,
-        rng: &mut impl Rng,
-        key: &Key,
-        val: &StringExpr,
-        character_set: Option<CharacterSet>,
-    ) -> Result<()> {
-        w.write_all("I ".as_bytes())?;
-        w.write_all(key)?;
-        w.write_all(" ".as_bytes())?;
-        val.write_all(w, rng, character_set)?;
-        w.write_all("\n".as_bytes())?;
-
-        return Ok(());
-    }
-    fn write_update(
-        w: &mut impl Write,
-        rng: &mut impl Rng,
-        key: &Key,
-        val: &StringExpr,
-        character_set: Option<CharacterSet>,
-    ) -> Result<()> {
-        w.write_all("U ".as_bytes())?;
-        w.write_all(key)?;
-        w.write_all(" ".as_bytes())?;
-        val.write_all(w, rng, character_set)?;
-        w.write_all("\n".as_bytes())?;
-
-        return Ok(());
-    }
-    fn write_merge(
-        w: &mut impl Write,
-        rng: &mut impl Rng,
-        key: &Key,
-        val: &StringExpr,
-        character_set: Option<CharacterSet>,
-    ) -> Result<()> {
+        let w = &mut self.0;
         w.write_all("M ".as_bytes())?;
         w.write_all(key)?;
         w.write_all(" ".as_bytes())?;
@@ -173,21 +123,27 @@ impl AsciiOperationFormatter {
 
         return Ok(());
     }
-    fn write_point_delete(w: &mut impl Write, key: &Key) -> Result<()> {
+
+    fn handle_point_delete(&mut self, key: &Key) -> Result<()> {
+        let w = &mut self.0;
         w.write_all("D ".as_bytes())?;
         w.write_all(key)?;
         w.write_all("\n".as_bytes())?;
 
         return Ok(());
     }
-    fn write_point_query(w: &mut impl Write, key: &Key) -> Result<()> {
+
+    fn handle_point_query(&mut self, key: &Key) -> Result<()> {
+        let w = &mut self.0;
         w.write_all("P ".as_bytes())?;
         w.write_all(key)?;
         w.write_all("\n".as_bytes())?;
 
         return Ok(());
     }
-    fn write_range_query(w: &mut impl Write, key1: &Key, key2: &Key) -> Result<()> {
+
+    fn handle_range_query(&mut self, key1: &Key, key2: &Key) -> Result<()> {
+        let w = &mut self.0;
         w.write_all("S ".as_bytes())?;
         w.write_all(key1)?;
         w.write_all(" ".as_bytes())?;
@@ -196,7 +152,9 @@ impl AsciiOperationFormatter {
 
         return Ok(());
     }
-    fn write_range_query_count(w: &mut impl Write, key1: &Key, count: usize) -> Result<()> {
+
+    fn handle_range_query_count(&mut self, key1: &Key, count: usize) -> Result<()> {
+        let w = &mut self.0;
         w.write_all("S ".as_bytes())?;
         w.write_all(key1)?;
         w.write_all(" ".as_bytes())?;
@@ -205,7 +163,9 @@ impl AsciiOperationFormatter {
 
         return Ok(());
     }
-    fn write_range_delete(w: &mut impl Write, key1: &Key, key2: &Key) -> Result<()> {
+
+    fn handle_range_delete(&mut self, key1: &Key, key2: &Key) -> Result<()> {
+        let w = &mut self.0;
         w.write_all("R ".as_bytes())?;
         w.write_all(key1)?;
         w.write_all(" ".as_bytes())?;
@@ -214,7 +174,9 @@ impl AsciiOperationFormatter {
 
         return Ok(());
     }
-    fn write_range_delete_count(w: &mut impl Write, key1: &Key, count: usize) -> Result<()> {
+
+    fn handle_range_delete_count(&mut self, key1: &Key, count: usize) -> Result<()> {
+        let w = &mut self.0;
         w.write_all("R ".as_bytes())?;
         w.write_all(key1)?;
         w.write_all(" ".as_bytes())?;
@@ -222,6 +184,38 @@ impl AsciiOperationFormatter {
         w.write_all("\n".as_bytes())?;
 
         return Ok(());
+    }
+
+    fn start_stat_flush(&mut self, benchmarker: BenchmarkerType) -> Result<()> {
+        let writer = &mut self.0;
+        writer.write_all("FS ".as_bytes())?;
+        writer.write_all({
+            match benchmarker {
+                BenchmarkerType::Overall => "O".as_bytes(),
+                BenchmarkerType::Section => "S".as_bytes(),
+                BenchmarkerType::Group => "G".as_bytes(),
+            }
+        })?;
+        writer.write_all("\n".as_bytes())?;
+
+        Ok(())
+    }
+
+    fn end_stat_flush(&mut self, name: &str, benchmarker: BenchmarkerType) -> Result<()> {
+        let writer = &mut self.0;
+        writer.write_all("FE ".as_bytes())?;
+        writer.write_all({
+            match benchmarker {
+                BenchmarkerType::Overall => "O".as_bytes(),
+                BenchmarkerType::Section => "S".as_bytes(),
+                BenchmarkerType::Group => "G".as_bytes(),
+            }
+        })?;
+        writer.write_all(" ".as_bytes())?;
+        writer.write_all(name.as_bytes())?;
+        writer.write_all("\n".as_bytes())?;
+
+        Ok(())
     }
 }
 
@@ -283,6 +277,18 @@ impl<'a, 'b> OperationHandler for DBHandler<'a, 'b> {
 
     fn handle_range_delete_count(&mut self, key1: &Key, count: usize) -> Result<()> {
         self.0.handle_range_delete_count(key1, count)
+    }
+
+    fn start_stat_flush(&mut self, benchmarker: BenchmarkerType) -> Result<()> {
+        self.0.start_stat_flush(benchmarker);
+
+        Ok(())
+    }
+
+    fn end_stat_flush(&mut self, name: &str, benchmarker: BenchmarkerType) -> Result<()> {
+        self.0.end_stat_flush(name, benchmarker)?;
+
+        Ok(())
     }
 }
 
@@ -462,6 +468,10 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
     section: &WorkloadSpecSection,
     keyset_constructor: impl Fn(usize) -> KeySetT,
 ) -> Result<()> {
+    if section.flush_stats.is_some() {
+        operation_handler.start_stat_flush(BenchmarkerType::Section)?;
+    }
+
     let mut rng = Xoshiro256Plus::from_os_rng();
     // let mut keys_prev_sections = BloomFilter::with_rate(0.01, todo!());
 
@@ -494,6 +504,10 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
         &section.groups,
         std::iter::zip(unique_insert_counts, upsert_counts),
     ) {
+        if group.flush_stats.is_some() {
+            operation_handler.start_stat_flush(BenchmarkerType::Group)?;
+        }
+
         let rng_ref = &mut rng;
         let mut markers: Vec<Op> = Vec::with_capacity(0 /*group.operation_count()*/);
         let character_set = group
@@ -972,6 +986,14 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                 }
             }
         }
+
+        if let Some(flush_stats) = &group.flush_stats {
+            operation_handler.end_stat_flush(&flush_stats.name, BenchmarkerType::Group)?;
+        }
+    }
+
+    if let Some(flush_stats) = &section.flush_stats {
+        operation_handler.end_stat_flush(&flush_stats.name, BenchmarkerType::Section)?;
     }
 
     return Ok(());

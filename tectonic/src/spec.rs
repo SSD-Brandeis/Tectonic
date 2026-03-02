@@ -685,6 +685,11 @@ pub struct Sorted {
 }
 
 #[derive(serde::Deserialize, JsonSchema, Clone, Debug)]
+pub struct SaveStats {
+    pub name: String,
+}
+
+#[derive(serde::Deserialize, JsonSchema, Clone, Debug)]
 pub struct WorkloadSpecGroup {
     pub sorted: Option<Sorted>,
     pub unique_inserts: Option<Inserts>,
@@ -702,6 +707,8 @@ pub struct WorkloadSpecGroup {
     pub blind_range_queries: Option<BlindRangeQueries>,
     #[serde(default)]
     pub character_set: Option<CharacterSet>,
+
+    pub save_stats: Option<SaveStats>,
 }
 
 #[derive(serde::Deserialize, JsonSchema, Default, Copy, Clone, Debug)]
@@ -733,6 +740,8 @@ pub struct WorkloadSpecSection {
     /// This is useful when the keyspace is much larger than the number of keys being generated, as it can greatly decrease generation time.
     #[serde(default)]
     pub skip_key_contains_check: bool,
+
+    pub save_stats: Option<SaveStats>,
 }
 
 impl WorkloadSpecSection {

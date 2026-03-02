@@ -155,7 +155,7 @@ impl<'a, W: Write> OperationHandler for WriteHandler<'a, W> {
 
     fn handle_range_query_count(&mut self, key1: &Key, count: usize) -> Result<()> {
         let w = &mut self.0;
-        w.write_all("S ".as_bytes())?;
+        w.write_all("SC ".as_bytes())?;
         w.write_all(key1)?;
         w.write_all(" ".as_bytes())?;
         w.write_all(count.to_string().as_bytes())?;
@@ -177,7 +177,7 @@ impl<'a, W: Write> OperationHandler for WriteHandler<'a, W> {
 
     fn handle_range_delete_count(&mut self, key1: &Key, count: usize) -> Result<()> {
         let w = &mut self.0;
-        w.write_all("R ".as_bytes())?;
+        w.write_all("RC ".as_bytes())?;
         w.write_all(key1)?;
         w.write_all(" ".as_bytes())?;
         w.write_all(count.to_string().as_bytes())?;
@@ -468,7 +468,7 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
     section: &WorkloadSpecSection,
     keyset_constructor: impl Fn(usize) -> KeySetT,
 ) -> Result<()> {
-    if section.flush_stats.is_some() {
+    if section.save_stats.is_some() {
         operation_handler.start_stat_flush(BenchmarkerType::Section)?;
     }
 
@@ -504,7 +504,7 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
         &section.groups,
         std::iter::zip(unique_insert_counts, upsert_counts),
     ) {
-        if group.flush_stats.is_some() {
+        if group.save_stats.is_some() {
             operation_handler.start_stat_flush(BenchmarkerType::Group)?;
         }
 
@@ -987,13 +987,13 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
             }
         }
 
-        if let Some(flush_stats) = &group.flush_stats {
-            operation_handler.end_stat_flush(&flush_stats.name, BenchmarkerType::Group)?;
+        if let Some(save_stats) = &group.save_stats {
+            operation_handler.end_stat_flush(&save_stats.name, BenchmarkerType::Group)?;
         }
     }
 
-    if let Some(flush_stats) = &section.flush_stats {
-        operation_handler.end_stat_flush(&flush_stats.name, BenchmarkerType::Section)?;
+    if let Some(save_stats) = &section.save_stats {
+        operation_handler.end_stat_flush(&save_stats.name, BenchmarkerType::Section)?;
     }
 
     return Ok(());

@@ -128,15 +128,17 @@ pub trait KeySet {
     );
 }
 
-pub struct EmptyKeySet();
+pub struct EmptyKeySet {
+    len: usize,
+}
 
 impl KeySet for EmptyKeySet {
     fn new(_capacity: usize) -> Self {
-        Self()
+        Self { len: 0 }
     }
 
     fn len(&self) -> usize {
-        0
+        self.len
     }
 
     fn is_empty(&self) -> bool {
@@ -145,7 +147,9 @@ impl KeySet for EmptyKeySet {
         false
     }
 
-    fn push(&mut self, _key: Key) {}
+    fn push(&mut self, _key: Key) {
+        self.len += 1;
+    }
 
     fn remove(&mut self, _idx: usize) -> Key {
         panic!("Tried to remove from empty keyset")

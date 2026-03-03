@@ -9,6 +9,7 @@
 use anyhow::{Context, Result, anyhow, bail};
 use db_layer::{Benchmarker, BenchmarkerType, Db};
 use rand::prelude::SliceRandom;
+use rand::seq::IndexedMutRandom;
 use rand::{Rng, SeedableRng};
 use rand_xoshiro::Xoshiro256Plus;
 use std::fs::File;
@@ -504,6 +505,11 @@ impl MarkerIter {
     fn calculate_total(&mut self) {
         self.total = self.op_count.iter().map(|data| data.remaining_count).sum();
     }
+
+    fn prepare_iter(&mut self) {
+        self.calculate_total();
+        self.op_count.shuffle(&mut self.rng);
+    }
 }
 
 impl Iterator for MarkerIter {
@@ -513,30 +519,37 @@ impl Iterator for MarkerIter {
         if self.total == 0 {
             return None;
         }
+        let op = self
+            .op_count
+            .choose_weighted_mut(&mut self.rng, |op_count| op_count.remaining_count)
+            .ok()?;
+        op.remaining_count -= 1;
+        self.total -= 1;
+        return Some(op.op_type);
         // Generate a random number between 0 and total - 1
-        let num = {
-            if self.total > 1 {
-                self.rng.random_range(0..(self.total - 1))
-            } else {
-                0
-            }
-        };
-        // Check which threshold this number corresponds to
-        let mut threshold = 0;
-        for data in &mut self.op_count {
-            if data.remaining_count == 0 {
-                continue;
-            }
-
-            threshold += data.remaining_count;
-            if num < threshold {
-                data.remaining_count -= 1;
-                self.total -= 1;
-                return Some(data.op_type);
-            }
-        }
-
-        unreachable!("Failed to generate next operation");
+        // let num = {
+        //     if self.total > 1 {
+        //         self.rng.random_range(0..(self.total - 1))
+        //     } else {
+        //         0
+        //     }
+        // };
+        // // Check which threshold this number corresponds to
+        // let mut threshold = 0;
+        // for data in &mut self.op_count {
+        //     if data.remaining_count == 0 {
+        //         continue;
+        //     }
+        //
+        //     threshold += data.remaining_count;
+        //     if num < threshold {
+        //         data.remaining_count -= 1;
+        //         self.total -= 1;
+        //         return Some(data.op_type);
+        //     }
+        // }
+        //
+        // unreachable!("Failed to generate next operation");
     }
 }
 
@@ -765,7 +778,7 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
         markers.add_op_count(Op::BlindPointQuery, blind_point_query_count);
         markers.add_op_count(Op::BlindPointDelete, blind_point_delete_count);
         markers.add_op_count(Op::BlindRangeQuery, blind_range_query_count);
-        markers.calculate_total();
+        markers.prepare_iter();
         let total_markers = markers.total;
 
         for (i, marker) in markers.enumerate() {

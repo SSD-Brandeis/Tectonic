@@ -6,8 +6,10 @@
 #![allow(clippy::needless_return)]
 #![allow(dead_code)]
 
+use crate::spec::Scalable;
 use anyhow::{Context, Result, anyhow, bail};
 use db_layer::{Benchmarker, BenchmarkerType, Db};
+use indicatif::{ProgressBar, ProgressStyle};
 use rand::prelude::SliceRandom;
 use rand::seq::IndexedMutRandom;
 use rand::{Rng, SeedableRng};
@@ -362,9 +364,7 @@ pub fn generate_operations<OP: OperationHandler>(
     // just a set
     let mut operation_timings = OperationTimings::default();
 
-    for section in &workload.sections {
-        // TODO: Maybe use an enum here, as in have a function return what should be used, and then
-        // have it pick based off an enum
+    for (i, section) in workload.sections.iter().enumerate() {
         let no_keyset = !(section.has_update()
             || section.has_merge()
             || section.has_query_point()
@@ -395,6 +395,7 @@ pub fn generate_operations<OP: OperationHandler>(
                 &mut operation_timings,
                 workload,
                 section,
+                i,
                 EmptyKeySet::new,
             )?
         } else if (requires_deletion) && (requires_sorting) {
@@ -405,6 +406,7 @@ pub fn generate_operations<OP: OperationHandler>(
                 &mut operation_timings,
                 workload,
                 section,
+                i,
                 VecOptionKeySet::new,
             )?
         } else if requires_deletion {
@@ -414,6 +416,7 @@ pub fn generate_operations<OP: OperationHandler>(
                 &mut operation_timings,
                 workload,
                 section,
+                i,
                 VecHashMapIndexKeySet::new,
             )?
         } else if requires_contains_check && requires_random_element {
@@ -423,6 +426,7 @@ pub fn generate_operations<OP: OperationHandler>(
                 &mut operation_timings,
                 workload,
                 section,
+                i,
                 VecBloomFilterKeySet::new,
             )?
         } else if requires_contains_check {
@@ -432,6 +436,7 @@ pub fn generate_operations<OP: OperationHandler>(
                 &mut operation_timings,
                 workload,
                 section,
+                i,
                 BloomFilterKeySet::new,
             )?
         } else {
@@ -441,6 +446,7 @@ pub fn generate_operations<OP: OperationHandler>(
                 &mut operation_timings,
                 workload,
                 section,
+                i,
                 VecKeySet::new,
             )?
         }
@@ -558,6 +564,7 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
     operation_timings: &mut OperationTimings,
     workload: &WorkloadSpec,
     section: &WorkloadSpecSection,
+    section_num: usize,
     keyset_constructor: impl Fn(usize) -> KeySetT,
 ) -> Result<()> {
     if section.save_stats.is_some() {
@@ -593,10 +600,12 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
         unique_insert_counts.iter().sum(), /*section.insert_count()*/
     );
 
-    for (group, (unique_insert_count, upsert_count)) in std::iter::zip(
+    for (group_num, (group, (unique_insert_count, upsert_count))) in std::iter::zip(
         &section.groups,
         std::iter::zip(unique_insert_counts, upsert_counts),
-    ) {
+    )
+    .enumerate()
+    {
         if group.save_stats.is_some() {
             operation_handler.start_stat_flush(BenchmarkerType::Group)?;
         }
@@ -781,7 +790,12 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
         markers.prepare_iter();
         let total_markers = markers.total;
 
-        for (i, marker) in markers.enumerate() {
+        eprintln!("[Generating] Section {} | Group {}", section_num, group_num);
+        let progress_bar = ProgressBar::new(total_markers as u64);
+        progress_bar
+            .set_style(ProgressStyle::default_bar().template("{bar:40} {percent}% ({eta})")?);
+
+        for (i, marker) in progress_bar.wrap_iter(markers.enumerate()) {
             // FIX: Add this back (need to get total number of operations and store it somewhere)
 
             if i.is_multiple_of(total_markers / 10) {
@@ -1101,6 +1115,8 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
         if let Some(save_stats) = &group.save_stats {
             operation_handler.end_stat_flush(&save_stats.name, BenchmarkerType::Group)?;
         }
+
+        progress_bar.finish_and_clear();
     }
 
     if let Some(save_stats) = &section.save_stats {
@@ -1123,14 +1139,86 @@ pub fn generate_workload(workload_spec_string: String, output_file: &PathBuf) ->
     Ok(())
 }
 
+pub fn generate_ycsb_workload(
+    workload_spec_string: String,
+    output_file: &PathBuf,
+    scale: f64,
+) -> Result<()> {
+    let mut workload_spec: WorkloadSpec =
+        serde_json::from_str(workload_spec_string.as_str()).context("Parsing spec file")?;
+    drop(workload_spec_string);
+    println!("Scaling spec");
+    scale_spec(&mut workload_spec, scale);
+    let mut buf_writer = BufWriter::with_capacity(1024 * 1024, File::create(output_file)?);
+    let write_handler = WriteHandler(&mut buf_writer);
+    generate_operations(write_handler, &workload_spec)?;
+    buf_writer.flush()?;
+
+    Ok(())
+}
+
+pub fn benchmark_ycsb_workload(
+    workload_spec_string: String,
+    database_name: &str,
+    scale: f64,
+) -> Result<()> {
+    let mut workload_spec: WorkloadSpec =
+        serde_json::from_str(&workload_spec_string).context("Parsing spec file")?;
+    drop(workload_spec_string);
+    scale_spec(&mut workload_spec, scale);
+    let mut benchmarker = Benchmarker::new(Db::new(database_name)?);
+    benchmarker.start();
+    generate_operations(DBHandler(&mut benchmarker), &workload_spec)?;
+    benchmarker.end();
+    benchmarker.print_summary();
+    Ok(())
+}
+
+macro_rules! scale_fields {
+    ($group:expr, $scale:expr, [$($field:ident),*]) => {
+        $(
+            if let Some(ref mut op) = $group.$field {
+                op.scale($scale);
+            }
+        )*
+    };
+}
+
+fn scale_spec(workload_spec: &mut WorkloadSpec, scale: f64) {
+    for section in workload_spec.sections.iter_mut() {
+        for group in section.groups.iter_mut() {
+            scale_fields!(
+                group,
+                scale,
+                [
+                    unique_inserts,
+                    inserts,
+                    updates,
+                    merges,
+                    point_deletes,
+                    empty_point_deletes,
+                    range_deletes,
+                    point_queries,
+                    empty_point_queries,
+                    range_queries,
+                    blind_point_queries,
+                    blind_point_deletes,
+                    blind_range_queries
+                ]
+            );
+        }
+    }
+}
+
 pub fn generate_workload_spec_schema() -> serde_json::Result<String> {
     let schema = schemars::schema_for!(WorkloadSpec);
     return serde_json::to_string_pretty(&schema);
 }
 
-pub fn benchmark_workload(workload_spec_string: &str, database_name: &str) -> Result<()> {
+pub fn benchmark_workload(workload_spec_string: String, database_name: &str) -> Result<()> {
     let workload_spec: WorkloadSpec =
-        serde_json::from_str(workload_spec_string).context("Parsing spec file")?;
+        serde_json::from_str(&workload_spec_string).context("Parsing spec file")?;
+    drop(workload_spec_string);
     let mut benchmarker = Benchmarker::new(Db::new(database_name)?);
     benchmarker.start();
     generate_operations(DBHandler(&mut benchmarker), &workload_spec)?;

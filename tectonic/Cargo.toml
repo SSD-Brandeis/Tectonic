@@ -15,6 +15,8 @@ serde = { version = "1.0.219", features = ["serde_derive"] }
 tracing.workspace = true
 statrs = "0.18.0"
 db-layer = { path = "../db-layer/" }
+bplustree = "0.1.0"
+indicatif = "0.18.4"
 
 [dev-dependencies]
 criterion = { version = "0.7.0", features = ["html_reports"] }

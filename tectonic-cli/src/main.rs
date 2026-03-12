@@ -1,5 +1,6 @@
 #![allow(clippy::needless_return)]
 use anyhow::{Context, Result, bail};
+use clap::Args;
 use clap::{Parser, Subcommand};
 use db_layer::execute_operations;
 use rayon::iter::ParallelIterator;
@@ -8,7 +9,10 @@ use std::{
     fs,
     path::{Path, PathBuf},
 };
-use tectonic::{benchmark_workload, generate_workload, generate_workload_spec_schema};
+use tectonic::{
+    benchmark_workload, benchmark_ycsb_workload, generate_workload, generate_workload_spec_schema,
+    generate_ycsb_workload,
+};
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 use walkdir::WalkDir;
@@ -51,6 +55,28 @@ enum Command {
         #[arg(short = 'd', long = "database")]
         database: String,
     },
+    Ycsb {
+        #[arg(short = 'w', long = "name")]
+        workload_name: String,
+        #[arg(short = 's', long = "scale")]
+        scale: Option<f64>,
+        /// Also benchmark the generated workload against a certain database
+        #[arg(short = 'b', long = "benchmark")]
+        benchmark: Option<String>,
+        /// Output file. Defaults to the same directory as the workload spec.
+        #[arg(short = 'o', long = "output", required = false)]
+        output: Option<String>,
+    },
+    KvBench {
+        #[arg(short = 'w', long = "name")]
+        workload_name: String,
+        /// Also benchmark the generated workload against a certain database
+        #[arg(short = 'b', long = "benchmark")]
+        benchmark: Option<String>,
+        /// Output file. Defaults to the same directory as the workload spec.
+        #[arg(short = 'o', long = "output", required = false)]
+        output: Option<String>,
+    },
 }
 
 fn main() -> Result<()> {
@@ -63,19 +89,120 @@ fn main() -> Result<()> {
         Command::Generate {
             workload_path,
             output,
-        } => invoke_generate(&workload_path, output.as_deref()),
-        Command::Schema => invoke_schema(),
+        } => {
+            return invoke_generate(
+                &workload_path,
+                output.as_deref(),
+                |workload_spec_string, output_file_path| {
+                    generate_workload(workload_spec_string, output_file_path)
+                },
+            );
+        }
+        Command::Schema => return invoke_schema(),
         Command::Execute {
             input_file,
             database,
         } => {
-            execute_operations(&database, input_file)?;
-            Ok(())
+            return execute_operations(&database, input_file);
         }
         Command::Benchmark {
             workload_path,
             database,
-        } => invoke_benchmark(&workload_path, &database),
+        } => invoke_benchmark(
+            &workload_path,
+            &database,
+            |workload_spec_string, database_name| {
+                benchmark_workload(workload_spec_string, database_name)
+            },
+        ),
+        Command::Ycsb {
+            scale,
+            workload_name,
+            benchmark,
+            output,
+        } => {
+            let scale = scale.unwrap_or(1.0);
+            if !scale.is_normal() || scale <= 0.0 {
+                bail!("Scale must be normal and more than 0");
+            }
+
+            let workload_name = match workload_name.to_lowercase().as_str() {
+                "a" | "workloada" => "a",
+                "b" | "workloadb" => "b",
+                "c" | "workloadc" => "c",
+                "d" | "workloadd" => "d",
+                "e" | "workloade" => "e",
+                "f" | "workloadf" => "f",
+                _ => bail!("Unknown YCSB workload: {:?}", workload_name),
+            };
+            let workload_path = format!(
+                "{}/../example-specs/ycsb/{}.spec.json",
+                env!("CARGO_MANIFEST_DIR"),
+                workload_name
+            );
+            if let Some(db_name) = benchmark {
+                if output.is_some() {
+                    eprintln!("[WARNING] Output flag does not do anything in benchmark mode");
+                }
+                return invoke_benchmark(
+                    &workload_path,
+                    &db_name,
+                    |workload_spec_string, database_name| {
+                        benchmark_ycsb_workload(workload_spec_string, database_name, scale)
+                    },
+                );
+            } else {
+                let output = Some(output.unwrap_or_else(|| format!("ycsb_{}.txt", workload_name)));
+                return invoke_generate(
+                    workload_path.as_str(),
+                    output.as_deref(),
+                    |workload_spec_string, output_path| {
+                        generate_ycsb_workload(workload_spec_string, output_path, scale)
+                    },
+                );
+            }
+        }
+        Command::KvBench {
+            workload_name,
+            benchmark,
+            output,
+        } => {
+            let workload_name = match workload_name.to_lowercase().as_str() {
+                "1" | "i" => "i",
+                "2" | "ii" => "ii",
+                "3" | "iii" => "iii",
+                "4" | "iv" => "iv",
+                "5" | "v" => "v",
+                _ => bail!("Unknown KVBench workload: {:?}", workload_name),
+            };
+            let workload_path = format!(
+                "{}/../example-specs/kvbench/{}.spec.json",
+                env!("CARGO_MANIFEST_DIR"),
+                workload_name
+            );
+            if let Some(db_name) = benchmark {
+                if output.is_some() {
+                    eprintln!("[WARNING] Output flag does not do anything in benchmark mode");
+                }
+                return invoke_benchmark(
+                    &workload_path,
+                    &db_name,
+                    |workload_spec_string, database_name| {
+                        benchmark_workload(workload_spec_string, database_name)
+                    },
+                );
+            } else {
+                let output =
+                    Some(output.unwrap_or_else(|| format!("kvbench_{}.txt", workload_name)));
+                return invoke_generate(
+                    workload_path.as_str(),
+                    output.as_deref(),
+                    |workload_spec_string, output_path| {
+                        generate_workload(workload_spec_string, output_path)
+                    },
+                );
+            }
+        }
     }
 }
 
@@ -103,7 +230,11 @@ fn spec_path_to_workload_name(spec_path: impl AsRef<Path>) -> String {
 }
 
 /// Generate workload(s) from a file or folder of workload specifications.
-fn invoke_generate(workload_path: &str, output: Option<&str>) -> Result<()> {
+fn invoke_generate(
+    workload_path: &str,
+    output: Option<&str>,
+    generate_func: impl Fn(String, &PathBuf) -> Result<()> + Send + Sync,
+) -> Result<()> {
     let workload_path = PathBuf::from(workload_path);
     if !workload_path.exists() {
         bail!("File or folder does not exist {}", workload_path.display());
@@ -143,7 +274,7 @@ fn invoke_generate(workload_path: &str, output: Option<&str>) -> Result<()> {
                 let mut output_file_path = output_dir.clone();
                 output_file_path.push(output_file);
 
-                return generate_workload(contents, &output_file_path);
+                return generate_func(contents, &output_file_path);
             })
             .collect::<Result<Vec<_>>>()?;
     } else if workload_path.is_file() {
@@ -153,7 +284,7 @@ fn invoke_generate(workload_path: &str, output: Option<&str>) -> Result<()> {
 
         let contents = fs::read_to_string(&workload_path)?;
 
-        generate_workload(contents, &output_file)?;
+        generate_func(contents, &output_file)?;
     } else {
         unreachable!("Path is neither a file nor a directory");
     };
@@ -162,45 +293,22 @@ fn invoke_generate(workload_path: &str, output: Option<&str>) -> Result<()> {
 }
 
 /// Generate workload(s) from a file or folder of workload specifications.
-fn invoke_benchmark(workload_path: &str, database_name: &str) -> Result<()> {
+fn invoke_benchmark(
+    workload_path: &str,
+    database_name: &str,
+    benchmark_func: impl Fn(String, &str) -> Result<()>,
+) -> Result<()> {
     let workload_path = PathBuf::from(workload_path);
     if !workload_path.exists() {
         bail!("File or folder does not exist {}", workload_path.display());
     }
 
     if workload_path.is_dir() {
-        // FIX: Make this work for a directory of workloads. Doesn't make sense to just print to
-        // console, maybe write results to file?
-        todo!();
-        WalkDir::new(&workload_path)
-            .follow_links(true)
-            .into_iter()
-            .filter_map(Result::ok)
-            .filter(|file| {
-                file.file_type().is_file()
-                    && file
-                        .path()
-                        .file_name()
-                        .and_then(|name| name.to_str())
-                        .map(
-                            |name| name.ends_with(".spec.json"), // || name.ends_with(".spec.jsonc")
-                        )
-                        .unwrap_or(false)
-            })
-            .par_bridge()
-            .map(|entry| -> Result<_> {
-                let path = entry.path();
-                info!("Benchmarking workload for: {}", path.display());
-                let contents = fs::read_to_string(path)?;
-                let output_file = spec_path_to_workload_name(path);
-
-                return benchmark_workload(&contents, database_name);
-            })
-            .collect::<Result<Vec<_>>>()?;
+        bail!("Cannot benchmark a directory");
     } else if workload_path.is_file() {
         let contents = fs::read_to_string(&workload_path)?;
 
-        benchmark_workload(&contents, database_name)?;
+        benchmark_func(contents, database_name)?;
     } else {
         unreachable!("Path is neither a file nor a directory");
     };

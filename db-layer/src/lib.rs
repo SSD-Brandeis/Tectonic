@@ -4,6 +4,8 @@
 use anyhow::{Context, Result, anyhow, bail};
 use enum_dispatch::enum_dispatch;
 use hdrhistogram::{Counter, Histogram};
+use indicatif::ProgressBar;
+use indicatif::ProgressStyle;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
@@ -59,7 +61,14 @@ impl Statistics {
 
 pub fn benchmark_db(db_layer: Db, input_file: String) -> Result<()> {
     let file = File::open(input_file)?;
-    let mut buf_reader = BufReader::new(file);
+
+    let file_size = file.metadata()?.len();
+
+    eprintln!("[Executing]");
+    let progress_bar = ProgressBar::new(file_size);
+    progress_bar.set_style(ProgressStyle::default_bar().template("{bar:40} {percent}% ({eta})")?);
+
+    let mut buf_reader = BufReader::new(progress_bar.wrap_read(file));
 
     let mut benchmarker = Benchmarker::new(db_layer);
 
@@ -70,6 +79,7 @@ pub fn benchmark_db(db_layer: Db, input_file: String) -> Result<()> {
 
     let mut buf = Vec::<u8>::new();
     while buf_reader.read_until(b'\n', &mut buf)? > 0 {
+        progress_bar.inc(1);
         let end = buf.len() - 1;
         if buf[end] == b'\n' {
             buf.pop();
@@ -86,6 +96,7 @@ pub fn benchmark_db(db_layer: Db, input_file: String) -> Result<()> {
     }
 
     benchmarker.end();
+    progress_bar.finish_and_clear();
 
     // Print out statistics
     benchmarker.print_summary();

@@ -26,6 +26,66 @@
     "sections"
   ],
   "$defs": {
+    "BlindPointQueries": {
+      "description": "Blind Point Query Specification",
+      "type": "object",
+      "properties": {
+        "character_set": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CharacterSet"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "key": {
+          "description": "Key",
+          "$ref": "#/$defs/StringExpr"
+        },
+        "op_count": {
+          "description": "Number of blind point queries",
+          "$ref": "#/$defs/NumberExpr"
+        }
+      },
+      "required": [
+        "op_count",
+        "key"
+      ]
+    },
+    "BlindRangeQueries": {
+      "type": "object",
+      "properties": {
+        "character_set": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CharacterSet"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "key": {
+          "description": "Key",
+          "$ref": "#/$defs/StringExpr"
+        },
+        "op_count": {
+          "description": "Number of blind range queries",
+          "$ref": "#/$defs/NumberExpr"
+        },
+        "selectivity": {
+          "description": "Selectivity of range queries. Based off of the range of valid keys, not the full key-space.",
+          "$ref": "#/$defs/NumberExpr"
+        }
+      },
+      "required": [
+        "op_count",
+        "key",
+        "selectivity"
+      ]
+    },
     "CharacterSet": {
       "type": "string",
       "enum": [
@@ -317,6 +377,17 @@
       "required": [
         "op_count",
         "key"
+      ]
+    },
+    "FlushStats": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
       ]
     },
     "Inserts": {
@@ -707,6 +778,36 @@
     "WorkloadSpecGroup": {
       "type": "object",
       "properties": {
+        "blind_point_deletes": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BlindPointQueries"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "blind_point_queries": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BlindPointQueries"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "blind_range_queries": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BlindRangeQueries"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "character_set": {
           "anyOf": [
             {
@@ -731,6 +832,16 @@
           "anyOf": [
             {
               "$ref": "#/$defs/EmptyPointQueries"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "flush_stats": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FlushStats"
             },
             {
               "type": "null"
@@ -807,6 +918,16 @@
             }
           ]
         },
+        "unique_inserts": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Inserts"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "updates": {
           "anyOf": [
             {
@@ -827,6 +948,16 @@
           "anyOf": [
             {
               "$ref": "#/$defs/CharacterSet"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "flush_stats": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FlushStats"
             },
             {
               "type": "null"

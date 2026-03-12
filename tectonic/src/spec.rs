@@ -676,6 +676,39 @@ pub struct BlindRangeQueries {
     pub character_set: Option<CharacterSet>,
 }
 
+pub trait Scalable {
+    fn scale(&mut self, factor: f64);
+}
+
+// Implement for each type, or if they all have op_count you could use a macro
+macro_rules! impl_scalable {
+    ($($t:ty),*) => {
+        $(impl Scalable for $t {
+            fn scale(&mut self, factor: f64) {
+                if let NumberExpr::Constant(op_count) = &mut self.op_count {
+                    *op_count *= factor;
+                } else {
+                    panic!("Scalable workload should only have constant number expressions in op_count");
+                }
+            }
+        })*
+    }
+}
+
+impl_scalable!(
+    Inserts,
+    Updates,
+    Merges,
+    PointDeletes,
+    EmptyPointDeletes,
+    RangeDeletes,
+    PointQueries,
+    EmptyPointQueries,
+    RangeQueries,
+    BlindPointQueries,
+    BlindRangeQueries
+);
+
 #[derive(serde::Deserialize, JsonSchema, Clone, Debug)]
 pub struct Sorted {
     /// The number of displaced operations.

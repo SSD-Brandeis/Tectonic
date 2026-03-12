@@ -1,6 +1,5 @@
 #![allow(clippy::needless_return)]
 use anyhow::{Context, Result, bail};
-use clap::Args;
 use clap::{Parser, Subcommand};
 use db_layer::execute_operations;
 use rayon::iter::ParallelIterator;
@@ -11,7 +10,6 @@ use std::{
 };
 use tectonic::{
     benchmark_workload, benchmark_ycsb_workload, generate_workload, generate_workload_spec_schema,
-    generate_ycsb_workload,
 };
 use tracing::info;
 use tracing_subscriber::EnvFilter;
@@ -46,6 +44,10 @@ enum Command {
         /// Name of the database on which to execute operations
         #[arg(short = 'd', long = "database")]
         database: String,
+        #[arg(short = 'p', long = "database-path")]
+        db_path: Option<String>,
+        #[arg(short = 'c', long = "config")]
+        config: Option<String>,
     },
     /// Generate and Execute a workload from a file against a specific database
     Benchmark {
@@ -54,28 +56,32 @@ enum Command {
         workload_path: String,
         #[arg(short = 'd', long = "database")]
         database: String,
+        #[arg(short = 'p', long = "database-path")]
+        db_path: Option<String>,
+        #[arg(short = 'c', long = "config")]
+        config: Option<String>,
     },
     Ycsb {
         #[arg(short = 'w', long = "name")]
         workload_name: String,
         #[arg(short = 's', long = "scale")]
         scale: Option<f64>,
-        /// Also benchmark the generated workload against a certain database
-        #[arg(short = 'b', long = "benchmark")]
-        benchmark: Option<String>,
-        /// Output file. Defaults to the same directory as the workload spec.
-        #[arg(short = 'o', long = "output", required = false)]
-        output: Option<String>,
+        #[arg(short = 'd', long = "database")]
+        database: String,
+        #[arg(short = 'p', long = "database-path")]
+        db_path: Option<String>,
+        #[arg(short = 'c', long = "config")]
+        config: Option<String>,
     },
     KvBench {
         #[arg(short = 'w', long = "name")]
         workload_name: String,
-        /// Also benchmark the generated workload against a certain database
-        #[arg(short = 'b', long = "benchmark")]
-        benchmark: Option<String>,
-        /// Output file. Defaults to the same directory as the workload spec.
-        #[arg(short = 'o', long = "output", required = false)]
-        output: Option<String>,
+        #[arg(short = 'd', long = "database")]
+        database: String,
+        #[arg(short = 'p', long = "database-path")]
+        db_path: Option<String>,
+        #[arg(short = 'c', long = "config")]
+        config: Option<String>,
     },
 }
 
@@ -102,24 +108,39 @@ fn main() -> Result<()> {
         Command::Execute {
             input_file,
             database,
+            db_path,
+            config,
         } => {
-            return execute_operations(&database, input_file);
+            return execute_operations(
+                &database,
+                input_file,
+                db_path.as_ref().map(PathBuf::from),
+                config.as_deref(),
+            );
         }
         Command::Benchmark {
             workload_path,
             database,
+            db_path,
+            config,
         } => invoke_benchmark(
             &workload_path,
             &database,
             |workload_spec_string, database_name| {
-                benchmark_workload(workload_spec_string, database_name)
+                benchmark_workload(
+                    workload_spec_string,
+                    database_name,
+                    db_path.as_ref().map(PathBuf::from),
+                    config.as_deref(),
+                )
             },
         ),
         Command::Ycsb {
             scale,
             workload_name,
-            benchmark,
-            output,
+            database,
+            db_path,
+            config,
         } => {
             let scale = scale.unwrap_or(1.0);
             if !scale.is_normal() || scale <= 0.0 {
@@ -140,32 +161,26 @@ fn main() -> Result<()> {
                 env!("CARGO_MANIFEST_DIR"),
                 workload_name
             );
-            if let Some(db_name) = benchmark {
-                if output.is_some() {
-                    eprintln!("[WARNING] Output flag does not do anything in benchmark mode");
-                }
-                return invoke_benchmark(
-                    &workload_path,
-                    &db_name,
-                    |workload_spec_string, database_name| {
-                        benchmark_ycsb_workload(workload_spec_string, database_name, scale)
-                    },
-                );
-            } else {
-                let output = Some(output.unwrap_or_else(|| format!("ycsb_{}.txt", workload_name)));
-                return invoke_generate(
-                    workload_path.as_str(),
-                    output.as_deref(),
-                    |workload_spec_string, output_path| {
-                        generate_ycsb_workload(workload_spec_string, output_path, scale)
-                    },
-                );
-            }
+
+            return invoke_benchmark(
+                &workload_path,
+                &database,
+                |workload_spec_string, database_name| {
+                    benchmark_ycsb_workload(
+                        workload_spec_string,
+                        database_name,
+                        db_path.as_ref().map(PathBuf::from),
+                        config.as_deref(),
+                        scale,
+                    )
+                },
+            );
         }
         Command::KvBench {
             workload_name,
-            benchmark,
-            output,
+            database,
+            db_path,
+            config,
         } => {
             let workload_name = match workload_name.to_lowercase().as_str() {
                 "1" | "i" => "i",
@@ -180,28 +195,18 @@ fn main() -> Result<()> {
                 env!("CARGO_MANIFEST_DIR"),
                 workload_name
             );
-            if let Some(db_name) = benchmark {
-                if output.is_some() {
-                    eprintln!("[WARNING] Output flag does not do anything in benchmark mode");
-                }
-                return invoke_benchmark(
-                    &workload_path,
-                    &db_name,
-                    |workload_spec_string, database_name| {
-                        benchmark_workload(workload_spec_string, database_name)
-                    },
-                );
-            } else {
-                let output =
-                    Some(output.unwrap_or_else(|| format!("kvbench_{}.txt", workload_name)));
-                return invoke_generate(
-                    workload_path.as_str(),
-                    output.as_deref(),
-                    |workload_spec_string, output_path| {
-                        generate_workload(workload_spec_string, output_path)
-                    },
-                );
-            }
+            return invoke_benchmark(
+                &workload_path,
+                &database,
+                |workload_spec_string, database_name| {
+                    benchmark_workload(
+                        workload_spec_string,
+                        database_name,
+                        db_path.as_ref().map(PathBuf::from),
+                        config.as_deref(),
+                    )
+                },
+            );
         }
     }
 }

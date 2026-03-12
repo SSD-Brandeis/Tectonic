@@ -10,6 +10,7 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::ops::AddAssign;
+use std::path::PathBuf;
 use std::time::{self};
 
 mod printdb;
@@ -519,13 +520,17 @@ pub enum Db {
 }
 
 impl Db {
-    pub fn new(database_name: &str) -> Result<Self> {
+    pub fn new(
+        database_name: &str,
+        db_path: Option<PathBuf>,
+        config: Option<&str>,
+    ) -> Result<Self> {
         Ok(match database_name {
             "printdb" => Self::PrintDB(PrintDB::new()?),
             // Err(err) => {
             //     bail!("Failed to create db because of error {err}");
             // }
-            "rocksdb" => Self::RocksDB(RocksDB::new()?),
+            "rocksdb" => Self::RocksDB(RocksDB::new(db_path, config)?),
             // Err(err) => {
             //     bail!("Failed to create db because of error {err}");
             // }
@@ -534,6 +539,11 @@ impl Db {
     }
 }
 
-pub fn execute_operations(name: &str, input_file: String) -> Result<()> {
-    benchmark_db(Db::new(name)?, input_file)
+pub fn execute_operations(
+    name: &str,
+    input_file: String,
+    db_path: Option<PathBuf>,
+    config: Option<&str>,
+) -> Result<()> {
+    benchmark_db(Db::new(name, db_path, config)?, input_file)
 }

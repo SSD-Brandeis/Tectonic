@@ -1254,13 +1254,15 @@ pub fn generate_ycsb_workload(
 pub fn benchmark_ycsb_workload(
     workload_spec_string: String,
     database_name: &str,
+    db_path: Option<PathBuf>,
+    config: Option<&str>,
     scale: f64,
 ) -> Result<()> {
     let mut workload_spec: WorkloadSpec =
         serde_json::from_str(&workload_spec_string).context("Parsing spec file")?;
     drop(workload_spec_string);
     scale_spec(&mut workload_spec, scale);
-    let mut benchmarker = Benchmarker::new(Db::new(database_name)?);
+    let mut benchmarker = Benchmarker::new(Db::new(database_name, db_path, config)?);
     benchmarker.start();
     generate_operations(DBHandler(&mut benchmarker), &workload_spec)?;
     benchmarker.end();
@@ -1309,11 +1311,16 @@ pub fn generate_workload_spec_schema() -> serde_json::Result<String> {
     return serde_json::to_string_pretty(&schema);
 }
 
-pub fn benchmark_workload(workload_spec_string: String, database_name: &str) -> Result<()> {
+pub fn benchmark_workload(
+    workload_spec_string: String,
+    database_name: &str,
+    db_path: Option<PathBuf>,
+    config: Option<&str>,
+) -> Result<()> {
     let workload_spec: WorkloadSpec =
         serde_json::from_str(&workload_spec_string).context("Parsing spec file")?;
     drop(workload_spec_string);
-    let mut benchmarker = Benchmarker::new(Db::new(database_name)?);
+    let mut benchmarker = Benchmarker::new(Db::new(database_name, db_path, config)?);
     benchmarker.start();
     generate_operations(DBHandler(&mut benchmarker), &workload_spec)?;
     benchmarker.end();

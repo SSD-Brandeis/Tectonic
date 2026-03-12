@@ -1,35 +1,56 @@
 use crate::Key;
 use crate::{DBTranslationLayer, Value};
-use anyhow::Result;
+use anyhow::{Context, Result};
+use rocksdb::{Env, Options};
 use std::collections::HashMap;
 use std::env::temp_dir;
 use std::fs::DirBuilder;
+use std::path::PathBuf;
 
 pub struct RocksDB {
     db: rocksdb::DB,
 }
 
 impl RocksDB {
-    pub fn new() -> Result<Self> {
-        let mut dir = temp_dir();
-        dir.push("tectonic-rocksdb/");
+    pub fn new(db_path: Option<PathBuf>, config_file_path: Option<&str>) -> Result<Self> {
+        let dir = db_path.unwrap_or_else(|| {
+            let mut dir = temp_dir();
+            dir.push("tectonic-rocksdb/");
+            dir
+        });
         let dir_builder = DirBuilder::new();
         // This error means the directory already exists, which is what we want
         let _ = dir_builder.create(&dir);
-        let mut opts = rocksdb::Options::default();
-        let merge_fn = |_key: &[u8],
-                        existing_value: Option<&[u8]>,
-                        operands: &rocksdb::MergeOperands|
-         -> Option<Vec<u8>> {
-            let mut new = existing_value.map(|v| v.to_vec()).unwrap_or_default();
-            for op in operands {
-                new.extend_from_slice(op);
-            }
 
-            return Some(new);
+        let opts = {
+            if let Some(config_file_path) = config_file_path {
+                let (opts, _) = Options::load_latest(
+                    config_file_path,
+                    rocksdb::Env::new()?,
+                    false,
+                    rocksdb::Cache::new_lru_cache(8 * 1024 * 1024),
+                )
+                .context("Failed to load RocksDB options file")?;
+                opts
+            } else {
+                let mut opts = rocksdb::Options::default();
+                let merge_fn = |_key: &[u8],
+                                existing_value: Option<&[u8]>,
+                                operands: &rocksdb::MergeOperands|
+                 -> Option<Vec<u8>> {
+                    let mut new = existing_value.map(|v| v.to_vec()).unwrap_or_default();
+                    for op in operands {
+                        new.extend_from_slice(op);
+                    }
+
+                    return Some(new);
+                };
+                opts.set_merge_operator_associative("Merge", merge_fn);
+                opts.create_if_missing(true);
+                opts
+            }
         };
-        opts.set_merge_operator_associative("Merge", merge_fn);
-        opts.create_if_missing(true);
+
         Ok(Self {
             db: rocksdb::DB::open(&opts, dir.as_path())?,
         })

@@ -216,6 +216,12 @@ impl Distribution {
     }
 }
 
+impl Default for Distribution {
+    fn default() -> Self {
+        Self::default_key_selection()
+    }
+}
+
 // No docstring
 #[derive(serde::Deserialize, JsonSchema, Clone, Debug)]
 #[serde(untagged)]
@@ -546,8 +552,7 @@ pub struct Updates {
     /// Value
     pub val: StringExpr,
     /// Key selection strategy
-    #[serde(default = "Distribution::default_key_selection")]
-    pub selection: Distribution,
+    pub selection: Option<Distribution>,
     ///// Key sort order
     //pub sort_by: SortBy,
     #[serde(default)]
@@ -562,8 +567,7 @@ pub struct Merges {
     /// Value
     pub val: StringExpr,
     /// Key selection strategy
-    #[serde(default = "Distribution::default_key_selection")]
-    pub selection: Distribution,
+    pub selection: Option<Distribution>,
     ///// Key sort order
     //pub sort_by: SortBy,
     #[serde(default)]
@@ -576,8 +580,7 @@ pub struct PointDeletes {
     /// Number of non-empty point deletes
     pub op_count: NumberExpr,
     /// Key selection strategy
-    #[serde(default = "Distribution::default_key_selection")]
-    pub selection: Distribution,
+    pub selection: Option<Distribution>,
     ///// Key sort order
     //pub sort_by: SortBy,
 }
@@ -600,8 +603,7 @@ pub struct RangeDeletes {
     /// Selectivity of range deletes. Based off of the range of valid keys, not the full key space.
     pub selectivity: NumberExpr,
     /// Key selection strategy of the start key
-    #[serde(default = "Distribution::default_key_selection")]
-    pub selection: Distribution,
+    pub selection: Option<Distribution>,
     /// The format for the range
     #[serde(default)]
     pub range_format: RangeFormat,
@@ -617,21 +619,9 @@ pub struct PointQueries {
     /// Number of point queries
     pub op_count: NumberExpr,
     /// Key selection strategy of the start key
-    #[serde(default = "Distribution::default_key_selection")]
-    pub selection: Distribution,
+    pub selection: Option<Distribution>,
     ///// Key sort order
     //pub sort_by: SortBy,
-}
-
-#[derive(serde::Deserialize, JsonSchema, Clone, Debug)]
-/// Empty point queries specification.
-pub struct EmptyPointQueries {
-    /// Number of point queries
-    pub op_count: NumberExpr,
-    /// Key
-    pub key: StringExpr,
-    #[serde(default)]
-    pub character_set: Option<CharacterSet>,
 }
 
 #[derive(serde::Deserialize, JsonSchema, Clone, Debug)]
@@ -642,13 +632,23 @@ pub struct RangeQueries {
     /// Selectivity of range queries. Based off of the range of valid keys, not the full key-space.
     pub selectivity: NumberExpr,
     /// Key selection strategy of the start key
-    #[serde(default = "Distribution::default_key_selection")]
-    pub selection: Distribution,
+    pub selection: Option<Distribution>,
     /// The format for the range
     #[serde(default)]
     pub range_format: RangeFormat,
     ///// Key sort order
     //pub sort_by: SortBy,
+    #[serde(default)]
+    pub character_set: Option<CharacterSet>,
+}
+
+#[derive(serde::Deserialize, JsonSchema, Clone, Debug)]
+/// Empty point queries specification.
+pub struct EmptyPointQueries {
+    /// Number of point queries
+    pub op_count: NumberExpr,
+    /// Key
+    pub key: StringExpr,
     #[serde(default)]
     pub character_set: Option<CharacterSet>,
 }
@@ -719,6 +719,7 @@ pub struct Sorted {
 
 #[derive(serde::Deserialize, JsonSchema, Clone, Debug)]
 pub struct SaveStats {
+    /// A name for the section/group you want to save stats for
     pub name: String,
 }
 
@@ -738,9 +739,11 @@ pub struct WorkloadSpecGroup {
     pub blind_point_queries: Option<BlindPointQueries>,
     pub blind_point_deletes: Option<BlindPointQueries>,
     pub blind_range_queries: Option<BlindRangeQueries>,
-    #[serde(default)]
-    pub character_set: Option<CharacterSet>,
 
+    /// Defaults for the group
+    pub defaults: Option<Defaults>,
+
+    /// Whether or not to save stats for a group
     pub save_stats: Option<SaveStats>,
 }
 
@@ -765,15 +768,19 @@ pub struct WorkloadSpecSection {
     ///
     /// E.g., non-empty point queries will use a key from an insert in this group.
     pub groups: Vec<WorkloadSpecGroup>,
-    /// The domain from which the keys will be created from.
-    #[serde(default)]
-    pub character_set: Option<CharacterSet>,
     /// Whether to skip the check that a generated key is in the valid key set for inserts and empty point queries/deletes.
     ///
     /// This is useful when the keyspace is much larger than the number of keys being generated, as it can greatly decrease generation time.
     #[serde(default)]
     pub skip_key_contains_check: bool,
 
+    /// Defaults for the section
+    pub defaults: Option<Defaults>,
+    /// Default distributions for the section
+    #[serde(default)]
+    pub default_distributions: DefaultDistributionsOptional,
+
+    /// Whether or not to save stats for a section
     pub save_stats: Option<SaveStats>,
 }
 
@@ -870,9 +877,61 @@ impl WorkloadSpecSection {
 pub struct WorkloadSpec {
     /// Sections of a workload where a key from one will (probably) not appear in another.
     pub sections: Vec<WorkloadSpecSection>,
-    /// The domain from which the keys will be created from.
+    /// Defaults for the workload
     #[serde(default)]
+    pub defaults: Option<Defaults>,
+    /// Default distributions for the workload
+    #[serde(default)]
+    pub default_distributions: DefaultDistributions,
+}
+
+#[derive(serde::Deserialize, JsonSchema, Debug, Clone, Default)]
+pub struct Defaults {
+    /// Default Key
+    pub key: Option<StringExpr>,
+    /// Default Value
+    pub val: Option<StringExpr>,
+
+    /// The domain from which the keys will be created from.
     pub character_set: Option<CharacterSet>,
+}
+
+#[derive(serde::Deserialize, JsonSchema, Debug, Clone, Default)]
+pub struct DefaultDistributions {
+    /// Default distribution for updates
+    #[serde(default)]
+    pub updates_distribution: Distribution,
+    /// Default distribution for merges
+    #[serde(default)]
+    pub merges_distribution: Distribution,
+    /// Default distribution for point deletes
+    #[serde(default)]
+    pub point_deletes_distribution: Distribution,
+    /// Default distribution for range queries
+    #[serde(default)]
+    pub range_queries_distribution: Distribution,
+    /// Default distribution for range deletes
+    #[serde(default)]
+    pub range_deletes_distribution: Distribution,
+    /// Default distribution for point queries
+    #[serde(default)]
+    pub point_queries_distribution: Distribution,
+}
+
+#[derive(serde::Deserialize, JsonSchema, Debug, Clone, Default)]
+pub struct DefaultDistributionsOptional {
+    /// Default distribution for updates
+    pub updates_distribution: Option<Distribution>,
+    /// Default distribution for merges
+    pub merges_distribution: Option<Distribution>,
+    /// Default distribution for point deletes
+    pub point_deletes_distribution: Option<Distribution>,
+    /// Default distribution for range queries
+    pub range_queries_distribution: Option<Distribution>,
+    /// Default distribution for range deletes
+    pub range_deletes_distribution: Option<Distribution>,
+    /// Default distribution for point queries
+    pub point_queries_distribution: Option<Distribution>,
 }
 
 impl WorkloadSpec {

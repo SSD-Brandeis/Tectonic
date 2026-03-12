@@ -612,10 +612,12 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
 
         let rng_ref = &mut rng;
         let mut markers = MarkerIter::new(rng_ref.clone());
-        let character_set = group
-            .character_set
-            .or(section.character_set)
-            .or(workload.character_set);
+        let defaults = group
+            .defaults
+            .as_ref()
+            .or(section.defaults.as_ref())
+            .or(workload.defaults.as_ref());
+        let character_set = defaults.and_then(|d| d.character_set);
 
         let update_count = group
             .updates
@@ -870,7 +872,16 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                         bail!("Cannot have updates when there are no valid keys.");
                     }
                     // keys_valid.sort();
-                    let key = keys_valid.get_random(rng_ref, &us.selection);
+                    let key = keys_valid.get_random(
+                        rng_ref,
+                        us.selection.as_ref().unwrap_or(
+                            section
+                                .default_distributions
+                                .updates_distribution
+                                .as_ref()
+                                .unwrap_or(&workload.default_distributions.updates_distribution),
+                        ),
+                    );
                     operation_handler.handle_update(
                         rng_ref,
                         key,
@@ -892,7 +903,16 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                         bail!("Cannot have merges when there are no valid keys.");
                     }
                     // keys_valid.sort();
-                    let key = keys_valid.get_random(rng_ref, &ms.selection);
+                    let key = keys_valid.get_random(
+                        rng_ref,
+                        ms.selection.as_ref().unwrap_or(
+                            section
+                                .default_distributions
+                                .merges_distribution
+                                .as_ref()
+                                .unwrap_or(&workload.default_distributions.merges_distribution),
+                        ),
+                    );
                     operation_handler.handle_merge(
                         rng_ref,
                         key,
@@ -913,7 +933,18 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                         )
                     })?;
                     // keys_valid.sort();
-                    let key = keys_valid.remove_random(rng_ref, &pds.selection);
+                    let key = keys_valid.remove_random(
+                        rng_ref,
+                        &pds.selection.as_ref().unwrap_or(
+                            section
+                                .default_distributions
+                                .point_deletes_distribution
+                                .as_ref()
+                                .unwrap_or(
+                                    &workload.default_distributions.point_deletes_distribution,
+                                ),
+                        ),
+                    );
 
                     operation_handler.handle_point_delete(&key)?;
                     let duration = Instant::now().duration_since(start);
@@ -931,7 +962,18 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                         anyhow!("Point query marker can only appear when updates is not None")
                     })?;
                     // keys_valid.sort();
-                    let key = keys_valid.get_random(rng_ref, &pqs.selection);
+                    let key = keys_valid.get_random(
+                        rng_ref,
+                        &pqs.selection.as_ref().unwrap_or(
+                            section
+                                .default_distributions
+                                .point_queries_distribution
+                                .as_ref()
+                                .unwrap_or(
+                                    &workload.default_distributions.point_queries_distribution,
+                                ),
+                        ),
+                    );
                     operation_handler.handle_point_query(key)?;
                     let duration = Instant::now().duration_since(start);
                     operation_timings.time_query_point += duration;
@@ -992,15 +1034,41 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                     let sel = rqs.selectivity.evaluate(rng_ref);
                     match rqs.range_format {
                         RangeFormat::StartCount => {
-                            let key = keys_valid.get_random(rng_ref, &rqs.selection);
+                            let key = keys_valid.get_random(
+                                rng_ref,
+                                &rqs.selection.as_ref().unwrap_or(
+                                    section
+                                        .default_distributions
+                                        .range_queries_distribution
+                                        .as_ref()
+                                        .unwrap_or(
+                                            &workload
+                                                .default_distributions
+                                                .range_queries_distribution,
+                                        ),
+                                ),
+                            );
 
                             let count = (sel * keys_valid.len() as f64) as usize;
                             operation_handler.handle_range_query_count(key, count)?
                         }
                         RangeFormat::StartEnd => {
                             keys_valid.sort();
-                            let (key1, key2) =
-                                keys_valid.get_range_random(sel, rng_ref, &rqs.selection);
+                            let (key1, key2) = keys_valid.get_range_random(
+                                sel,
+                                rng_ref,
+                                &rqs.selection.as_ref().unwrap_or(
+                                    section
+                                        .default_distributions
+                                        .range_queries_distribution
+                                        .as_ref()
+                                        .unwrap_or(
+                                            &workload
+                                                .default_distributions
+                                                .range_queries_distribution,
+                                        ),
+                                ),
+                            );
 
                             operation_handler.handle_range_query(key1, key2)?
                         }
@@ -1026,15 +1094,41 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                     let sel = rds.selectivity.evaluate(rng_ref);
                     match rds.range_format {
                         RangeFormat::StartCount => {
-                            let key = keys_valid.get_random(rng_ref, &rds.selection);
+                            let key = keys_valid.get_random(
+                                rng_ref,
+                                rds.selection.as_ref().unwrap_or(
+                                    section
+                                        .default_distributions
+                                        .range_deletes_distribution
+                                        .as_ref()
+                                        .unwrap_or(
+                                            &workload
+                                                .default_distributions
+                                                .range_deletes_distribution,
+                                        ),
+                                ),
+                            );
 
                             let count = (sel * keys_valid.len() as f64) as usize;
                             operation_handler.handle_range_delete_count(key, count)?
                         }
                         RangeFormat::StartEnd => {
                             keys_valid.sort();
-                            let (key1, key2) =
-                                keys_valid.get_range_random(sel, rng_ref, &rds.selection);
+                            let (key1, key2) = keys_valid.get_range_random(
+                                sel,
+                                rng_ref,
+                                rds.selection.as_ref().unwrap_or(
+                                    section
+                                        .default_distributions
+                                        .range_deletes_distribution
+                                        .as_ref()
+                                        .unwrap_or(
+                                            &workload
+                                                .default_distributions
+                                                .range_deletes_distribution,
+                                        ),
+                                ),
+                            );
 
                             operation_handler.handle_range_delete(key1, key2)?
                         }

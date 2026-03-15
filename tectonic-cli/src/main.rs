@@ -44,42 +44,58 @@ enum Command {
         /// Name of the database on which to execute operations
         #[arg(short = 'd', long = "database")]
         database: String,
+        /// Path to the database
         #[arg(short = 'p', long = "database-path")]
         db_path: Option<String>,
+        /// Configuration string (database dependent)
         #[arg(short = 'c', long = "config")]
         config: Option<String>,
     },
     /// Generate and Execute a workload from a file against a specific database
     Benchmark {
-        /// File or folder of workload spec files
+        /// File of workload spec files
         #[arg(short = 'w', long = "workload")]
         workload_path: String,
+        /// Name of the database on which to execute operations
         #[arg(short = 'd', long = "database")]
         database: String,
+        /// Path to the database
         #[arg(short = 'p', long = "database-path")]
         db_path: Option<String>,
+        /// Configuration string (database dependent)
         #[arg(short = 'c', long = "config")]
         config: Option<String>,
     },
+    /// Generate and Execute a Ycsb workload
     Ycsb {
+        /// Name of ycsb workload (a-f)
         #[arg(short = 'w', long = "name")]
         workload_name: String,
+        /// Scale factor for the ycsb workload
         #[arg(short = 's', long = "scale")]
         scale: Option<f64>,
+        /// Name of the database on which to execute operations
         #[arg(short = 'd', long = "database")]
         database: String,
+        /// Path to the database
         #[arg(short = 'p', long = "database-path")]
         db_path: Option<String>,
+        /// Configuration string (database dependent)
         #[arg(short = 'c', long = "config")]
         config: Option<String>,
     },
-    KvBench {
+    /// Generate and Execute a KvBench workload
+    Kvbench {
+        /// Name of ycsb workload (i-v)
         #[arg(short = 'w', long = "name")]
         workload_name: String,
+        /// Name of the database on which to execute operations
         #[arg(short = 'd', long = "database")]
         database: String,
+        /// Path to the database
         #[arg(short = 'p', long = "database-path")]
         db_path: Option<String>,
+        /// Configuration string (database dependent)
         #[arg(short = 'c', long = "config")]
         config: Option<String>,
     },
@@ -176,7 +192,7 @@ fn main() -> Result<()> {
                 },
             );
         }
-        Command::KvBench {
+        Command::Kvbench {
             workload_name,
             database,
             db_path,

@@ -797,7 +797,10 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
         progress_bar
             .set_style(ProgressStyle::default_bar().template("{bar:40} {percent}% ({eta})")?);
 
-        for (i, marker) in progress_bar.wrap_iter(markers.enumerate()) {
+        let marker_iter = progress_bar.wrap_iter(markers.enumerate());
+        // let marker_iter = markers.enumerate();
+
+        for (i, marker) in marker_iter {
             // FIX: Add this back (need to get total number of operations and store it somewhere)
 
             if i.is_multiple_of(total_markers / 10) {

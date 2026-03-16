@@ -612,12 +612,33 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
 
         let rng_ref = &mut rng;
         let mut markers = MarkerIter::new(rng_ref.clone());
-        let defaults = group
+        let character_set = group
             .defaults
             .as_ref()
-            .or(section.defaults.as_ref())
-            .or(workload.defaults.as_ref());
-        let character_set = defaults.and_then(|d| d.character_set);
+            .and_then(|d| d.character_set)
+            .or(section
+                .defaults
+                .as_ref()
+                .and_then(|d| d.character_set)
+                .or(workload.defaults.as_ref().and_then(|d| d.character_set)));
+        let key = group
+            .defaults
+            .as_ref()
+            .and_then(|d| d.key.as_ref())
+            .or(section
+                .defaults
+                .as_ref()
+                .and_then(|d| d.key.as_ref())
+                .or(workload.defaults.as_ref().and_then(|d| d.key.as_ref())));
+        let val = group
+            .defaults
+            .as_ref()
+            .and_then(|d| d.val.as_ref())
+            .or(section
+                .defaults
+                .as_ref()
+                .and_then(|d| d.val.as_ref())
+                .or(workload.defaults.as_ref().and_then(|d| d.val.as_ref())));
 
         let update_count = group
             .updates
@@ -694,7 +715,12 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
 
             if let Some(is) = is {
                 for _ in 0..unique_insert_count {
-                    let key = is.key.generate(rng_ref, is.character_set.or(character_set));
+                    let key = is
+                        .key
+                        .as_ref()
+                        .or(key)
+                        .expect("No key or default key set for unique inserts")
+                        .generate(rng_ref, is.character_set.or(character_set));
                     pool.push(key);
                 }
             }
@@ -703,6 +729,9 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                 for _ in 0..upsert_count {
                     let key = ups
                         .key
+                        .as_ref()
+                        .or(key)
+                        .expect("No key or default key set for inserts")
                         .generate(rng_ref, ups.character_set.or(character_set));
                     pool.push(key);
                 }
@@ -738,13 +767,20 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                     .as_mut()
                     .and_then(|pool| pool.pop())
                     .unwrap_or_else(|| {
-                        is.key.generate(rng_ref, is.character_set.or(character_set))
+                        is.key
+                            .as_ref()
+                            .or(key)
+                            .expect("No key or default key set for unique inserts")
+                            .generate(rng_ref, is.character_set.or(character_set))
                     });
-                // let key = is.key.generate(rng_ref, is.character_set);
+                // let key = is.key.as_ref().or(key).expect("No key or default key set for unique inserts").generate(rng_ref, is.character_set);
                 operation_handler.handle_insert(
                     rng_ref,
                     &key,
-                    &is.val,
+                    &is.val
+                        .as_ref()
+                        .or(val)
+                        .expect("No value or default value set for unique inserts"),
                     is.character_set.or(character_set),
                 )?;
                 keys_valid.push(key);
@@ -764,13 +800,19 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                 .and_then(|pool| pool.pop())
                 .unwrap_or_else(|| {
                     ups.key
+                        .as_ref()
+                        .or(key)
+                        .expect("No key or default key set for inserts")
                         .generate(rng_ref, ups.character_set.or(character_set))
                 });
-            // let key = is.key.generate(rng_ref, is.character_set);
+            // let key = is.key.as_ref().or(key).expect("No key or default key set for unique inserts").generate(rng_ref, is.character_set);
             operation_handler.handle_insert(
                 rng_ref,
                 &key,
-                &ups.val,
+                &ups.val
+                    .as_ref()
+                    .or(val)
+                    .expect("No value or default value set for inserts"),
                 ups.character_set.or(character_set),
             )?;
             keys_valid.push(key);
@@ -821,17 +863,24 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                             .as_mut()
                             .and_then(|pool| pool.pop())
                             .unwrap_or_else(|| {
-                                is.key.generate(rng_ref, is.character_set.or(character_set))
+                                is.key
+                                    .as_ref()
+                                    .or(key)
+                                    .expect("No key or default key set for unique inserts")
+                                    .generate(rng_ref, is.character_set.or(character_set))
                             });
                         if !keys_valid.contains(&key) {
                             break key;
                         }
                     };
-                    // let key = is.key.generate(rng_ref, is.character_set);
+                    // let key = is.key.as_ref().or(key).expect("No key or default key set for unique inserts").generate(rng_ref, is.character_set);
                     operation_handler.handle_insert(
                         rng_ref,
                         &key,
-                        &is.val,
+                        &is.val
+                            .as_ref()
+                            .or(val)
+                            .expect("No value or default value set for unique inserts"),
                         is.character_set.or(character_set),
                     )?;
                     keys_valid.push(key);
@@ -850,12 +899,19 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                         .as_mut()
                         .and_then(|pool| pool.pop())
                         .unwrap_or_else(|| {
-                            is.key.generate(rng_ref, is.character_set.or(character_set))
+                            is.key
+                                .as_ref()
+                                .or(key)
+                                .expect("No key or default key set for unique inserts")
+                                .generate(rng_ref, is.character_set.or(character_set))
                         });
                     operation_handler.handle_insert(
                         rng_ref,
                         &key,
-                        &is.val,
+                        &is.val
+                            .as_ref()
+                            .or(val)
+                            .expect("No value or default value set for unique inserts"),
                         is.character_set.or(character_set),
                     )?;
 
@@ -888,7 +944,10 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                     operation_handler.handle_update(
                         rng_ref,
                         key,
-                        &us.val,
+                        &us.val
+                            .as_ref()
+                            .or(val)
+                            .expect("No value or default value set for updates"),
                         us.character_set.or(character_set),
                     )?;
                     let duration = Instant::now().duration_since(start);
@@ -919,7 +978,10 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                     operation_handler.handle_merge(
                         rng_ref,
                         key,
-                        &ms.val,
+                        &ms.val
+                            .as_ref()
+                            .or(val)
+                            .expect("No value or default value set for merges"),
                         ms.character_set.or(character_set),
                     )?;
                     let duration = Instant::now().duration_since(start);
@@ -992,6 +1054,9 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                     let key = loop {
                         let k = epd
                             .key
+                            .as_ref()
+                            .or(key)
+                            .expect("No key or default key set for empty point deletes")
                             .generate(rng_ref, epd.character_set.or(character_set));
                         if !keys_valid.contains(&k) {
                             break k;
@@ -1012,7 +1077,12 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                         })?;
                     let char_set = epq.character_set.or(character_set);
                     let key = loop {
-                        let k = epq.key.generate(rng_ref, char_set);
+                        let k = epq
+                            .key
+                            .as_ref()
+                            .or(key)
+                            .expect("No key or default key set for empty point queries")
+                            .generate(rng_ref, char_set);
                         if !keys_valid.contains(&k) {
                             break k;
                         }
@@ -1153,6 +1223,9 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
 
                     let key = bpq
                         .key
+                        .as_ref()
+                        .or(key)
+                        .expect("No key or default key set for blind point queries")
                         .generate(rng_ref, bpq.character_set.or(character_set));
 
                     operation_handler.handle_point_query(&key)?;
@@ -1174,6 +1247,9 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
 
                     let key = bpd
                         .key
+                        .as_ref()
+                        .or(key)
+                        .expect("No key or default key set for blind point deletes")
                         .generate(rng_ref, bpd.character_set.or(character_set));
 
                     operation_handler.handle_point_query(&key)?;
@@ -1195,6 +1271,9 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
 
                     let key = brq
                         .key
+                        .as_ref()
+                        .or(key)
+                        .expect("No key or default key set for blind range queries")
                         .generate(rng_ref, brq.character_set.or(character_set));
 
                     let count = (brq.selectivity.evaluate(rng_ref) * total_entries as f64) as usize;

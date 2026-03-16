@@ -537,9 +537,9 @@ pub struct Inserts {
     /// Number of inserts
     pub op_count: NumberExpr,
     /// Key
-    pub key: StringExpr,
+    pub key: Option<StringExpr>,
     /// Value
-    pub val: StringExpr,
+    pub val: Option<StringExpr>,
     #[serde(default)]
     pub character_set: Option<CharacterSet>,
 }
@@ -550,7 +550,7 @@ pub struct Updates {
     /// Number of updates
     pub op_count: NumberExpr,
     /// Value
-    pub val: StringExpr,
+    pub val: Option<StringExpr>,
     /// Key selection strategy
     pub selection: Option<Distribution>,
     ///// Key sort order
@@ -565,7 +565,7 @@ pub struct Merges {
     /// Number of merges
     pub op_count: NumberExpr,
     /// Value
-    pub val: StringExpr,
+    pub val: Option<StringExpr>,
     /// Key selection strategy
     pub selection: Option<Distribution>,
     ///// Key sort order
@@ -591,7 +591,7 @@ pub struct EmptyPointDeletes {
     /// Number of empty point deletes
     pub op_count: NumberExpr,
     /// Key
-    pub key: StringExpr,
+    pub key: Option<StringExpr>,
     #[serde(default)]
     pub character_set: Option<CharacterSet>,
 }
@@ -648,7 +648,7 @@ pub struct EmptyPointQueries {
     /// Number of point queries
     pub op_count: NumberExpr,
     /// Key
-    pub key: StringExpr,
+    pub key: Option<StringExpr>,
     #[serde(default)]
     pub character_set: Option<CharacterSet>,
 }
@@ -659,7 +659,7 @@ pub struct BlindPointQueries {
     /// Number of blind point queries
     pub op_count: NumberExpr,
     /// Key
-    pub key: StringExpr,
+    pub key: Option<StringExpr>,
     #[serde(default)]
     pub character_set: Option<CharacterSet>,
 }
@@ -669,7 +669,7 @@ pub struct BlindRangeQueries {
     /// Number of blind range queries
     pub op_count: NumberExpr,
     /// Key
-    pub key: StringExpr,
+    pub key: Option<StringExpr>,
     /// Selectivity of range queries. Based off of the range of valid keys, not the full key-space.
     pub selectivity: NumberExpr,
     #[serde(default)]

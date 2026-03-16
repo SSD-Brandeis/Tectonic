@@ -597,7 +597,7 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
         upsert_counts.iter().sum::<usize>() + unique_insert_counts.iter().sum::<usize>();
 
     let mut keys_valid = keyset_constructor(
-        unique_insert_counts.iter().sum(), /*section.insert_count()*/
+        unique_insert_counts.iter().sum::<usize>() + upsert_counts.iter().sum::<usize>(), /*section.insert_count()*/
     );
 
     for (group_num, (group, (unique_insert_count, upsert_count))) in std::iter::zip(

@@ -900,38 +900,38 @@ pub struct Defaults {
 pub struct DefaultDistributions {
     /// Default distribution for updates
     #[serde(default)]
-    pub updates_distribution: Distribution,
+    pub updates_selection: Distribution,
     /// Default distribution for merges
     #[serde(default)]
-    pub merges_distribution: Distribution,
+    pub merges_selection: Distribution,
     /// Default distribution for point deletes
     #[serde(default)]
-    pub point_deletes_distribution: Distribution,
+    pub point_deletes_selection: Distribution,
     /// Default distribution for range queries
     #[serde(default)]
-    pub range_queries_distribution: Distribution,
+    pub range_queries_selection: Distribution,
     /// Default distribution for range deletes
     #[serde(default)]
-    pub range_deletes_distribution: Distribution,
+    pub range_deletes_selection: Distribution,
     /// Default distribution for point queries
     #[serde(default)]
-    pub point_queries_distribution: Distribution,
+    pub point_queries_selection: Distribution,
 }
 
 #[derive(serde::Deserialize, JsonSchema, Debug, Clone, Default)]
 pub struct DefaultDistributionsOptional {
     /// Default distribution for updates
-    pub updates_distribution: Option<Distribution>,
+    pub updates_selection: Option<Distribution>,
     /// Default distribution for merges
-    pub merges_distribution: Option<Distribution>,
+    pub merges_selection: Option<Distribution>,
     /// Default distribution for point deletes
-    pub point_deletes_distribution: Option<Distribution>,
+    pub point_deletes_selection: Option<Distribution>,
     /// Default distribution for range queries
-    pub range_queries_distribution: Option<Distribution>,
+    pub range_queries_selection: Option<Distribution>,
     /// Default distribution for range deletes
-    pub range_deletes_distribution: Option<Distribution>,
+    pub range_deletes_selection: Option<Distribution>,
     /// Default distribution for point queries
-    pub point_queries_distribution: Option<Distribution>,
+    pub point_queries_selection: Option<Distribution>,
 }
 
 impl WorkloadSpec {

@@ -777,7 +777,7 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                 operation_handler.handle_insert(
                     rng_ref,
                     &key,
-                    &is.val
+                    is.val
                         .as_ref()
                         .or(val)
                         .expect("No value or default value set for unique inserts"),
@@ -809,7 +809,7 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
             operation_handler.handle_insert(
                 rng_ref,
                 &key,
-                &ups.val
+                ups.val
                     .as_ref()
                     .or(val)
                     .expect("No value or default value set for inserts"),
@@ -877,7 +877,7 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                     operation_handler.handle_insert(
                         rng_ref,
                         &key,
-                        &is.val
+                        is.val
                             .as_ref()
                             .or(val)
                             .expect("No value or default value set for unique inserts"),
@@ -908,7 +908,7 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                     operation_handler.handle_insert(
                         rng_ref,
                         &key,
-                        &is.val
+                        is.val
                             .as_ref()
                             .or(val)
                             .expect("No value or default value set for unique inserts"),
@@ -936,15 +936,15 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                         us.selection.as_ref().unwrap_or(
                             section
                                 .default_distributions
-                                .updates_distribution
+                                .updates_selection
                                 .as_ref()
-                                .unwrap_or(&workload.default_distributions.updates_distribution),
+                                .unwrap_or(&workload.default_distributions.updates_selection),
                         ),
                     );
                     operation_handler.handle_update(
                         rng_ref,
                         key,
-                        &us.val
+                        us.val
                             .as_ref()
                             .or(val)
                             .expect("No value or default value set for updates"),
@@ -970,15 +970,15 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                         ms.selection.as_ref().unwrap_or(
                             section
                                 .default_distributions
-                                .merges_distribution
+                                .merges_selection
                                 .as_ref()
-                                .unwrap_or(&workload.default_distributions.merges_distribution),
+                                .unwrap_or(&workload.default_distributions.merges_selection),
                         ),
                     );
                     operation_handler.handle_merge(
                         rng_ref,
                         key,
-                        &ms.val
+                        ms.val
                             .as_ref()
                             .or(val)
                             .expect("No value or default value set for merges"),
@@ -1000,14 +1000,12 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                     // keys_valid.sort();
                     let key = keys_valid.remove_random(
                         rng_ref,
-                        &pds.selection.as_ref().unwrap_or(
+                        pds.selection.as_ref().unwrap_or(
                             section
                                 .default_distributions
-                                .point_deletes_distribution
+                                .point_deletes_selection
                                 .as_ref()
-                                .unwrap_or(
-                                    &workload.default_distributions.point_deletes_distribution,
-                                ),
+                                .unwrap_or(&workload.default_distributions.point_deletes_selection),
                         ),
                     );
 
@@ -1029,14 +1027,12 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                     // keys_valid.sort();
                     let key = keys_valid.get_random(
                         rng_ref,
-                        &pqs.selection.as_ref().unwrap_or(
+                        pqs.selection.as_ref().unwrap_or(
                             section
                                 .default_distributions
-                                .point_queries_distribution
+                                .point_queries_selection
                                 .as_ref()
-                                .unwrap_or(
-                                    &workload.default_distributions.point_queries_distribution,
-                                ),
+                                .unwrap_or(&workload.default_distributions.point_queries_selection),
                         ),
                     );
                     operation_handler.handle_point_query(key)?;
@@ -1109,15 +1105,13 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                         RangeFormat::StartCount => {
                             let key = keys_valid.get_random(
                                 rng_ref,
-                                &rqs.selection.as_ref().unwrap_or(
+                                rqs.selection.as_ref().unwrap_or(
                                     section
                                         .default_distributions
-                                        .range_queries_distribution
+                                        .range_queries_selection
                                         .as_ref()
                                         .unwrap_or(
-                                            &workload
-                                                .default_distributions
-                                                .range_queries_distribution,
+                                            &workload.default_distributions.range_queries_selection,
                                         ),
                                 ),
                             );
@@ -1130,15 +1124,13 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                             let (key1, key2) = keys_valid.get_range_random(
                                 sel,
                                 rng_ref,
-                                &rqs.selection.as_ref().unwrap_or(
+                                rqs.selection.as_ref().unwrap_or(
                                     section
                                         .default_distributions
-                                        .range_queries_distribution
+                                        .range_queries_selection
                                         .as_ref()
                                         .unwrap_or(
-                                            &workload
-                                                .default_distributions
-                                                .range_queries_distribution,
+                                            &workload.default_distributions.range_queries_selection,
                                         ),
                                 ),
                             );
@@ -1172,12 +1164,10 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                                 rds.selection.as_ref().unwrap_or(
                                     section
                                         .default_distributions
-                                        .range_deletes_distribution
+                                        .range_deletes_selection
                                         .as_ref()
                                         .unwrap_or(
-                                            &workload
-                                                .default_distributions
-                                                .range_deletes_distribution,
+                                            &workload.default_distributions.range_deletes_selection,
                                         ),
                                 ),
                             );
@@ -1193,12 +1183,10 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                                 rds.selection.as_ref().unwrap_or(
                                     section
                                         .default_distributions
-                                        .range_deletes_distribution
+                                        .range_deletes_selection
                                         .as_ref()
                                         .unwrap_or(
-                                            &workload
-                                                .default_distributions
-                                                .range_deletes_distribution,
+                                            &workload.default_distributions.range_deletes_selection,
                                         ),
                                 ),
                             );

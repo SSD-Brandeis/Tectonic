@@ -9,6 +9,7 @@ use std::cmp::max;
 use std::collections::{HashMap, HashSet};
 use std::ops::{Bound, Range};
 use std::rc::Rc;
+use sweep_bptree::BPlusTreeSet;
 
 // pub type Key = Box<[u8]>;
 pub type Key = Rc<[u8]>;
@@ -103,12 +104,11 @@ pub trait KeySet {
 
     fn get_range_random(
         &mut self,
-        selectivity: f64,
+        range_len: usize,
         rng: &mut impl Rng,
         distribution: &Distribution,
     ) -> (&Key, &Key) {
         let num_keys = self.len();
-        let range_len = (selectivity * (num_keys as f64)).floor() as usize;
         let valid_len = num_keys - range_len;
 
         let x = distribution.evaluate(rng).clamp(0., 1. - f64::EPSILON);
@@ -730,5 +730,56 @@ impl KeySet for BTreeSetKeySet {
         //     SortBy::Value => (),
         //     SortBy::InsertOrder => (),
         // }
+    }
+}
+
+pub struct BPlusTreeKeySet {
+    keys: BPlusTreeSet<Key>,
+}
+
+impl KeySet for BPlusTreeKeySet {
+    fn new(_capacity: usize) -> Self {
+        let keys = BPlusTreeSet::new();
+        Self { keys }
+    }
+
+    fn len(&self) -> usize {
+        self.keys.len()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.keys.is_empty()
+    }
+
+    fn push(&mut self, key: Key) {
+        self.keys.insert(key);
+    }
+
+    fn remove(&mut self, idx: usize) -> Key {
+        let iter = self.keys.iter();
+        let mut iter = iter.skip(idx - 1);
+        return iter
+            .next()
+            .cloned()
+            .expect("Tried to remove an index not in the keyset");
+    }
+
+    fn remove_range(&mut self, idx_range: Range<usize>) -> (Key, Key) {
+        todo!()
+    }
+
+    fn get(&self, idx: usize) -> &Key {
+        todo!()
+    }
+
+    fn contains(&self, key: &Key) -> bool {
+        todo!()
+    }
+
+    fn sort(
+        &mut self,
+        // sort_by: SortBy
+    ) {
+        // NOTE: Nothing to do here because the tree is sorted by default
     }
 }

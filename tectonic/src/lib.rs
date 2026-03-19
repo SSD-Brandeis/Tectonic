@@ -1100,7 +1100,7 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                         bail!("Cannot have range queries when there are no valid keys.");
                     }
 
-                    let sel = rqs.selectivity.evaluate(rng_ref);
+                    let range_length = rqs.get_range_length(rng_ref, keys_valid.len());
                     match rqs.range_format {
                         RangeFormat::StartCount => {
                             let key = keys_valid.get_random(
@@ -1116,13 +1116,12 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                                 ),
                             );
 
-                            let count = (sel * keys_valid.len() as f64) as usize;
-                            operation_handler.handle_range_query_count(key, count)?
+                            operation_handler.handle_range_query_count(key, range_length)?
                         }
                         RangeFormat::StartEnd => {
                             keys_valid.sort();
                             let (key1, key2) = keys_valid.get_range_random(
-                                sel,
+                                range_length,
                                 rng_ref,
                                 rqs.selection.as_ref().unwrap_or(
                                     section
@@ -1156,7 +1155,7 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                         bail!("Cannot have range deletes when there are no valid keys.");
                     }
 
-                    let sel = rds.selectivity.evaluate(rng_ref);
+                    let range_length = rds.get_range_length(rng_ref, keys_valid.len());
                     match rds.range_format {
                         RangeFormat::StartCount => {
                             let key = keys_valid.get_random(
@@ -1172,13 +1171,12 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                                 ),
                             );
 
-                            let count = (sel * keys_valid.len() as f64) as usize;
-                            operation_handler.handle_range_delete_count(key, count)?
+                            operation_handler.handle_range_delete_count(key, range_length)?
                         }
                         RangeFormat::StartEnd => {
                             keys_valid.sort();
                             let (key1, key2) = keys_valid.get_range_random(
-                                sel,
+                                range_length,
                                 rng_ref,
                                 rds.selection.as_ref().unwrap_or(
                                     section
@@ -1264,7 +1262,7 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                         .expect("No key or default key set for blind range queries")
                         .generate(rng_ref, brq.character_set.or(character_set));
 
-                    let count = (brq.selectivity.evaluate(rng_ref) * total_entries as f64) as usize;
+                    let count = brq.get_range_length(rng_ref, total_entries);
                     operation_handler.handle_range_query_count(&key, count)?;
 
                     let duration = Instant::now().duration_since(start);

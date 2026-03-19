@@ -600,8 +600,11 @@ pub struct EmptyPointDeletes {
 pub struct RangeDeletes {
     /// Number of range deletes
     pub op_count: NumberExpr,
-    /// Selectivity of range deletes. Based off of the range of valid keys, not the full key space.
-    pub selectivity: NumberExpr,
+    /// Selectivity of range queries. Based off of the range of valid keys, not the full key-space.
+    /// Mutally exclusive with scan_length
+    pub selectivity: Option<NumberExpr>,
+    /// Specifies an exact scan length for range queries. Mutally exclusive with selectivity.
+    pub scan_length: Option<NumberExpr>,
     /// Key selection strategy of the start key
     pub selection: Option<Distribution>,
     /// The format for the range
@@ -630,7 +633,10 @@ pub struct RangeQueries {
     /// Number of range queries
     pub op_count: NumberExpr,
     /// Selectivity of range queries. Based off of the range of valid keys, not the full key-space.
-    pub selectivity: NumberExpr,
+    /// Mutally exclusive with scan_length
+    pub selectivity: Option<NumberExpr>,
+    /// Specifies an exact scan length for range queries. Mutally exclusive with selectivity.
+    pub scan_length: Option<NumberExpr>,
     /// Key selection strategy of the start key
     pub selection: Option<Distribution>,
     /// The format for the range
@@ -641,6 +647,19 @@ pub struct RangeQueries {
     #[serde(default)]
     pub character_set: Option<CharacterSet>,
 }
+
+// impl RangeQueries {
+//     pub fn get_range_length(&self, rng: &mut impl Rng, num_keys: usize) -> usize {
+//         if let Some(sel) = &self.selectivity {
+//             (sel.evaluate(rng) * num_keys as f64) as usize
+//         } else {
+//             self.scan_length
+//                 .as_ref()
+//                 .expect("Scan length should be specified if selectivity is not")
+//                 .evaluate(rng) as usize
+//         }
+//     }
+// }
 
 #[derive(serde::Deserialize, JsonSchema, Clone, Debug)]
 /// Empty point queries specification.
@@ -671,10 +690,36 @@ pub struct BlindRangeQueries {
     /// Key
     pub key: Option<StringExpr>,
     /// Selectivity of range queries. Based off of the range of valid keys, not the full key-space.
-    pub selectivity: NumberExpr,
+    /// Mutally exclusive with scan_length
+    pub selectivity: Option<NumberExpr>,
+    /// Specifies an exact scan length for range queries. Mutally exclusive with selectivity.
+    pub scan_length: Option<NumberExpr>,
     #[serde(default)]
     pub character_set: Option<CharacterSet>,
 }
+
+pub trait RangeQuery {
+    fn get_range_length(&self, rng: &mut impl Rng, num_keys: usize);
+}
+
+macro_rules! impl_range_query {
+    ($($t:ty), *) => {
+        $(impl $t {
+            pub fn get_range_length(&self, rng: &mut impl Rng, num_keys: usize) -> usize {
+                if let Some(sel) = &self.selectivity {
+                    (sel.evaluate(rng) * num_keys as f64) as usize
+                } else {
+                    self.scan_length
+                        .as_ref()
+                        .expect("Scan length should be specified if selectivity is not")
+                        .evaluate(rng) as usize
+                }
+            }
+        })*
+    };
+}
+
+impl_range_query!(RangeQueries, RangeDeletes, BlindRangeQueries);
 
 pub trait Scalable {
     fn scale(&mut self, factor: f64);

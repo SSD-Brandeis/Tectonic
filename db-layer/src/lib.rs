@@ -4,8 +4,7 @@
 use anyhow::{Context, Result, anyhow, bail};
 use enum_dispatch::enum_dispatch;
 use hdrhistogram::{Counter, Histogram};
-use indicatif::ProgressBar;
-use indicatif::ProgressStyle;
+use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
@@ -66,7 +65,8 @@ pub fn benchmark_db(db_layer: Db, input_file: String) -> Result<()> {
     let file_size = file.metadata()?.len();
 
     eprintln!("[Executing]");
-    let progress_bar = ProgressBar::new(file_size);
+    let progress_bar =
+        ProgressBar::with_draw_target(Some(file_size), ProgressDrawTarget::stderr_with_hz(5));
     progress_bar.set_style(ProgressStyle::default_bar().template("{bar:40} {percent}% ({eta})")?);
 
     let mut buf_reader = BufReader::new(progress_bar.wrap_read(file));
@@ -80,7 +80,6 @@ pub fn benchmark_db(db_layer: Db, input_file: String) -> Result<()> {
 
     let mut buf = Vec::<u8>::new();
     while buf_reader.read_until(b'\n', &mut buf)? > 0 {
-        progress_bar.inc(1);
         let end = buf.len() - 1;
         if buf[end] == b'\n' {
             buf.pop();

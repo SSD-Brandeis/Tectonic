@@ -9,7 +9,7 @@
 use crate::spec::Scalable;
 use anyhow::{Context, Result, anyhow, bail};
 use db_layer::{Benchmarker, BenchmarkerType, Db};
-use indicatif::{ProgressBar, ProgressStyle};
+use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
 use rand::prelude::SliceRandom;
 use rand::seq::IndexedMutRandom;
 use rand::{Rng, SeedableRng};
@@ -835,7 +835,10 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
         let total_markers = markers.total;
 
         eprintln!("[Generating] Section {} | Group {}", section_num, group_num);
-        let progress_bar = ProgressBar::new(total_markers as u64);
+        let progress_bar = ProgressBar::with_draw_target(
+            Some(total_markers as u64),
+            ProgressDrawTarget::stderr_with_hz(5),
+        );
         progress_bar
             .set_style(ProgressStyle::default_bar().template("{bar:40} {percent}% ({eta})")?);
 

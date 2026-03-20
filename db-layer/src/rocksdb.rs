@@ -1,14 +1,15 @@
 use crate::Key;
 use crate::{DBTranslationLayer, Value};
 use anyhow::{Context, Result};
-use rocksdb::{Env, Options};
-use std::collections::HashMap;
+use rocksdb::{Options, ReadOptions, WriteOptions};
 use std::env::temp_dir;
 use std::fs::DirBuilder;
 use std::path::PathBuf;
 
 pub struct RocksDB {
     db: rocksdb::DB,
+    point_read_opts: ReadOptions,
+    write_opts: WriteOptions,
 }
 
 impl RocksDB {
@@ -53,7 +54,59 @@ impl RocksDB {
 
         Ok(Self {
             db: rocksdb::DB::open(&opts, dir.as_path())?,
+            point_read_opts: ReadOptions::default(),
+            write_opts: WriteOptions::default(),
         })
+    }
+
+    fn scan(&self, start_key: &Key, end_key: Option<&[u8]>, limit: Option<usize>) -> Result<()> {
+        if matches!(limit, Some(0)) {
+            return Ok(());
+        }
+
+        let mut opts = ReadOptions::default();
+        if let Some(end_key) = end_key {
+            opts.set_iterate_upper_bound(end_key.to_vec());
+        }
+
+        let mut iter = self.db.raw_iterator_opt(opts);
+        iter.seek(start_key);
+
+        let mut scanned = 0usize;
+        while iter.valid() {
+            if limit.is_some_and(|limit| scanned >= limit) {
+                break;
+            }
+
+            let _ = iter.item();
+            scanned += 1;
+            iter.next();
+        }
+
+        iter.status()?;
+
+        Ok(())
+    }
+
+    fn last_key_in_scan(&self, start_key: &Key, limit: usize) -> Result<Option<Vec<u8>>> {
+        if limit == 0 {
+            return Ok(None);
+        }
+
+        let mut iter = self.db.raw_iterator();
+        iter.seek(start_key);
+
+        let mut last_key = None;
+        let mut scanned = 0usize;
+        while iter.valid() && scanned < limit {
+            last_key = iter.key().map(|key| key.to_vec());
+            scanned += 1;
+            iter.next();
+        }
+
+        iter.status()?;
+
+        Ok(last_key)
     }
 }
 
@@ -71,7 +124,7 @@ impl DBTranslationLayer for RocksDB {
     }
 
     fn point_query(&self, key: &Key) -> Result<()> {
-        let _ = self.db.get(key);
+        let _ = self.db.get_pinned_opt(key, &self.point_read_opts)?;
         return Ok(());
     }
 
@@ -81,83 +134,44 @@ impl DBTranslationLayer for RocksDB {
     }
 
     fn insert(&self, key: &Key, value: &Value) -> Result<()> {
-        let _ = self.db.put(key, value);
+        self.db.put_opt(key, value, &self.write_opts)?;
         return Ok(());
     }
 
     fn range_query(&self, start_key: &Key, end_key: &Value) -> Result<()> {
-        let mut opts = rocksdb::ReadOptions::default();
-        opts.set_iterate_upper_bound(end_key.as_ref());
-        let mut res = HashMap::<Box<[u8]>, Box<[u8]>>::new();
-        let db_iter = self.db.iterator_opt(
-            rocksdb::IteratorMode::From(start_key, rocksdb::Direction::Forward),
-            opts,
-        );
-
-        for item in db_iter {
-            let (key, value) = item?;
-            res.insert(key, value);
-        }
+        self.scan(start_key, Some(end_key), None)?;
         return Ok(());
     }
 
     fn range_query_count(&self, start_key: &Key, range: usize) -> Result<()> {
-        let mut db_iter = self.db.iterator(rocksdb::IteratorMode::From(
-            start_key,
-            rocksdb::Direction::Forward,
-        ));
-        let mut res = HashMap::<Box<[u8]>, Box<[u8]>>::new();
-        for _ in 0..range {
-            let item = db_iter.next();
-            if let Some(item) = item {
-                let (key, value) = item?;
-                res.insert(key, value);
-            } else {
-                break;
-            }
-        }
+        self.scan(start_key, None, Some(range))?;
         return Ok(());
     }
 
     fn point_delete(&self, key: &Key) -> Result<()> {
-        self.db.delete(key)?;
+        self.db.delete_opt(key, &self.write_opts)?;
         return Ok(());
     }
 
     fn merge(&self, key: &Key, value: &Value) -> Result<()> {
-        self.db.merge(key, value)?;
+        self.db.merge_opt(key, value, &self.write_opts)?;
         return Ok(());
     }
 
     fn range_delete(&self, start_key: &Key, end_key: &Value) -> Result<()> {
         let mut write_batch = rocksdb::WriteBatch::default();
         write_batch.delete_range(start_key, end_key);
-        self.db.write(write_batch)?;
+        self.db.write_opt(write_batch, &self.write_opts)?;
         return Ok(());
     }
 
     fn range_delete_count(&self, start_key: &Key, range: usize) -> Result<()> {
-        let mut db_iter = self.db.iterator(rocksdb::IteratorMode::From(
-            start_key,
-            rocksdb::Direction::Forward,
-        ));
-        let mut end_key: Option<Box<[u8]>> = None;
-        for i in 0..range {
-            if let Some(item) = db_iter.next() {
-                let (key, _) = item?;
-                end_key = Some(key);
-                if i == range - 1 {
-                    break;
-                }
-            } else {
-                break;
-            }
-        }
+        let end_key = self.last_key_in_scan(start_key, range)?;
 
         if let Some(end_key) = end_key {
             let mut write_batch = rocksdb::WriteBatch::default();
             write_batch.delete_range(start_key.as_ref(), end_key.as_ref());
-            self.db.write(write_batch)?;
+            self.db.write_opt(write_batch, &self.write_opts)?;
         }
 
         return Ok(());

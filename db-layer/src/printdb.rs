@@ -12,11 +12,6 @@ impl PrintDB {
 }
 
 impl DBTranslationLayer for PrintDB {
-    fn init(&mut self) -> Result<()> {
-        println!("Initialized");
-        Ok(())
-    }
-
     fn cleanup(self) -> Result<()> {
         println!("Done");
 

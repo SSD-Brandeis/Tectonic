@@ -16,6 +16,7 @@ mod printdb;
 use printdb::PrintDB;
 mod rocksdb;
 use rocksdb::RocksDB;
+mod cassandra;
 
 pub type Key = [u8];
 pub type Value = [u8];
@@ -497,7 +498,6 @@ impl<'a> Benchmarker<'a> {
 #[enum_dispatch]
 pub trait DBTranslationLayer {
     // Setup
-    fn init(&mut self) -> Result<()>;
     fn cleanup(self) -> Result<()>;
 
     // Operations

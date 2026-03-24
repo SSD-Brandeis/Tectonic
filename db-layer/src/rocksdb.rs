@@ -110,13 +110,6 @@ impl RocksDB {
 }
 
 impl DBTranslationLayer for RocksDB {
-    fn init(&mut self) -> Result<()> {
-        let dir = temp_dir();
-        self.db = rocksdb::DB::open_default(dir.as_path())?;
-
-        Ok(())
-    }
-
     fn cleanup(self) -> Result<()> {
         std::mem::drop(self);
         return Ok(());

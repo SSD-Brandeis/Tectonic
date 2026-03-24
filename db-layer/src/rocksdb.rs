@@ -96,13 +96,12 @@ impl RocksDB {
         let mut iter = self.db.raw_iterator();
         iter.seek(start_key);
 
-        let mut last_key = None;
         let mut scanned = 0usize;
-        while iter.valid() && scanned < limit {
-            last_key = iter.key().map(|key| key.to_vec());
+        while iter.valid() && scanned < limit - 1 {
             scanned += 1;
             iter.next();
         }
+        let last_key = iter.key().map(|key| key.to_vec());
 
         iter.status()?;
 

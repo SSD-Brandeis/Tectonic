@@ -763,12 +763,6 @@ pub struct Sorted {
 }
 
 #[derive(serde::Deserialize, JsonSchema, Clone, Debug)]
-pub struct SaveStats {
-    /// A name for the section/group you want to save stats for
-    pub name: String,
-}
-
-#[derive(serde::Deserialize, JsonSchema, Clone, Debug)]
 pub struct WorkloadSpecGroup {
     pub sorted: Option<Sorted>,
     pub unique_inserts: Option<Inserts>,
@@ -788,8 +782,11 @@ pub struct WorkloadSpecGroup {
     /// Defaults for the group
     pub defaults: Option<Defaults>,
 
+    /// Used for displaying stats and gui
+    pub name: Option<String>,
     /// Whether or not to save stats for a group
-    pub save_stats: Option<SaveStats>,
+    #[serde(default)]
+    pub enable_granular_stats: bool,
 }
 
 #[derive(serde::Deserialize, JsonSchema, Default, Copy, Clone, Debug)]
@@ -825,8 +822,11 @@ pub struct WorkloadSpecSection {
     #[serde(default)]
     pub default_distributions: DefaultDistributionsOptional,
 
+    /// Used for displaying stats and gui
+    pub name: Option<String>,
+    #[serde(default)]
     /// Whether or not to save stats for a section
-    pub save_stats: Option<SaveStats>,
+    pub enable_granular_stats: bool,
 }
 
 impl WorkloadSpecSection {

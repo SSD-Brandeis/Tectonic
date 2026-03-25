@@ -567,7 +567,7 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
     section_num: usize,
     keyset_constructor: impl Fn(usize) -> KeySetT,
 ) -> Result<()> {
-    if section.save_stats.is_some() {
+    if section.enable_granular_stats {
         operation_handler.start_stat_flush(BenchmarkerType::Section)?;
     }
 
@@ -606,7 +606,7 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
     )
     .enumerate()
     {
-        if group.save_stats.is_some() {
+        if group.enable_granular_stats {
             operation_handler.start_stat_flush(BenchmarkerType::Group)?;
         }
 
@@ -1277,15 +1277,25 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
             }
         }
 
-        if let Some(save_stats) = &group.save_stats {
-            operation_handler.end_stat_flush(&save_stats.name, BenchmarkerType::Group)?;
+        if group.enable_granular_stats {
+            if let Some(name) = &group.name {
+                operation_handler.end_stat_flush(name, BenchmarkerType::Group)?;
+            } else {
+                let name = format!("Section {} Group {}", section_num, group_num);
+                operation_handler.end_stat_flush(name.as_str(), BenchmarkerType::Group)?;
+            }
         }
 
         progress_bar.finish_and_clear();
     }
 
-    if let Some(save_stats) = &section.save_stats {
-        operation_handler.end_stat_flush(&save_stats.name, BenchmarkerType::Section)?;
+    if section.enable_granular_stats {
+        if let Some(name) = &section.name {
+            operation_handler.end_stat_flush(name, BenchmarkerType::Section)?;
+        } else {
+            let name = format!("Section {}", section_num);
+            operation_handler.end_stat_flush(name.as_str(), BenchmarkerType::Section)?;
+        }
     }
 
     return Ok(());

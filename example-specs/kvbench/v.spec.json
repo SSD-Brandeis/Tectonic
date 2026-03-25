@@ -1,5 +1,5 @@
 {
-  "$schema": "../workload_schema.json",
+  "$schema": "../../workload_schema.json",
   "sections": [
     {
       "groups": [
@@ -17,13 +17,23 @@
                       "amount": 10
                     }
                   },
-                  { "uniform": { "len": 510 } }
+                  {
+                    "uniform": {
+                      "len": 510
+                    }
+                  }
                 ]
               }
             },
-            "val": { "uniform": { "len": 512 } }
+            "val": {
+              "uniform": {
+                "len": 512
+              }
+            }
           },
-          "point_queries": { "op_count": 50000 }
+          "point_queries": {
+            "op_count": 50000
+          }
         }
       ]
     }

@@ -13,10 +13,14 @@ use std::time::{self};
 
 mod printdb;
 use printdb::PrintDB;
+#[cfg(feature = "rocksdb")]
 mod rocksdb;
+#[cfg(feature = "rocksdb")]
 use rocksdb::RocksDB;
-// mod cassandra;
-// use cassandra::Cassandra;
+#[cfg(feature = "cassandra")]
+mod cassandra;
+#[cfg(feature = "cassandra")]
+use cassandra::Cassandra;
 
 pub type Key = [u8];
 pub type Value = [u8];
@@ -516,8 +520,10 @@ pub trait DBTranslationLayer {
 #[enum_dispatch(DBTranslationLayer)]
 pub enum Db {
     PrintDB,
+    #[cfg(feature = "rocksdb")]
     RocksDB,
-    // Cassandra,
+    #[cfg(feature = "cassandra")]
+    Cassandra,
 }
 
 impl Db {
@@ -527,11 +533,17 @@ impl Db {
             // Err(err) => {
             //     bail!("Failed to create db because of error {err}");
             // }
+            #[cfg(feature = "rocksdb")]
             "rocksdb" => Self::RocksDB(RocksDB::new(db_path, config)?),
+            #[allow(unreachable_patterns)]
+            "rocksdb" => bail!("Rocksdb not enabled. Rebuild with --features rocksdb"),
             // Err(err) => {
             //     bail!("Failed to create db because of error {err}");
             // }
-            // "cassandra" => Self::Cassandra(Cassandra::new(db_path, config)?),
+            #[cfg(feature = "cassandra")]
+            "cassandra" => Self::Cassandra(Cassandra::new(db_path, config)?),
+            #[allow(unreachable_patterns)]
+            "cassandra" => bail!("Cassandra not enabled. Rebuild with --features cassandra"),
             _ => bail!("Unsupported database"),
         })
     }

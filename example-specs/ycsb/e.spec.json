@@ -10,13 +10,20 @@
               "segmented": {
                 "segments": [
                   "usertable:user",
-                  { "uniform": { "len": 19, "character_set": "numeric" } }
+                  {
+                    "uniform": {
+                      "len": 19,
+                      "character_set": "numeric"
+                    }
+                  }
                 ],
                 "separator": ""
               }
             },
             "val": {
-              "uniform": { "len": 1024 }
+              "uniform": {
+                "len": 1024
+              }
             }
           }
         },
@@ -24,7 +31,7 @@
           "range_queries": {
             "op_count": 950000,
             "selectivity": {
-              "uniform": {
+              "beta": {
                 "min": 0,
                 "max": 0.001
               }
@@ -42,13 +49,20 @@
               "segmented": {
                 "segments": [
                   "usertable:user",
-                  { "uniform": { "len": 19, "character_set": "numeric" } }
+                  {
+                    "uniform": {
+                      "len": 19,
+                      "character_set": "numeric"
+                    }
+                  }
                 ],
                 "separator": ""
               }
             },
             "val": {
-              "uniform": { "len": 1024 }
+              "uniform": {
+                "len": 1024
+              }
             }
           }
         }

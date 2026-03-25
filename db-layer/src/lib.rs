@@ -15,8 +15,8 @@ mod printdb;
 use printdb::PrintDB;
 mod rocksdb;
 use rocksdb::RocksDB;
-mod cassandra;
-use cassandra::Cassandra;
+// mod cassandra;
+// use cassandra::Cassandra;
 
 pub type Key = [u8];
 pub type Value = [u8];
@@ -238,38 +238,38 @@ impl<'a> BenchmarkerInner<'a> {
                 _ => panic!("Unknown operation in statistics set"),
             };
             total_operation_counts += stats.count;
-            println!("[{}] Count: {}", operation, stats.count);
+            println!("[{}] Count: {:.5}", operation, stats.count);
             println!(
-                "[{}] Successful Operations Count: {}",
+                "[{}] Successful Operations Count: {:.5}",
                 operation,
                 stats.count - stats.failed_count
             );
-            println!("[{}] Total Latency: {}us", operation, stats.sum);
+            println!("[{}] Total Latency: {:.5}us", operation, stats.sum);
             println!(
-                "[{}] Average Latency: {}us",
+                "[{}] Average Latency: {:.5}us",
                 operation,
                 stats.histogram.mean()
             );
 
             println!(
-                "[{}] Minimum Latency: {}us",
+                "[{}] Minimum Latency: {:.5}us",
                 operation,
                 stats.histogram.min()
             );
             println!(
-                "[{}] Maximum Latency: {}us",
+                "[{}] Maximum Latency: {:.5}us",
                 operation,
                 stats.histogram.max()
             );
 
             println!(
-                "[{}] 95th Percentile Latency: {}us",
+                "[{}] 95th Percentile Latency: {:.5}us",
                 operation,
                 stats.histogram.value_at_percentile(95.0)
             );
 
             println!(
-                "[{}] 99th Percentile Latency: {}us",
+                "[{}] 99th Percentile Latency: {:.5}us",
                 operation,
                 stats.histogram.value_at_percentile(99.0)
             );
@@ -280,32 +280,32 @@ impl<'a> BenchmarkerInner<'a> {
             return;
         }
 
-        println!("[Overall] Total Operations: {}", total_operation_counts);
+        println!("[Overall] Total Operations: {:.5}", total_operation_counts);
         println!(
-            "[Overall] Average Latency: {}us",
+            "[Overall] Average Latency: {:.5}us",
             total_operation_timing_sum as f64 / total_operation_counts as f64
         );
 
         if let (Some(start_time), Some(end_time)) = (self.start_time, self.end_time) {
             println!(
-                "[Overall] Throughput (using start and end time) (ops/ms): {}",
-                total_operation_counts as f64 / end_time.duration_since(start_time).as_millis_f64()
+                "[Overall] Throughput (using start and end time): {:.5}ops/sec",
+                total_operation_counts as f64 / end_time.duration_since(start_time).as_secs_f64()
             );
         }
         println!(
-            "[Overall] Throughput (using aggregate operation times) (ops/ms): {}",
-            total_operation_counts as f64 / (total_operation_timing_sum as f64 / 1000.0)
+            "[Overall] Throughput (using aggregate operation times): {:.5}ops/sec",
+            total_operation_counts as f64 / (total_operation_timing_sum as f64 / 1000000.0)
         );
 
         if let (Some(start_time), Some(end_time)) = (self.start_time, self.end_time) {
             println!(
-                "[Overall] Total Time Spent (using start and end time): {}ms",
-                end_time.duration_since(start_time).as_millis_f64()
+                "[Overall] End to End Time: {:.5}secs",
+                end_time.duration_since(start_time).as_secs_f64()
             );
         }
         println!(
-            "[Overall] Aggregate Operation Time: {}ms",
-            total_operation_timing_sum as f64 / 1000.0
+            "[Overall] Aggregate Operation Time: {:.5}secs",
+            total_operation_timing_sum as f64 / 1000000.0
         );
     }
 }
@@ -517,7 +517,7 @@ pub trait DBTranslationLayer {
 pub enum Db {
     PrintDB,
     RocksDB,
-    Cassandra,
+    // Cassandra,
 }
 
 impl Db {
@@ -531,7 +531,7 @@ impl Db {
             // Err(err) => {
             //     bail!("Failed to create db because of error {err}");
             // }
-            "cassandra" => Self::Cassandra(Cassandra::new(db_path, config)?),
+            // "cassandra" => Self::Cassandra(Cassandra::new(db_path, config)?),
             _ => bail!("Unsupported database"),
         })
     }

@@ -1325,7 +1325,7 @@ pub fn generate_ycsb_workload(
 pub fn benchmark_ycsb_workload(
     workload_spec_string: String,
     database_name: &str,
-    db_path: Option<PathBuf>,
+    db_path: Option<&str>,
     config: Option<&str>,
     scale: f64,
 ) -> Result<()> {
@@ -1385,7 +1385,7 @@ pub fn generate_workload_spec_schema() -> serde_json::Result<String> {
 pub fn benchmark_workload(
     workload_spec_string: String,
     database_name: &str,
-    db_path: Option<PathBuf>,
+    db_path: Option<&str>,
     config: Option<&str>,
 ) -> Result<()> {
     let workload_spec: WorkloadSpec =

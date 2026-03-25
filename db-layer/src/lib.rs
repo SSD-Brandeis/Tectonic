@@ -9,7 +9,6 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::ops::AddAssign;
-use std::path::PathBuf;
 use std::time::{self};
 
 mod printdb;
@@ -17,6 +16,7 @@ use printdb::PrintDB;
 mod rocksdb;
 use rocksdb::RocksDB;
 mod cassandra;
+use cassandra::Cassandra;
 
 pub type Key = [u8];
 pub type Value = [u8];
@@ -32,8 +32,9 @@ struct Statistics {
 
 impl Default for Statistics {
     fn default() -> Self {
-        let histogram =
+        let mut histogram =
             Histogram::new_with_bounds(1, 60000000, 5).expect("Could not create histogram");
+        histogram.auto(true);
         Self {
             histogram,
             failed_count: Default::default(),
@@ -60,7 +61,7 @@ impl Statistics {
 //     // 50th percentile latency for operations
 //     //
 
-pub fn benchmark_db(db_layer: Db, input_file: String) -> Result<()> {
+pub fn execute_and_benchmark_db(db_layer: Db, input_file: String) -> Result<()> {
     let file = File::open(input_file)?;
 
     let file_size = file.metadata()?.len();
@@ -516,14 +517,11 @@ pub trait DBTranslationLayer {
 pub enum Db {
     PrintDB,
     RocksDB,
+    Cassandra,
 }
 
 impl Db {
-    pub fn new(
-        database_name: &str,
-        db_path: Option<PathBuf>,
-        config: Option<&str>,
-    ) -> Result<Self> {
+    pub fn new(database_name: &str, db_path: Option<&str>, config: Option<&str>) -> Result<Self> {
         Ok(match database_name {
             "printdb" => Self::PrintDB(PrintDB::new()?),
             // Err(err) => {
@@ -533,7 +531,8 @@ impl Db {
             // Err(err) => {
             //     bail!("Failed to create db because of error {err}");
             // }
-            _ => bail!("Unsupported database. Supported databases are printdb and rocksdb"),
+            "cassandra" => Self::Cassandra(Cassandra::new(db_path, config)?),
+            _ => bail!("Unsupported database"),
         })
     }
 }
@@ -541,8 +540,8 @@ impl Db {
 pub fn execute_operations(
     name: &str,
     input_file: String,
-    db_path: Option<PathBuf>,
+    db_path: Option<&str>,
     config: Option<&str>,
 ) -> Result<()> {
-    benchmark_db(Db::new(name, db_path, config)?, input_file)
+    execute_and_benchmark_db(Db::new(name, db_path, config)?, input_file)
 }

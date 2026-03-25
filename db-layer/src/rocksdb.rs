@@ -5,6 +5,7 @@ use rocksdb::{Options, ReadOptions, WriteOptions};
 use std::env::temp_dir;
 use std::fs::DirBuilder;
 use std::path::PathBuf;
+use std::str::FromStr;
 
 pub struct RocksDB {
     db: rocksdb::DB,
@@ -13,12 +14,18 @@ pub struct RocksDB {
 }
 
 impl RocksDB {
-    pub fn new(db_path: Option<PathBuf>, config_file_path: Option<&str>) -> Result<Self> {
-        let dir = db_path.unwrap_or_else(|| {
-            let mut dir = temp_dir();
-            dir.push("tectonic-rocksdb/");
-            dir
-        });
+    pub fn new(db_path: Option<&str>, config_file_path: Option<&str>) -> Result<Self> {
+        // let db_path =
+        let dir = {
+            if let Some(db_path) = db_path {
+                PathBuf::from_str(db_path).context("Not a valid database path")?
+            } else {
+                let mut dir = temp_dir();
+                dir.push("tectonic-rocksdb/");
+                dir
+            }
+        };
+
         let dir_builder = DirBuilder::new();
         // This error means the directory already exists, which is what we want
         let _ = dir_builder.create(&dir);
@@ -35,22 +42,23 @@ impl RocksDB {
                 opts
             } else {
                 let mut opts = rocksdb::Options::default();
-                let merge_fn = |_key: &[u8],
-                                existing_value: Option<&[u8]>,
-                                operands: &rocksdb::MergeOperands|
-                 -> Option<Vec<u8>> {
-                    let mut new = existing_value.map(|v| v.to_vec()).unwrap_or_default();
-                    for op in operands {
-                        new.extend_from_slice(op);
-                    }
-
-                    return Some(new);
-                };
-                opts.set_merge_operator_associative("Merge", merge_fn);
                 opts.create_if_missing(true);
                 opts
             }
         };
+
+        // let merge_fn = |_key: &[u8],
+        //                 existing_value: Option<&[u8]>,
+        //                 operands: &rocksdb::MergeOperands|
+        //  -> Option<Vec<u8>> {
+        //     let mut new = existing_value.map(|v| v.to_vec()).unwrap_or_default();
+        //     for op in operands {
+        //         new.extend_from_slice(op);
+        //     }
+        //
+        //     return Some(new);
+        // };
+        // opts.set_merge_operator_associative("Merge", merge_fn);
 
         Ok(Self {
             db: rocksdb::DB::open(&opts, dir.as_path())?,
@@ -146,7 +154,10 @@ impl DBTranslationLayer for RocksDB {
     }
 
     fn merge(&self, key: &Key, value: &Value) -> Result<()> {
-        self.db.merge_opt(key, value, &self.write_opts)?;
+        // self.db.merge_opt(key, value, &self.write_opts)?;
+        self.point_query(key);
+        self.update(key, value);
+
         return Ok(());
     }
 

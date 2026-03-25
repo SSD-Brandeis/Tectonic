@@ -130,7 +130,7 @@ fn main() -> Result<()> {
             return execute_operations(
                 &database,
                 input_file,
-                db_path.as_ref().map(PathBuf::from),
+                db_path.as_deref(),
                 config.as_deref(),
             );
         }
@@ -146,7 +146,7 @@ fn main() -> Result<()> {
                 benchmark_workload(
                     workload_spec_string,
                     database_name,
-                    db_path.as_ref().map(PathBuf::from),
+                    db_path.as_deref(),
                     config.as_deref(),
                 )
             },
@@ -185,7 +185,7 @@ fn main() -> Result<()> {
                     benchmark_ycsb_workload(
                         workload_spec_string,
                         database_name,
-                        db_path.as_ref().map(PathBuf::from),
+                        db_path.as_deref(),
                         config.as_deref(),
                         scale,
                     )
@@ -218,7 +218,7 @@ fn main() -> Result<()> {
                     benchmark_workload(
                         workload_spec_string,
                         database_name,
-                        db_path.as_ref().map(PathBuf::from),
+                        db_path.as_deref(),
                         config.as_deref(),
                     )
                 },

@@ -155,8 +155,8 @@ impl DBTranslationLayer for RocksDB {
 
     fn merge(&self, key: &Key, value: &Value) -> Result<()> {
         // self.db.merge_opt(key, value, &self.write_opts)?;
-        self.point_query(key);
-        self.update(key, value);
+        self.point_query(key)?;
+        self.update(key, value)?;
 
         return Ok(());
     }

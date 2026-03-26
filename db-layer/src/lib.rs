@@ -8,6 +8,7 @@ use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
+use std::num::TryFromIntError;
 use std::ops::AddAssign;
 use std::time::{self};
 
@@ -21,6 +22,8 @@ use rocksdb::RocksDB;
 mod cassandra;
 #[cfg(feature = "cassandra")]
 use cassandra::Cassandra;
+
+const STATISTICS_SCALE: f64 = 1000.0;
 
 pub type Key = [u8];
 pub type Value = [u8];
@@ -49,16 +52,52 @@ impl Default for Statistics {
 }
 
 impl Statistics {
-    fn add_latency(&mut self, latency: u64) {
+    fn add_latency(&mut self, latency_nanos: u128) {
+        let latency_nanos: u64 = {
+            let res: Result<u64, TryFromIntError> = latency_nanos.try_into();
+            if let Ok(res) = res {
+                res
+            } else {
+                eprintln!(
+                    "[WARNING] Latency exceeds 2^64 nanoseconds, capping at 2^64 - 1 nanoseconds. This is a very large latency, please check your query."
+                );
+                u64::MAX
+            }
+        };
         self.count += 1;
-        self.sum += latency;
-        if self.histogram.record(latency).is_err() {
-            eprintln!("Latency {} exceeds max latency", latency)
+        self.sum += latency_nanos;
+        if self.histogram.record(latency_nanos).is_err() {
+            eprintln!("Latency {} exceeds max latency", latency_nanos)
         };
     }
 
     fn add_error(&mut self) {
         self.failed_count += 1;
+    }
+
+    /// Returns the max latency in microseconds
+    fn min(&self) -> f64 {
+        return self.histogram.min() as f64 / 1000.0;
+    }
+
+    /// Returns the max latency in microseconds
+    fn max(&self) -> f64 {
+        return self.histogram.max() as f64 / 1000.0;
+    }
+
+    /// Returns the average latency in microseconds
+    fn average(&self) -> f64 {
+        return self.histogram.mean() / 1000.0;
+    }
+
+    /// Returns the total latency in microseconds
+    fn total_latency(&self) -> f64 {
+        return self.sum as f64 / 1000.0;
+    }
+
+    /// Returns the value at the given percentile in microseconds
+    fn value_at_percentile(&self, percentile: f64) -> f64 {
+        return self.histogram.value_at_percentile(percentile) as f64 / 1000.0;
     }
 }
 //     // TODO: Keep track of:
@@ -227,10 +266,10 @@ impl<'a> BenchmarkerInner<'a> {
 
     pub fn print_stats(&mut self) {
         let mut total_operation_counts = 0;
-        let mut total_operation_timing_sum = 0;
+        let mut total_operation_timing_sum = 0.0;
         // Print out statistics
         for (&operation, stats) in self.operation_statistics_map.iter_mut() {
-            total_operation_timing_sum += stats.sum;
+            total_operation_timing_sum += stats.total_latency();
             let operation = match operation {
                 "I" => "Insert",
                 "P" => "Point Query",
@@ -248,38 +287,30 @@ impl<'a> BenchmarkerInner<'a> {
                 operation,
                 stats.count - stats.failed_count
             );
-            println!("[{}] Total Latency: {:.5}us", operation, stats.sum);
             println!(
-                "[{}] Average Latency: {:.5}us",
+                "[{}] Total Latency: {:.5}us",
                 operation,
-                stats.histogram.mean()
+                stats.total_latency()
             );
+            println!("[{}] Average Latency: {:.5}us", operation, stats.average());
 
-            println!(
-                "[{}] Minimum Latency: {:.5}us",
-                operation,
-                stats.histogram.min()
-            );
-            println!(
-                "[{}] Maximum Latency: {:.5}us",
-                operation,
-                stats.histogram.max()
-            );
+            println!("[{}] Minimum Latency: {:.5}us", operation, stats.min());
+            println!("[{}] Maximum Latency: {:.5}us", operation, stats.max());
 
             println!(
                 "[{}] 95th Percentile Latency: {:.5}us",
                 operation,
-                stats.histogram.value_at_percentile(95.0)
+                stats.value_at_percentile(95.0)
             );
 
             println!(
                 "[{}] 99th Percentile Latency: {:.5}us",
                 operation,
-                stats.histogram.value_at_percentile(99.0)
+                stats.value_at_percentile(99.0)
             );
         }
 
-        if total_operation_timing_sum == 0 {
+        if total_operation_timing_sum == 0.0 {
             eprintln!("No Operations");
             return;
         }
@@ -287,7 +318,7 @@ impl<'a> BenchmarkerInner<'a> {
         println!("[Overall] Total Operations: {:.5}", total_operation_counts);
         println!(
             "[Overall] Average Latency: {:.5}us",
-            total_operation_timing_sum as f64 / total_operation_counts as f64
+            total_operation_timing_sum / total_operation_counts as f64
         );
 
         if let (Some(start_time), Some(end_time)) = (self.start_time, self.end_time) {
@@ -298,7 +329,7 @@ impl<'a> BenchmarkerInner<'a> {
         }
         println!(
             "[Overall] Throughput (using aggregate operation times): {:.5}ops/sec",
-            total_operation_counts as f64 / (total_operation_timing_sum as f64 / 1000000.0)
+            total_operation_counts as f64 / (total_operation_timing_sum / 1000000.0)
         );
 
         if let (Some(start_time), Some(end_time)) = (self.start_time, self.end_time) {
@@ -309,7 +340,7 @@ impl<'a> BenchmarkerInner<'a> {
         }
         println!(
             "[Overall] Aggregate Operation Time: {:.5}secs",
-            total_operation_timing_sum as f64 / 1000000.0
+            total_operation_timing_sum / 1000000.0
         );
     }
 }
@@ -320,13 +351,13 @@ macro_rules! measure {
         let res = $call;
         let latency = std::time::Instant::now()
             .duration_since(start_time)
-            .as_micros();
+            .as_nanos();
         let op_stats = $self
             .overall
             .operation_statistics_map
             .entry($op_key)
             .or_default();
-        op_stats.add_latency(latency as u64);
+        op_stats.add_latency(latency);
 
         if res.is_err() {
             op_stats.add_error();
@@ -337,7 +368,7 @@ macro_rules! measure {
                 .operation_statistics_map
                 .entry($op_key)
                 .or_default();
-            op_stats.add_latency(latency as u64);
+            op_stats.add_latency(latency);
             if res.is_err() {
                 op_stats.add_error();
             }
@@ -348,7 +379,7 @@ macro_rules! measure {
                 .operation_statistics_map
                 .entry($op_key)
                 .or_default();
-            op_stats.add_latency(latency as u64);
+            op_stats.add_latency(latency);
             if res.is_err() {
                 op_stats.add_error();
             }

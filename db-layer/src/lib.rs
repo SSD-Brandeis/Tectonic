@@ -77,27 +77,27 @@ impl Statistics {
 
     /// Returns the max latency in microseconds
     fn min(&self) -> f64 {
-        return self.histogram.min() as f64 / 1000.0;
+        return self.histogram.min() as f64 / STATISTICS_SCALE;
     }
 
     /// Returns the max latency in microseconds
     fn max(&self) -> f64 {
-        return self.histogram.max() as f64 / 1000.0;
+        return self.histogram.max() as f64 / STATISTICS_SCALE;
     }
 
     /// Returns the average latency in microseconds
     fn average(&self) -> f64 {
-        return self.histogram.mean() / 1000.0;
+        return self.histogram.mean() / STATISTICS_SCALE;
     }
 
     /// Returns the total latency in microseconds
     fn total_latency(&self) -> f64 {
-        return self.sum as f64 / 1000.0;
+        return self.sum as f64 / STATISTICS_SCALE;
     }
 
     /// Returns the value at the given percentile in microseconds
     fn value_at_percentile(&self, percentile: f64) -> f64 {
-        return self.histogram.value_at_percentile(percentile) as f64 / 1000.0;
+        return self.histogram.value_at_percentile(percentile) as f64 / STATISTICS_SCALE;
     }
 }
 //     // TODO: Keep track of:

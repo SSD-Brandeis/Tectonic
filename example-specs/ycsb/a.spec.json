@@ -7,7 +7,7 @@
           "name": "Load Phase",
           "enable_granular_stats": true,
           "inserts": {
-            "op_count": 1000,
+            "op_count": 1000000,
             "key": {
               "segmented": {
                 "segments": [
@@ -33,7 +33,7 @@
           "name": "Execution Phase",
           "enable_granular_stats": true,
           "point_queries": {
-            "op_count": 500,
+            "op_count": 500000,
             "selection": {
               "beta": {
                 "alpha": 0.1,
@@ -42,7 +42,7 @@
             }
           },
           "updates": {
-            "op_count": 500,
+            "op_count": 500000,
             "val": {
               "uniform": {
                 "len": 128

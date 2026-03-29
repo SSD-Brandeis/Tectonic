@@ -5,6 +5,9 @@ use anyhow::{Result, anyhow};
 use cassandra_cpp::{Cluster, Session};
 use tokio::runtime::{self, Runtime};
 
+const KEYSPACE_NAME: &str = "tectonic";
+const TABLE_NAME: &str = "tectonic.data";
+
 pub struct Cassandra {
     session: Session,
     cluster: Cluster,
@@ -33,15 +36,14 @@ impl Cassandra {
 
         // TODO: Create new tectonic data table with passed in configuration options (if there are
         // any)
-        let query = "CREATE KEYSPACE IF NOT EXISTS tectonic WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 1};";
+        let query = format!(
+            "CREATE KEYSPACE IF NOT EXISTS {KEYSPACE_NAME} WITH replication = {{'class': 'SimpleStrategy', 'replication_factor': 1}};"
+        );
         runtime
             .block_on(session.execute(query))
             .map_err(|e| anyhow!("Failed to create keyspace: {:?}", e))?;
-        let query = "USE tectonic";
-        runtime
-            .block_on(session.execute(query))
-            .map_err(|e| anyhow!("Failed to create keyspace: {:?}", e))?;
-        let query = "CREATE TABLE IF NOT EXISTS tectonic.data (key text PRIMARY KEY, value text);";
+        let query =
+            format!("CREATE TABLE IF NOT EXISTS {TABLE_NAME} (key text PRIMARY KEY, value text);");
         runtime
             .block_on(session.execute(query))
             .map_err(|e| anyhow!("Failed to create table: {:?}", e))?;
@@ -64,8 +66,8 @@ impl DBTranslationLayer for Cassandra {
         let key = from_utf8(key)?;
         let value = from_utf8(value)?;
         let query = format!(
-            "INSERT INTO Tectonic (key, value) VALUES('{}', '{}');",
-            key, value
+            "INSERT INTO {} (key, value) VALUES('{}', '{}');",
+            TABLE_NAME, key, value
         );
 
         let _ = self
@@ -79,7 +81,10 @@ impl DBTranslationLayer for Cassandra {
     fn update(&self, key: &Key, value: &Value) -> Result<()> {
         let key = from_utf8(key)?;
         let value = from_utf8(value)?;
-        let query = format!("UPDATE Tectonic SET value='{}' WHERE key='{}';", value, key);
+        let query = format!(
+            "UPDATE {} SET value='{}' WHERE key='{}';",
+            TABLE_NAME, value, key
+        );
 
         let _ = self
             .runtime
@@ -97,7 +102,7 @@ impl DBTranslationLayer for Cassandra {
 
     fn point_delete(&self, key: &Key) -> Result<()> {
         let key = from_utf8(key)?;
-        let query = format!("DELETE FROM Tectonic WHERE key='{}';", key);
+        let query = format!("DELETE FROM {} WHERE key='{}';", TABLE_NAME, key);
 
         let _ = self
             .runtime
@@ -108,7 +113,7 @@ impl DBTranslationLayer for Cassandra {
 
     fn point_query(&self, key: &Key) -> Result<()> {
         let key = from_utf8(key)?;
-        let query = format!("SELECT value FROM Tectonic WHERE key='{}';", key);
+        let query = format!("SELECT value FROM {} WHERE key='{}';", TABLE_NAME, key);
 
         let _ = self
             .runtime
@@ -121,8 +126,8 @@ impl DBTranslationLayer for Cassandra {
         let start_key = from_utf8(start_key)?;
         let end_key = from_utf8(end_key)?;
         let query = format!(
-            "SELECT value FROM Tectonic WHERE key>='{}' AND key<'{}';",
-            start_key, end_key
+            "SELECT value FROM {} WHERE key>='{}' AND key<'{}';",
+            TABLE_NAME, start_key, end_key
         );
 
         let _ = self
@@ -135,8 +140,8 @@ impl DBTranslationLayer for Cassandra {
     fn range_query_count(&self, start_key: &Key, range: usize) -> Result<()> {
         let start_key = from_utf8(start_key)?;
         let query = format!(
-            "SELECT value FROM Tectonic WHERE key>='{}' LIMIT {};",
-            start_key, range
+            "SELECT value FROM {} WHERE key>='{}' LIMIT {};",
+            TABLE_NAME, start_key, range
         );
 
         let _ = self
@@ -150,8 +155,8 @@ impl DBTranslationLayer for Cassandra {
         let start_key = from_utf8(start_key)?;
         let end_key = from_utf8(end_key)?;
         let query = format!(
-            "DELETE FROM Tectonic WHERE key>='{}' AND key <'{}';",
-            start_key, end_key
+            "DELETE FROM {} WHERE key>='{}' AND key <'{}';",
+            TABLE_NAME, start_key, end_key
         );
 
         let _ = self

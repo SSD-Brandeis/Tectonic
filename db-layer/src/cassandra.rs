@@ -12,7 +12,14 @@ pub struct Cassandra {
 }
 
 impl Cassandra {
-    pub fn new(endpoint: Option<&str>, table_options: Option<&str>) -> Result<Self> {
+    pub fn new(endpoint: Option<&str>, options: Option<&str>) -> Result<Self> {
+        // if let Some(options) = options {
+        //     let opt_iter = options.split(";");
+        //     let keyspace_options = opt_iter.next();
+        //
+        //     let table_options = opt_iter.next();
+        // }
+
         let runtime = Runtime::new()?;
         let mut cluster = Cluster::default();
         let endpoint =
@@ -26,6 +33,18 @@ impl Cassandra {
 
         // TODO: Create new tectonic data table with passed in configuration options (if there are
         // any)
+        let query = "CREATE KEYSPACE IF NOT EXISTS tectonic WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 1};";
+        runtime
+            .block_on(session.execute(query))
+            .map_err(|e| anyhow!("Failed to create keyspace: {:?}", e))?;
+        let query = "USE tectonic";
+        runtime
+            .block_on(session.execute(query))
+            .map_err(|e| anyhow!("Failed to create keyspace: {:?}", e))?;
+        let query = "CREATE TABLE IF NOT EXISTS tectonic.data (key text PRIMARY KEY, value text);";
+        runtime
+            .block_on(session.execute(query))
+            .map_err(|e| anyhow!("Failed to create table: {:?}", e))?;
 
         return Ok(Self {
             session,
@@ -45,7 +64,7 @@ impl DBTranslationLayer for Cassandra {
         let key = from_utf8(key)?;
         let value = from_utf8(value)?;
         let query = format!(
-            "INSERT INTO Tectonic (key, value) VALUES({}, {});",
+            "INSERT INTO Tectonic (key, value) VALUES('{}', '{}');",
             key, value
         );
 

@@ -566,14 +566,14 @@ impl Db {
             // }
             #[cfg(feature = "rocksdb")]
             "rocksdb" => Self::RocksDB(RocksDB::new(db_path, config)?),
-            #[allow(unreachable_patterns)]
+            #[cfg(not(feature = "rocksdb"))]
             "rocksdb" => bail!("Rocksdb not enabled. Rebuild with --features rocksdb"),
             // Err(err) => {
             //     bail!("Failed to create db because of error {err}");
             // }
             #[cfg(feature = "cassandra")]
             "cassandra" => Self::Cassandra(Cassandra::new(db_path, config)?),
-            #[allow(unreachable_patterns)]
+            #[cfg(not(feature = "cassandra"))]
             "cassandra" => bail!("Cassandra not enabled. Rebuild with --features cassandra"),
             _ => bail!("Unsupported database"),
         })

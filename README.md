@@ -33,14 +33,14 @@ Currently available databases are:
 
 - printdb
 - rocksdb
-- cassandra
+- cassandra  
 Alternatively, you can enable all databases by using the flag `--all-features` when compiling.
 
 ## Usage
 
 Tectonic has 3 primary commands that you can use for benchmarking:
 
-1. Generate
+1. **Generate**
 
 ```bash
 ./tectonic-cli generate -w workload.spec.json -o workload_output_path
@@ -48,7 +48,7 @@ Tectonic has 3 primary commands that you can use for benchmarking:
 
 Generate takes in a path to a json workload specification file and optionally an output file path as well. Without an output path, it will default to spec.txt. Generate will output a special text file that you can then feed into the execute command to execute the workload on a database. Use `--help` with the generate command to see additional flags that can be used with generate.
 
-2. Execute
+2. **Execute**
 
 ```bash
 ./tectonic-cli execute -i workload.txt -d rocksdb 
@@ -56,7 +56,7 @@ Generate takes in a path to a json workload specification file and optionally an
 
 Execute takes in a path to a previously generated workload text file (through the generate command) and a database name. It will then run the operations in the file on the given database. You can also pass in a path and a configuration string for each database. The path will usually be a file path for local database (i.e. rocksdb) or an endpoint url for networked databases (i.e. cassandra). The config string is database specific. Please see the section on specific databases (TODO) if you are unsure, or run tectonic and it will give you a helpful error if you are missing something. Use `--help` with the execute command to see additional flags that can be used with execute.
 
-3. Benchmark
+3. **Benchmark**
 
 ```bash
 ./tectonic-cli benchmark -w workload.spec.json -d rocksdb 
@@ -66,7 +66,7 @@ Benchmark skips the writing to a workload file and will execute operations on th
 
 ### Additional Commands
 
-1. Schema
+1. **Schema**
 
 ```bash
 ./tectonic-cli schema 
@@ -80,7 +80,7 @@ Schema will print the json schema for tectonic, which can be pasted into a file 
 "$schema": "<path_to_schema>.spec.json",
 ```
 
-2. Help
+2. **Help**
 
 ```bash
 ./tectonic-cli help
@@ -90,7 +90,7 @@ This will display a help message, enumerate all the possible commands, and give 
 
 ## Spec Files
 
-To generate a workload, you first need to write a spec file for that workload, which can be quite a tedious process. There are several ways to make this process less tedious. We recommend using [TexBench](https://github.com/SSD-Brandeis/TexBench) First off, you can use the schema subcommand to get the json schema for tectonic, which will make working in an editor slightly easier. There are also several [example spec files](./example-specs/) in this repository for existing benchmarks that can be used as is or for inspiration. See [Usage.md](/USAGE.md) for more details.
+To generate a workload, you first need to write a spec file for that workload, which can be quite a tedious process. There are several ways to make this process less tedious. We recommend using [TexBench](https://github.com/SSD-Brandeis/TexBench), but if you would like to write the spec file by hand, you can use the schema subcommand to get the json schema for tectonic, which will make working in an editor slightly easier. There are also several [example spec files](./example-specs/) in this repository for existing benchmarks that can be used as is or for inspiration. See [Usage.md](/USAGE.md) for more details.
 
 ## Profiling
 

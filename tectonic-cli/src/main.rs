@@ -124,7 +124,7 @@ struct WorkloadPath {
 }
 
 impl WorkloadPath {
-    fn into_path(&self) -> Result<String> {
+    fn into_path(self) -> Result<String> {
         if let Some(path) = self.path {
             return Ok(path);
         } else if let Some(ycsb_name) = self.ycsb {

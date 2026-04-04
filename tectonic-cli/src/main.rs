@@ -1,6 +1,6 @@
 #![allow(clippy::needless_return)]
 use anyhow::{Context, Result, bail};
-use clap::{Parser, Subcommand};
+use clap::{Args, Parser, Subcommand};
 use db_layer::execute_operations;
 use rayon::iter::ParallelIterator;
 use rayon::prelude::ParallelBridge;
@@ -9,7 +9,8 @@ use std::{
     path::{Path, PathBuf},
 };
 use tectonic::{
-    benchmark_workload, benchmark_ycsb_workload, generate_workload, generate_workload_spec_schema,
+    benchmark_workload, generate_workload, generate_workload_spec_schema,
+    scale_and_benchmark_workload, scale_and_generate_workload,
 };
 use tracing::info;
 use tracing_subscriber::EnvFilter;
@@ -26,13 +27,16 @@ struct Cli {
 enum Command {
     /// Generate workload(s) from a file or folder of workload specifications.
     Generate {
-        /// File or folder of workload spec files
-        #[arg(short = 'w', long = "workload")]
-        workload_path: String,
+        #[command(flatten)]
+        workload_path: WorkloadPath,
 
         /// Output file or folder for workload(s). Defaults to the same directory as the workload spec.
         #[arg(short = 'o', long = "output", required = false)]
         output: Option<String>,
+
+        /// Scale factor for the operation counts of the workload
+        #[arg(short = 's', long = "scale")]
+        scale: Option<f64>,
     },
     /// Prints the JSON schema for IDE integration.
     Schema,
@@ -51,11 +55,10 @@ enum Command {
         #[arg(short = 'c', long = "config")]
         config: Option<String>,
     },
-    /// Generate and Execute a workload from a file against a specific database
+    /// Generate and Execute a workload from a spec file against a specific database
     Benchmark {
-        /// File of workload spec files
-        #[arg(short = 'w', long = "workload")]
-        workload_path: String,
+        #[command(flatten)]
+        workload_path: WorkloadPath,
         /// Name of the database on which to execute operations
         #[arg(short = 'd', long = "database")]
         database: String,
@@ -65,40 +68,101 @@ enum Command {
         /// Configuration string (database dependent)
         #[arg(short = 'c', long = "config")]
         config: Option<String>,
-    },
-    /// Generate and Execute a Ycsb workload
-    Ycsb {
-        /// Name of ycsb workload (a-f)
-        #[arg(short = 'w', long = "name")]
-        workload_name: String,
-        /// Scale factor for the ycsb workload
+
+        /// Scale factor for the operation counts of the workload
         #[arg(short = 's', long = "scale")]
         scale: Option<f64>,
-        /// Name of the database on which to execute operations
-        #[arg(short = 'd', long = "database")]
-        database: String,
-        /// Path to the database
-        #[arg(short = 'p', long = "database-path")]
-        db_path: Option<String>,
-        /// Configuration string (database dependent)
-        #[arg(short = 'c', long = "config")]
-        config: Option<String>,
     },
-    /// Generate and Execute a KvBench workload
-    Kvbench {
-        /// Name of ycsb workload (i-v)
-        #[arg(short = 'w', long = "name")]
-        workload_name: String,
-        /// Name of the database on which to execute operations
-        #[arg(short = 'd', long = "database")]
-        database: String,
-        /// Path to the database
-        #[arg(short = 'p', long = "database-path")]
-        db_path: Option<String>,
-        /// Configuration string (database dependent)
-        #[arg(short = 'c', long = "config")]
-        config: Option<String>,
-    },
+    ///// Generate and Execute a Ycsb workload
+    //Ycsb {
+    //    /// Name of ycsb workload (a-f)
+    //    #[arg(short = 'w', long = "name")]
+    //    workload_name: String,
+    //    /// Scale factor for the ycsb workload
+    //    #[arg(short = 's', long = "scale")]
+    //    scale: Option<f64>,
+    //    /// Name of the database on which to execute operations
+    //    #[arg(short = 'd', long = "database")]
+    //    database: String,
+    //    /// Path to the database
+    //    #[arg(short = 'p', long = "database-path")]
+    //    db_path: Option<String>,
+    //    /// Configuration string (database dependent)
+    //    #[arg(short = 'c', long = "config")]
+    //    config: Option<String>,
+    //},
+    ///// Generate and Execute a KvBench workload
+    //Kvbench {
+    //    /// Name of ycsb workload (i-v)
+    //    #[arg(short = 'w', long = "name")]
+    //    workload_name: String,
+    //    /// Name of the database on which to execute operations
+    //    #[arg(short = 'd', long = "database")]
+    //    database: String,
+    //    /// Path to the database
+    //    #[arg(short = 'p', long = "database-path")]
+    //    db_path: Option<String>,
+    //    /// Configuration string (database dependent)
+    //    #[arg(short = 'c', long = "config")]
+    //    config: Option<String>,
+    //},
+}
+
+#[derive(Debug, Args)]
+#[group(required = true, multiple = false)]
+struct WorkloadPath {
+    /// File or folder of workload spec files
+    #[arg(short = 'w', long = "workload")]
+    path: Option<String>,
+    /// Name of the ycsb workload (ex: a, b, c ...)
+    #[arg(long = "ycsb")]
+    ycsb: Option<String>,
+    /// Name of the kvbench workload (ex: i or 1, ii or 2, etc...)
+    kvbench: Option<String>,
+    #[arg(long = "db_bench")]
+    db_bench: Option<String>,
+}
+
+impl WorkloadPath {
+    fn into_path(&self) -> Result<String> {
+        if let Some(path) = self.path {
+            return Ok(path);
+        } else if let Some(ycsb_name) = self.ycsb {
+            let ycsb_name = match ycsb_name.to_lowercase().as_str() {
+                "a" | "workloada" => "a",
+                "b" | "workloadb" => "b",
+                "c" | "workloadc" => "c",
+                "d" | "workloadd" => "d",
+                "e" | "workloade" => "e",
+                "f" | "workloadf" => "f",
+                _ => bail!("Unknown YCSB workload: {:?}", ycsb_name),
+            };
+
+            return Ok(format!(
+                "{}/../example-specs/ycsb/{}.spec.json",
+                env!("CARGO_MANIFEST_DIR"),
+                ycsb_name
+            ));
+        } else if let Some(kvbench_name) = self.kvbench {
+            let kvbench_name = match kvbench_name.to_lowercase().as_str() {
+                "1" | "i" => "i",
+                "2" | "ii" => "ii",
+                "3" | "iii" => "iii",
+                "4" | "iv" => "iv",
+                "5" | "v" => "v",
+                _ => bail!("Unknown KVBench workload: {:?}", kvbench_name),
+            };
+            return Ok(format!(
+                "{}/../example-specs/kvbench/{}.spec.json",
+                env!("CARGO_MANIFEST_DIR"),
+                kvbench_name
+            ));
+        } else if let Some(db_bench_name) = self.db_bench {
+            todo!()
+        } else {
+            unreachable!()
+        }
+    }
 }
 
 fn main() -> Result<()> {
@@ -111,14 +175,29 @@ fn main() -> Result<()> {
         Command::Generate {
             workload_path,
             output,
+            scale,
         } => {
-            return invoke_generate(
-                &workload_path,
-                output.as_deref(),
-                |workload_spec_string, output_file_path| {
-                    generate_workload(workload_spec_string, output_file_path)
-                },
-            );
+            let workload_path = workload_path.into_path()?;
+
+            if let Some(scale) = scale
+                && scale != 1.0
+            {
+                return invoke_generate(
+                    &workload_path,
+                    output.as_deref(),
+                    |workload_spec_string, output_file_path| {
+                        scale_and_generate_workload(workload_spec_string, output_file_path, scale)
+                    },
+                );
+            } else {
+                return invoke_generate(
+                    &workload_path,
+                    output.as_deref(),
+                    |workload_spec_string, output_file_path| {
+                        generate_workload(workload_spec_string, output_file_path)
+                    },
+                );
+            }
         }
         Command::Schema => return invoke_schema(),
         Command::Execute {
@@ -139,90 +218,40 @@ fn main() -> Result<()> {
             database,
             db_path,
             config,
-        } => invoke_benchmark(
-            &workload_path,
-            &database,
-            |workload_spec_string, database_name| {
-                benchmark_workload(
-                    workload_spec_string,
-                    database_name,
-                    db_path.as_deref(),
-                    config.as_deref(),
-                )
-            },
-        ),
-        Command::Ycsb {
             scale,
-            workload_name,
-            database,
-            db_path,
-            config,
         } => {
-            let scale = scale.unwrap_or(1.0);
-            if !scale.is_normal() || scale <= 0.0 {
-                bail!("Scale must be normal and more than 0");
+            let workload_path = workload_path.into_path()?;
+
+            if let Some(scale) = scale
+                && scale != 1.0
+            {
+                return invoke_benchmark(
+                    &workload_path,
+                    &database,
+                    |workload_spec_string, database_name| {
+                        scale_and_benchmark_workload(
+                            workload_spec_string,
+                            database_name,
+                            db_path.as_deref(),
+                            config.as_deref(),
+                            scale,
+                        )
+                    },
+                );
+            } else {
+                return invoke_benchmark(
+                    &workload_path,
+                    &database,
+                    |workload_spec_string, database_name| {
+                        benchmark_workload(
+                            workload_spec_string,
+                            database_name,
+                            db_path.as_deref(),
+                            config.as_deref(),
+                        )
+                    },
+                );
             }
-
-            let workload_name = match workload_name.to_lowercase().as_str() {
-                "a" | "workloada" => "a",
-                "b" | "workloadb" => "b",
-                "c" | "workloadc" => "c",
-                "d" | "workloadd" => "d",
-                "e" | "workloade" => "e",
-                "f" | "workloadf" => "f",
-                _ => bail!("Unknown YCSB workload: {:?}", workload_name),
-            };
-            let workload_path = format!(
-                "{}/../example-specs/ycsb/{}.spec.json",
-                env!("CARGO_MANIFEST_DIR"),
-                workload_name
-            );
-
-            return invoke_benchmark(
-                &workload_path,
-                &database,
-                |workload_spec_string, database_name| {
-                    benchmark_ycsb_workload(
-                        workload_spec_string,
-                        database_name,
-                        db_path.as_deref(),
-                        config.as_deref(),
-                        scale,
-                    )
-                },
-            );
-        }
-        Command::Kvbench {
-            workload_name,
-            database,
-            db_path,
-            config,
-        } => {
-            let workload_name = match workload_name.to_lowercase().as_str() {
-                "1" | "i" => "i",
-                "2" | "ii" => "ii",
-                "3" | "iii" => "iii",
-                "4" | "iv" => "iv",
-                "5" | "v" => "v",
-                _ => bail!("Unknown KVBench workload: {:?}", workload_name),
-            };
-            let workload_path = format!(
-                "{}/../example-specs/kvbench/{}.spec.json",
-                env!("CARGO_MANIFEST_DIR"),
-                workload_name
-            );
-            return invoke_benchmark(
-                &workload_path,
-                &database,
-                |workload_spec_string, database_name| {
-                    benchmark_workload(
-                        workload_spec_string,
-                        database_name,
-                        db_path.as_deref(),
-                        config.as_deref(),
-                    )
-                },
-            );
         }
     }
 }

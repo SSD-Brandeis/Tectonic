@@ -1314,7 +1314,7 @@ pub fn generate_workload(workload_spec_string: String, output_file: &PathBuf) ->
     Ok(())
 }
 
-pub fn generate_ycsb_workload(
+pub fn scale_and_generate_workload(
     workload_spec_string: String,
     output_file: &PathBuf,
     scale: f64,
@@ -1332,7 +1332,7 @@ pub fn generate_ycsb_workload(
     Ok(())
 }
 
-pub fn benchmark_ycsb_workload(
+pub fn scale_and_benchmark_workload(
     workload_spec_string: String,
     database_name: &str,
     db_path: Option<&str>,

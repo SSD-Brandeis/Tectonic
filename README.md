@@ -34,6 +34,7 @@ Currently available databases are:
 - printdb
 - rocksdb
 - cassandra  
+
 Alternatively, you can enable all databases by using the flag `--all-features` when compiling.
 
 ## Usage
@@ -96,6 +97,3 @@ To generate a workload, you first need to write a spec file for that workload, w
 
 ```bash
 cargo flamegraph --unit-test workload_gen -- workload_1m_i
-```
-
-````

@@ -5,7 +5,10 @@
 
 ## Building
 
+1. First install the rust nightly tool-chain if you have not already
 <https://www.rust-lang.org/tools/install>
+
+2. Then build the release version of the project by running the following commands:
 
 ```bash
 cargo build --release
@@ -14,110 +17,85 @@ cargo build --release
 cargo run --release
 ```
 
+### Enabling Additional Databases
+
+By default, the only included database will be a mock database called printdb. If you would like to include more databases, compile the command with `--features <database>`.
+The full command should look something like this
+
+```
+cargo build --release --features <database>
+./target/release/tectonic
+# or
+cargo run --release --features <database>
+```
+
+Currently available databases are:
+
+- printdb
+- rocksdb
+- cassandra
+Alternatively, you can enable all databases by using the flag `--all-features` when compiling.
+
 ## Usage
 
-```bash
-./tectonic-cli schema > workload_schema.json
+Tectonic has 3 primary commands that you can use for benchmarking:
 
-./tectonic-cli generate -w workload.spec.json
-# or
-./tectonic-cli generate -w workload.spec.json -o workload_outputs/
-# or
-./tectonic-cli generate -w workload_specs/ -o workload_outputs/
-# or 
+1. Generate
+
+```bash
+./tectonic-cli generate -w workload.spec.json -o workload_output_path
+```
+
+Generate takes in a path to a json workload specification file and optionally an output file path as well. Without an output path, it will default to spec.txt. Generate will output a special text file that you can then feed into the execute command to execute the workload on a database. Use `--help` with the generate command to see additional flags that can be used with generate.
+
+2. Execute
+
+```bash
 ./tectonic-cli execute -i workload.txt -d rocksdb 
-# or 
-./tectonic-cli execute -i workload.txt -d rocksdb -p /tmp/rocksdb
-# or 
-./tectonic-cli execute -i workload.txt -d rocksdb -p /tmp/rocksdb -c rocksconf.ini
-# or 
-./tectonic-cli benchmark -w workload.spec.json -d rocksdb -p /tmp/rocksdb -c rocksconf.ini
 ```
 
-````bash
-Usage: tectonic-cli <COMMAND>
+Execute takes in a path to a previously generated workload text file (through the generate command) and a database name. It will then run the operations in the file on the given database. You can also pass in a path and a configuration string for each database. The path will usually be a file path for local database (i.e. rocksdb) or an endpoint url for networked databases (i.e. cassandra). The config string is database specific. Please see the section on specific databases (TODO) if you are unsure, or run tectonic and it will give you a helpful error if you are missing something. Use `--help` with the execute command to see additional flags that can be used with execute.
 
-Commands:
-  generate   Generate workload(s) from a file or folder of workload specifications
-  schema     Prints the JSON schema for IDE integration
-  execute    Execute a generated workload on a specific database
-  benchmark  Generate and Execute a workload from a file against a specific database
-  ycsb       Generate and Execute a Ycsb workload
-  kvbench   Generate and Execute a KvBench workload
-  help       Print this message or the help of the given subcommand(s)
-
-Options:
-  -h, --help     Print help
-  -V, --version  Print version
-```
-
+3. Benchmark
 
 ```bash
-Usage: tectonic-cli generate [OPTIONS] --workload <WORKLOAD_PATH>
-
-Options:
-  -w, --workload <WORKLOAD_PATH>  File or folder of workload spec files
-  -o, --output <OUTPUT>           Output file or folder for workload(s). Defaults to the same directory as the workload spec
-  -h, --help                      Print help
-```
-```
-Execute a generated workload on a specific database
-
-Usage: tectonic-cli execute [OPTIONS] --input-workload <INPUT_FILE> --database <DATABASE>
-
-Options:
-  -i, --input-workload <INPUT_FILE>  Tectonic generated workload file
-  -d, --database <DATABASE>          Name of the database on which to execute operations
-  -p, --database-path <DB_PATH>      Path to the database
-  -c, --config <CONFIG>              Configuration string (database dependent)
-  -h, --help                         Print help
+./tectonic-cli benchmark -w workload.spec.json -d rocksdb 
 ```
 
-```
-Generate and Execute a workload from a file against a specific database
+Benchmark skips the writing to a workload file and will execute operations on the database directly after they are generated. Benchmark has a combination of flags from both the generate and execute commands, but notably does not have an option to specify an output file, or an input workload.txt file. Use `--help` with the benchmark command to see additional flags that can be used with benchmark.
 
-Usage: tectonic-cli benchmark [OPTIONS] --workload <WORKLOAD_PATH> --database <DATABASE>
+### Additional Commands
 
-Options:
-  -w, --workload <WORKLOAD_PATH>  File of workload spec files
-  -d, --database <DATABASE>       Name of the database on which to execute operations
-  -p, --database-path <DB_PATH>   Path to the database
-  -c, --config <CONFIG>           Configuration string (database dependent)
-  -h, --help                      Print help
-```
+1. Schema
 
-```
-Generate and Execute a Ycsb workload
-
-Usage: tectonic-cli ycsb [OPTIONS] --name <WORKLOAD_NAME> --database <DATABASE>
-
-Options:
-  -w, --name <WORKLOAD_NAME>     Name of ycsb workload (a-f)
-  -s, --scale <SCALE>            Scale factor for the ycsb workload
-  -d, --database <DATABASE>      Name of the database on which to execute operations
-  -p, --database-path <DB_PATH>  Path to the database
-  -c, --config <CONFIG>          Configuration string (database dependent)
-  -h, --help                     Print help
+```bash
+./tectonic-cli schema 
+# or
+./tectonic-cli schema > workload_schema.json
 ```
 
-```
-Generate and Execute a KvBench workload
+Schema will print the json schema for tectonic, which can be pasted into a file and used to write the spec files for tectonic. The schema will provide helpful autocomplete recommendations for your given editor if you include it at the top of your spec files like so:
 
-Usage: tectonic-cli kvbench [OPTIONS] --name <WORKLOAD_NAME> --database <DATABASE>
-
-Options:
-  -w, --name <WORKLOAD_NAME>     Name of ycsb workload (i-v)
-  -d, --database <DATABASE>      Name of the database on which to execute operations
-  -p, --database-path <DB_PATH>  Path to the database
-  -c, --config <CONFIG>          Configuration string (database dependent)
-  -h, --help                     Print help
-
+```json
+"$schema": "<path_to_schema>.spec.json",
 ```
 
+2. Help
+
+```bash
+./tectonic-cli help
+```
+
+This will display a help message, enumerate all the possible commands, and give descriptions for each. You can also use `--help` for each command and subcommand to find out more information about its inputs and flags.
+
+## Spec Files
+
+To generate a workload, you first need to write a spec file for that workload, which can be quite a tedious process. There are several ways to make this process less tedious. We recommend using [TexBench](https://github.com/SSD-Brandeis/TexBench) First off, you can use the schema subcommand to get the json schema for tectonic, which will make working in an editor slightly easier. There are also several [example spec files](./example-specs/) in this repository for existing benchmarks that can be used as is or for inspiration. See [Usage.md](/USAGE.md) for more details.
 
 ## Profiling
 
 ```bash
 cargo flamegraph --unit-test workload_gen -- workload_1m_i
 ```
+
 ````

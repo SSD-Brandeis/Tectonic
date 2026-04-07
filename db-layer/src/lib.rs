@@ -22,6 +22,10 @@ use rocksdb::RocksDB;
 mod cassandra;
 #[cfg(feature = "cassandra")]
 use cassandra::Cassandra;
+#[cfg(feature = "redis")]
+mod redis;
+#[cfg(feature = "redis")]
+use redis::Redis;
 
 const STATISTICS_SCALE: f64 = 1000.0;
 
@@ -555,6 +559,8 @@ pub enum Db {
     RocksDB,
     #[cfg(feature = "cassandra")]
     Cassandra,
+    #[cfg(feature = "redis")]
+    Redis,
 }
 
 impl Db {
@@ -575,6 +581,10 @@ impl Db {
             "cassandra" => Self::Cassandra(Cassandra::new(db_path, config)?),
             #[cfg(not(feature = "cassandra"))]
             "cassandra" => bail!("Cassandra not enabled. Rebuild with --features cassandra"),
+            #[cfg(feature = "redis")]
+            "redis" => Self::Redis(Redis::new(db_path, config)?),
+            #[cfg(not(feature = "redis"))]
+            "redis" => bail!("Redis not enabled. Rebuild with --features redis"),
             _ => bail!("Unsupported database"),
         })
     }

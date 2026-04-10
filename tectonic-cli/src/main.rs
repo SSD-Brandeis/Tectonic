@@ -118,6 +118,7 @@ struct WorkloadPath {
     #[arg(long = "ycsb")]
     ycsb: Option<String>,
     /// Name of the kvbench workload (ex: i or 1, ii or 2, etc...)
+    #[arg(long = "kvbench")]
     kvbench: Option<String>,
     #[arg(long = "db_bench")]
     db_bench: Option<String>,

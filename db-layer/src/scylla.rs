@@ -17,9 +17,9 @@ pub struct Scylla {
     update_statement: PreparedStatement,
     point_query_statement: PreparedStatement,
     point_delete_statement: PreparedStatement,
-    range_query_statement: PreparedStatement,
-    range_query_count_statement: PreparedStatement,
-    range_delete_statement: PreparedStatement,
+    range_query_statement: Option<PreparedStatement>,
+    range_query_count_statement: Option<PreparedStatement>,
+    range_delete_statement: Option<PreparedStatement>,
 }
 
 impl Scylla {
@@ -80,16 +80,19 @@ impl Scylla {
         let query = format!("SELECT value FROM {} WHERE key>=? AND key<?;", TABLE_NAME);
         let range_query_statement = runtime
             .block_on(session.prepare(query))
-            .map_err(|e| anyhow!("Scylla Error (failed to prepare statement): {:#?}", e))?;
+            .map_err(|e| anyhow!("Scylla Error (failed to prepare statement): {:#?}", e))
+            .ok();
 
         let query = format!("SELECT value FROM {} WHERE key>=? LIMIT ?;", table_name);
         let range_query_count_statement = runtime
             .block_on(session.prepare(query))
-            .map_err(|e| anyhow!("Scylla Error (failed to prepare statement): {:#?}", e))?;
+            .map_err(|e| anyhow!("Scylla Error (failed to prepare statement): {:#?}", e))
+            .ok();
         let query = format!("DELETE FROM {} WHERE key>=? AND key <?;", table_name);
         let range_delete_statement = runtime
             .block_on(session.prepare(query))
-            .map_err(|e| anyhow!("Scylla Error (failed to prepare statement): {:#?}", e))?;
+            .map_err(|e| anyhow!("Scylla Error (failed to prepare statement): {:#?}", e))
+            .ok();
 
         return Ok(Self {
             session,
@@ -122,7 +125,7 @@ impl DBTranslationLayer for Scylla {
                 self.session
                     .execute_unpaged(&self.insert_statement, (key, value)),
             )
-            .map_err(|e| anyhow!("Cassandra Error: {:#?}", e))?;
+            .map_err(|e| anyhow!("Scylla Error: {:#?}", e))?;
 
         return Ok(());
     }
@@ -137,7 +140,7 @@ impl DBTranslationLayer for Scylla {
                 self.session
                     .execute_unpaged(&self.update_statement, (key, value)),
             )
-            .map_err(|e| anyhow!("Cassandra Error: {:#?}", e))?;
+            .map_err(|e| anyhow!("Scylla Error: {:#?}", e))?;
         return Ok(());
     }
 
@@ -157,7 +160,7 @@ impl DBTranslationLayer for Scylla {
                 self.session
                     .execute_unpaged(&self.point_delete_statement, (key,)),
             )
-            .map_err(|e| anyhow!("Cassandra Error: {:#?}", e))?;
+            .map_err(|e| anyhow!("Scylla Error: {:#?}", e))?;
         return Ok(());
     }
 
@@ -170,11 +173,22 @@ impl DBTranslationLayer for Scylla {
                 self.session
                     .execute_unpaged(&self.point_query_statement, (key,)),
             )
-            .map_err(|e| anyhow!("Cassandra Error: {:#?}", e))?;
+            .map_err(|e| anyhow!("Scylla Error: {:#?}", e))?;
         return Ok(());
     }
 
     fn range_query(&self, start_key: &Key, end_key: &Value) -> Result<()> {
+        if self.range_query_statement.is_none() {
+            // eprintln!(
+            //     "[WARNING] Your current configuration of Cassandra does not support range queries. Skipping Operation"
+            // );
+
+            return Err(anyhow!(
+                "Your current configuration of Cassandra does not support range queries"
+            ));
+        }
+
+        let range_query_statement = self.range_query_statement.as_ref().unwrap();
         let start_key = from_utf8(start_key)?;
         let end_key = from_utf8(end_key)?;
 
@@ -182,26 +196,48 @@ impl DBTranslationLayer for Scylla {
             .runtime
             .block_on(
                 self.session
-                    .execute_unpaged(&self.range_query_statement, (start_key, end_key)),
+                    .execute_unpaged(range_query_statement, (start_key, end_key)),
             )
-            .map_err(|e| anyhow!("Cassandra Error: {:#?}", e))?;
+            .map_err(|e| anyhow!("Scylla Error: {:#?}", e))?;
         return Ok(());
     }
 
     fn range_query_count(&self, start_key: &Key, range: usize) -> Result<()> {
+        if self.range_query_count_statement.is_none() {
+            // eprintln!(
+            //     "[WARNING] Your current configuration of Cassandra does not support range query count. Skipping Operation"
+            // );
+
+            return Err(anyhow!(
+                "Your current configuration of Cassandra does not support range query count"
+            ));
+        }
+
+        let range_query_count_statement = self.range_query_count_statement.as_ref().unwrap();
         let start_key = from_utf8(start_key)?;
 
         let _ = self
             .runtime
             .block_on(
                 self.session
-                    .execute_unpaged(&self.range_query_count_statement, (start_key, range as i64)),
+                    .execute_unpaged(range_query_count_statement, (start_key, range as i64)),
             )
-            .map_err(|e| anyhow!("Cassandra Error: {:#?}", e))?;
+            .map_err(|e| anyhow!("Scylla Error: {:#?}", e))?;
         return Ok(());
     }
 
     fn range_delete(&self, start_key: &Key, end_key: &Key) -> Result<()> {
+        if self.range_delete_statement.is_none() {
+            // eprintln!(
+            //     "[WARNING] Your current configuration of Cassandra does not support range deletes. Skipping Operation"
+            // );
+
+            return Err(anyhow!(
+                "Your current configuration of Cassandra does not support range deletes"
+            ));
+        }
+
+        let range_delete_statement = self.range_delete_statement.as_ref().unwrap();
         let start_key = from_utf8(start_key)?;
         let end_key = from_utf8(end_key)?;
 
@@ -209,9 +245,9 @@ impl DBTranslationLayer for Scylla {
             .runtime
             .block_on(
                 self.session
-                    .execute_unpaged(&self.range_delete_statement, (start_key, end_key)),
+                    .execute_unpaged(range_delete_statement, (start_key, end_key)),
             )
-            .map_err(|e| anyhow!("Cassandra Error: {:#?}", e))?;
+            .map_err(|e| anyhow!("Scylla Error: {:#?}", e))?;
         return Ok(());
     }
 

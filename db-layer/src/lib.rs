@@ -26,6 +26,10 @@ use cassandra::Cassandra;
 mod redis;
 #[cfg(feature = "redis")]
 use redis::Redis;
+#[cfg(feature = "scylla")]
+mod scylla;
+#[cfg(feature = "scylla")]
+use scylla::Scylla;
 
 const STATISTICS_SCALE: f64 = 1000.0;
 
@@ -364,6 +368,7 @@ macro_rules! measure {
         op_stats.add_latency(latency);
 
         if res.is_err() {
+            eprintln!("[ERROR]: {:#?}", res);
             op_stats.add_error();
         };
 
@@ -561,6 +566,8 @@ pub enum Db {
     Cassandra,
     #[cfg(feature = "redis")]
     Redis,
+    #[cfg(feature = "scylla")]
+    Scylla,
 }
 
 impl Db {
@@ -585,6 +592,10 @@ impl Db {
             "redis" => Self::Redis(Redis::new(db_path, config)?),
             #[cfg(not(feature = "redis"))]
             "redis" => bail!("Redis not enabled. Rebuild with --features redis"),
+            #[cfg(feature = "scylla")]
+            "scylla" => Self::Scylla(Scylla::new(db_path, config)?),
+            #[cfg(not(feature = "scylla"))]
+            "scylla" => bail!("Scylla not enabled. Rebuild with --features scylla"),
             _ => bail!("Unsupported database"),
         })
     }

@@ -888,6 +888,16 @@ impl WorkloadSpecSection {
                 .is_some_and(|rds| rds.op_count.expected_value() > 0.)
         });
     }
+
+    // pub fn has_delete_range_count(&self) -> bool {
+    //     return self.groups.iter().any(|group| {
+    //         group.range_deletes.as_ref().is_some_and(|rds| {
+    //             rds.op_count.expected_value() > 0.
+    //                 && matches!(rds.range_format, RangeFormat::StartCount)
+    //         })
+    //     });
+    // }
+
     pub fn has_query_point(&self) -> bool {
         return self.groups.iter().any(|group| {
             group
@@ -906,10 +916,19 @@ impl WorkloadSpecSection {
     }
     pub fn has_query_range(&self) -> bool {
         return self.groups.iter().any(|group| {
-            group
-                .range_queries
-                .as_ref()
-                .is_some_and(|rqs| rqs.op_count.expected_value() > 0.)
+            group.range_queries.as_ref().is_some_and(|rqs| {
+                rqs.op_count.expected_value() > 0.
+                    && matches!(rqs.range_format, RangeFormat::StartEnd)
+            })
+        });
+    }
+
+    pub fn has_query_range_count(&self) -> bool {
+        return self.groups.iter().any(|group| {
+            group.range_queries.as_ref().is_some_and(|rqs| {
+                rqs.op_count.expected_value() > 0.
+                    && matches!(rqs.range_format, RangeFormat::StartCount)
+            })
         });
     }
 

@@ -37,8 +37,8 @@ pub mod spec;
 // - query range
 
 use crate::keyset::{
-    BloomFilterKeySet, EmptyKeySet, Key, KeySet, VecBloomFilterKeySet, VecHashMapIndexKeySet,
-    VecKeySet, VecOptionKeySet,
+    BloomFilterKeySet, EmptyKeySet, Key, KeySet, VecBloomFilterKeySet, VecHashSetKeySet, VecKeySet,
+    VecOptionHashSetKeySet, VecOptionKeySet,
 };
 use crate::spec::{CharacterSet, RangeFormat, StringExpr, WorkloadSpec, WorkloadSpecSection};
 
@@ -365,13 +365,15 @@ pub fn generate_operations<OP: OperationHandler>(
     let mut operation_timings = OperationTimings::default();
 
     for (i, section) in workload.sections.iter().enumerate() {
-        let no_keyset = !(section.has_update()
+        let no_keyset = !(section.has_unique_insert()
+            || section.has_update()
             || section.has_merge()
             || section.has_query_point()
             || section.has_query_point_empty()
             || section.has_delete_point()
             || section.has_delete_point_empty()
             || section.has_query_range()
+            || section.has_query_range_count()
             || section.has_delete_range());
 
         let requires_deletion = section.has_delete_point() || section.has_delete_range();
@@ -386,7 +388,8 @@ pub fn generate_operations<OP: OperationHandler>(
             || section.has_delete_point()
             || section.has_delete_range()
             || section.has_query_point()
-            || section.has_query_range();
+            || section.has_query_range()
+            || section.has_query_range_count();
 
         if no_keyset {
             info!("Using EmptyKeySet");
@@ -398,8 +401,18 @@ pub fn generate_operations<OP: OperationHandler>(
                 i,
                 EmptyKeySet::new,
             )?
-        } else if (requires_deletion) && (requires_sorting) {
+        } else if requires_sorting && requires_deletion && requires_contains_check {
             // TODO: Should use skip list or b+ tree
+            info!("Using VecHashSetOptionKeySet");
+            write_operations_with_keyset(
+                &mut operation_handler,
+                &mut operation_timings,
+                workload,
+                section,
+                i,
+                VecOptionHashSetKeySet::new,
+            )?
+        } else if requires_sorting && requires_deletion {
             info!("Using VecOptionKeySet");
             write_operations_with_keyset(
                 &mut operation_handler,
@@ -409,15 +422,25 @@ pub fn generate_operations<OP: OperationHandler>(
                 i,
                 VecOptionKeySet::new,
             )?
-        } else if requires_deletion {
-            info!("Using VecHashMapIndexKeySet");
+        } else if requires_sorting && requires_contains_check {
+            info!("Using VecHashSetKeySet");
             write_operations_with_keyset(
                 &mut operation_handler,
                 &mut operation_timings,
                 workload,
                 section,
                 i,
-                VecHashMapIndexKeySet::new,
+                VecHashSetKeySet::new,
+            )?
+        } else if requires_deletion && requires_contains_check {
+            info!("Using VecKeySet");
+            write_operations_with_keyset(
+                &mut operation_handler,
+                &mut operation_timings,
+                workload,
+                section,
+                i,
+                VecKeySet::new,
             )?
         } else if requires_contains_check && requires_random_element {
             info!("Using VecBloomFilterKeySet");
@@ -1106,7 +1129,8 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                     let range_length = rqs.get_range_length(rng_ref, keys_valid.len());
                     match rqs.range_format {
                         RangeFormat::StartCount => {
-                            let key = keys_valid.get_random(
+                            let (_, key) = keys_valid.get_random_range_start(
+                                range_length,
                                 rng_ref,
                                 rqs.selection.as_ref().unwrap_or(
                                     section
@@ -1159,9 +1183,11 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                     }
 
                     let range_length = rds.get_range_length(rng_ref, keys_valid.len());
+                    keys_valid.sort();
                     match rds.range_format {
                         RangeFormat::StartCount => {
-                            let key = keys_valid.get_random(
+                            let (start_index, key) = keys_valid.get_random_range_start(
+                                range_length,
                                 rng_ref,
                                 rds.selection.as_ref().unwrap_or(
                                     section
@@ -1173,12 +1199,13 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                                         ),
                                 ),
                             );
-
-                            operation_handler.handle_range_delete_count(key, range_length)?
+                            let key = key.clone();
+                            let end_index = start_index + range_length;
+                            keys_valid.remove_range(start_index..end_index);
+                            operation_handler.handle_range_delete_count(&key, range_length)?
                         }
                         RangeFormat::StartEnd => {
-                            keys_valid.sort();
-                            let (key1, key2) = keys_valid.get_range_random(
+                            let (key1, key2) = keys_valid.remove_range_random(
                                 range_length,
                                 rng_ref,
                                 rds.selection.as_ref().unwrap_or(
@@ -1192,7 +1219,7 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                                 ),
                             );
 
-                            operation_handler.handle_range_delete(key1, key2)?
+                            operation_handler.handle_range_delete(&key1, &key2)?
                         }
                     }
                     let duration = Instant::now().duration_since(start);

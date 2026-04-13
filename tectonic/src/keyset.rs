@@ -78,12 +78,11 @@ pub trait KeySet {
     fn remove_range(&mut self, idx_range: Range<usize>) -> (Key, Key);
     fn remove_range_random(
         &mut self,
-        selectivity: f64,
+        range_len: usize,
         rng: &mut impl Rng,
         distribution: &Distribution,
     ) -> (Key, Key) {
         let num_keys = self.len();
-        let range_len = (selectivity * (num_keys as f64)).floor() as usize;
         let valid_len = num_keys - range_len;
 
         let x = distribution.evaluate(rng).clamp(0., 1. - f64::EPSILON);
@@ -100,6 +99,21 @@ pub trait KeySet {
         let idx = (x * self.len() as f64) as usize;
         let idx_hashed = unbiased_index(idx, self.len());
         return self.get(idx_hashed);
+    }
+
+    fn get_random_range_start(
+        &self,
+        range_len: usize,
+        rng: &mut impl Rng,
+        distribution: &Distribution,
+    ) -> (usize, &Key) {
+        let num_keys = self.len();
+        let valid_len = num_keys - range_len;
+
+        let x = distribution.evaluate(rng).clamp(0., 1. - f64::EPSILON);
+        let start_idx = (x * valid_len as f64) as usize;
+
+        return (start_idx, self.get(start_idx));
     }
 
     fn get_range_random(
@@ -235,7 +249,7 @@ impl KeySet for VecKeySet {
     }
 }
 
-pub struct VecOptionKeySet {
+pub struct VecOptionHashSetKeySet {
     keys: Vec<Option<Key>>,
     set: HashSet<Key>,
     sorted: bool,
@@ -246,7 +260,7 @@ pub struct VecOptionKeySet {
 const VEC_OPTION_KEY_SET_FILTER_THRESHOLD: f64 = 0.01;
 
 // FIXME: this needs to implemented with "generation indexing" / "slotmap"
-impl VecOptionKeySet {
+impl VecOptionHashSetKeySet {
     fn maybe_flatten_in_place(&mut self) {
         if (self.none_count as f64 / self.keys.len() as f64) < VEC_OPTION_KEY_SET_FILTER_THRESHOLD {
             return;
@@ -267,7 +281,7 @@ impl VecOptionKeySet {
     }
 }
 
-impl KeySet for VecOptionKeySet {
+impl KeySet for VecOptionHashSetKeySet {
     fn new(capacity: usize) -> Self {
         return Self {
             keys: Vec::with_capacity(capacity),
@@ -369,6 +383,144 @@ impl KeySet for VecOptionKeySet {
     // TODO: this can be binary search if it is sorted
     fn contains(&self, key: &Key) -> bool {
         return self.set.contains(key);
+        // return self.keys.iter().any(|k| k.as_ref() == Some(key));
+    }
+
+    fn sort(&mut self) {
+        if !self.sorted {
+            self.maybe_flatten_in_place();
+            self.keys.sort();
+            self.sorted = true;
+        }
+    }
+}
+
+pub struct VecOptionKeySet {
+    keys: Vec<Option<Key>>,
+    sorted: bool,
+    none_count: usize,
+}
+
+// FIXME: this needs to implemented with "generation indexing" / "slotmap"
+impl VecOptionKeySet {
+    fn maybe_flatten_in_place(&mut self) {
+        if (self.none_count as f64 / self.keys.len() as f64) < VEC_OPTION_KEY_SET_FILTER_THRESHOLD {
+            return;
+        }
+        self.keys.retain(Option::is_some);
+        self.none_count = 0;
+    }
+
+    fn maybe_remove(&mut self, idx: usize) -> Option<Key> {
+        let key = self.keys[idx].take()?;
+        self.none_count += 1;
+        // self.maybe_flatten_in_place();
+        return Some(key);
+    }
+
+    fn maybe_get(&self, idx: usize) -> Option<&Key> {
+        return self.keys.get(idx).and_then(|k| k.as_ref());
+    }
+}
+
+impl KeySet for VecOptionKeySet {
+    fn new(capacity: usize) -> Self {
+        return Self {
+            keys: Vec::with_capacity(capacity),
+            sorted: true,
+            none_count: 0,
+        };
+    }
+
+    fn len(&self) -> usize {
+        return self.keys.len();
+    }
+
+    fn is_empty(&self) -> bool {
+        return self.keys.is_empty();
+    }
+
+    // TODO: maybe this can be improved to binary search and then "fill a hole"
+    fn push(&mut self, key: Key) {
+        if self.sorted
+            && self
+                .keys
+                .last()
+                .is_some_and(|last_key| last_key.as_ref() > Some(&key))
+        {
+            self.sorted = false;
+        }
+        self.keys.push(Some(key));
+    }
+
+    fn remove(&mut self, mut idx: usize) -> Key {
+        for _ in 0..self.keys.len() {
+            match self.maybe_remove(idx) {
+                Some(key) => {
+                    self.maybe_flatten_in_place();
+                    return key;
+                }
+                None => {
+                    idx = (idx + 1) % self.keys.len();
+                }
+            }
+        }
+        panic!("Called remove on an empty keyset");
+    }
+
+    fn remove_range(&mut self, idx_range: Range<usize>) -> (Key, Key) {
+        let mut key1 = None;
+        let mut key2 = None;
+        for idx in idx_range {
+            if let Some(key) = self.maybe_remove(idx) {
+                key1 = key1.or(Some(key.clone()));
+                key2 = Some(key);
+            }
+        }
+
+        self.maybe_flatten_in_place();
+
+        return (key1.expect("to not be none"), key2.expect("to not be none"));
+    }
+
+    // fn remove_range(&mut self, idx_range: Range<usize>) -> (Key, Key) {
+    //     // FIXME: This is technically incorrect, because the range could contain `None` values.
+    //     // Never more than VEC_OPTION_KEY_SET_FILTER_THRESHOLD*100 % of the keys tho, so
+    //     // it might be ok.
+    //     // We can maybe do better with a while loop, using Option::take, and then call
+    //     // maybe_flatten_in_place.
+    //     let mut drain = self.keys.drain(idx_range.clone()).flatten();
+    //     let key1 = drain.next().expect("to have at least one element");
+    //     let (key1, key2) = match drain.next_back() {
+    //         Some(key2) => (key1, key2),
+    //         None => (key1.clone(), key1),
+    //     };
+    //
+    //     let some_count = drain.count() + 2;
+    //     let none_count = idx_range.len() - some_count;
+    //     self.none_count += none_count;
+    //     self.maybe_flatten_in_place();
+    //
+    //     return (key1, key2);
+    // }
+
+    fn get(&self, mut idx: usize) -> &Key {
+        for _ in 0..self.keys.len() {
+            match self.maybe_get(idx) {
+                Some(key) => {
+                    return key;
+                }
+                None => {
+                    idx = (idx + 1) % self.keys.len();
+                }
+            }
+        }
+        panic!("Called get on an empty keyset");
+    }
+
+    // TODO: this can be binary search if it is sorted
+    fn contains(&self, _key: &Key) -> bool {
+        panic!("VecOptionKeySet is not meant to support contains operations");
         // return self.keys.iter().any(|k| k.as_ref() == Some(key));
     }
 

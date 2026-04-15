@@ -412,7 +412,7 @@ pub fn generate_operations<OP: OperationHandler>(
                 i,
                 VecOptionHashSetKeySet::new,
             )?
-        } else if requires_sorting && requires_deletion {
+        } else if requires_sorting && requires_deletion && !requires_contains_check {
             info!("Using VecOptionKeySet");
             write_operations_with_keyset(
                 &mut operation_handler,
@@ -422,7 +422,7 @@ pub fn generate_operations<OP: OperationHandler>(
                 i,
                 VecOptionKeySet::new,
             )?
-        } else if requires_sorting && requires_contains_check {
+        } else if (requires_sorting || requires_deletion) && requires_contains_check {
             info!("Using VecHashSetKeySet");
             write_operations_with_keyset(
                 &mut operation_handler,
@@ -432,7 +432,7 @@ pub fn generate_operations<OP: OperationHandler>(
                 i,
                 VecHashSetKeySet::new,
             )?
-        } else if requires_deletion && requires_contains_check {
+        } else if requires_sorting || requires_deletion {
             info!("Using VecKeySet");
             write_operations_with_keyset(
                 &mut operation_handler,

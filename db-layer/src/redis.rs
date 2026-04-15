@@ -2,7 +2,7 @@ use crate::Key;
 use crate::{DBTranslationLayer, Value};
 use anyhow::anyhow;
 use anyhow::{Context, Result};
-use redis::{Client, Commands, Connection};
+use redis::{Client, Commands, Connection, ConnectionInfo, ScanOptions};
 use std::cell::RefCell;
 
 pub struct Redis {
@@ -11,7 +11,7 @@ pub struct Redis {
 }
 
 impl Redis {
-    pub fn new(endpoint: Option<&str>, config_string: Option<&str>) -> Result<Self> {
+    pub fn new(endpoint: Option<&str>, _config_string: Option<&str>) -> Result<Self> {
         let endpoint =
             endpoint.ok_or_else(|| anyhow!("Redis requires at least one endpoint to work"))?;
         let client = Client::open(endpoint)?;
@@ -23,7 +23,8 @@ impl Redis {
 
 impl DBTranslationLayer for Redis {
     fn cleanup(self) -> Result<()> {
-        todo!()
+        drop(self);
+        Ok(())
     }
 
     fn insert(&self, key: &Key, value: &Value) -> Result<()> {
@@ -59,18 +60,18 @@ impl DBTranslationLayer for Redis {
 
     fn range_query(&self, start_key: &Key, end_key: &Value) -> Result<()> {
         // NOTE: Redis does not sort its keyspace, so I'm not sure we should allow scanning
-        todo!()
+        return Err(anyhow!("Redis does not support range operations"));
     }
 
     fn range_query_count(&self, start_key: &Key, range: usize) -> Result<()> {
-        todo!()
+        return Err(anyhow!("Redis does not support range operations"));
     }
 
     fn range_delete(&self, start_key: &Key, end_key: &Key) -> Result<()> {
-        todo!()
+        return Err(anyhow!("Redis does not support range operations"));
     }
 
     fn range_delete_count(&self, start_key: &Key, range: usize) -> Result<()> {
-        todo!()
+        return Err(anyhow!("Redis does not support range operations"));
     }
 }

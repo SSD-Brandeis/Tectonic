@@ -202,7 +202,7 @@ fn main() -> Result<()> {
         }
         Command::Schema => return invoke_schema(),
         Command::Execute {
-            input_workload_file_path: input_file,
+            generated_workload: input_file,
             database,
             db_path,
             config,

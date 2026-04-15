@@ -44,7 +44,7 @@ enum Command {
     Execute {
         /// Tectonic generated workload file
         #[arg(short = 'i', long = "input-workload")]
-        input_file: String,
+        generated_workload: String,
         /// Name of the database on which to execute operations
         #[arg(short = 'd', long = "database")]
         database: String,
@@ -113,22 +113,22 @@ enum Command {
 struct WorkloadPath {
     /// File or folder of workload spec files
     #[arg(short = 'w', long = "workload")]
-    path: Option<String>,
+    workload_path: Option<String>,
     /// Name of the ycsb workload (ex: a, b, c ...)
     #[arg(long = "ycsb")]
-    ycsb: Option<String>,
+    ycsb_workload: Option<String>,
     /// Name of the kvbench workload (ex: i or 1, ii or 2, etc...)
     #[arg(long = "kvbench")]
-    kvbench: Option<String>,
+    kvbench_workload: Option<String>,
     #[arg(long = "db_bench")]
-    db_bench: Option<String>,
+    db_bench_workload: Option<String>,
 }
 
 impl WorkloadPath {
     fn into_path(self) -> Result<String> {
-        if let Some(path) = self.path {
+        if let Some(path) = self.workload_path {
             return Ok(path);
-        } else if let Some(ycsb_name) = self.ycsb {
+        } else if let Some(ycsb_name) = self.ycsb_workload {
             let ycsb_name = match ycsb_name.to_lowercase().as_str() {
                 "a" | "workloada" => "a",
                 "b" | "workloadb" => "b",
@@ -144,7 +144,7 @@ impl WorkloadPath {
                 env!("CARGO_MANIFEST_DIR"),
                 ycsb_name
             ));
-        } else if let Some(kvbench_name) = self.kvbench {
+        } else if let Some(kvbench_name) = self.kvbench_workload {
             let kvbench_name = match kvbench_name.to_lowercase().as_str() {
                 "1" | "i" => "i",
                 "2" | "ii" => "ii",
@@ -158,7 +158,7 @@ impl WorkloadPath {
                 env!("CARGO_MANIFEST_DIR"),
                 kvbench_name
             ));
-        } else if let Some(db_bench_name) = self.db_bench {
+        } else if let Some(db_bench_name) = self.db_bench_workload {
             todo!()
         } else {
             unreachable!()
@@ -202,7 +202,7 @@ fn main() -> Result<()> {
         }
         Command::Schema => return invoke_schema(),
         Command::Execute {
-            input_file,
+            input_workload_file_path: input_file,
             database,
             db_path,
             config,

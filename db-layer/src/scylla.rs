@@ -25,8 +25,7 @@ pub struct Scylla {
 impl Scylla {
     pub fn new(endpoint: Option<&str>, options: Option<&str>) -> Result<Self> {
         let runtime = Runtime::new()?;
-        let endpoint =
-            endpoint.ok_or_else(|| anyhow!("Scylla requires at least one endpoint to work"))?;
+        let endpoint = endpoint.unwrap_or("127.0.0.1:9042");
         let session = runtime.block_on(SessionBuilder::new().known_node(endpoint).build())?;
 
         let mut table_name = TABLE_NAME;

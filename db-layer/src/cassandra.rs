@@ -9,8 +9,8 @@ const KEYSPACE_NAME: &str = "tectonic";
 const TABLE_NAME: &str = "tectonic.data";
 
 pub struct Cassandra {
-    session: Session,
-    cluster: Cluster,
+    _session: Session,
+    _cluster: Cluster,
     runtime: runtime::Runtime,
 
     insert_statement: PreparedStatement,
@@ -26,8 +26,7 @@ impl Cassandra {
     pub fn new(endpoint: Option<&str>, options: Option<&str>) -> Result<Self> {
         let runtime = Runtime::new()?;
         let mut cluster = Cluster::default();
-        let mut endpoint =
-            endpoint.ok_or_else(|| anyhow!("Cassandra requires at least one endpoint to work"))?;
+        let mut endpoint = endpoint.unwrap_or("127.0.0.1");
         if let Some((ep, port)) = endpoint.split_once(':') {
             endpoint = ep;
             cluster
@@ -111,8 +110,8 @@ impl Cassandra {
             .ok();
 
         return Ok(Self {
-            session,
-            cluster,
+            _session: session,
+            _cluster: cluster,
             runtime,
 
             insert_statement,

@@ -738,6 +738,8 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
 
             if let Some(is) = is {
                 for _ in 0..unique_insert_count {
+                    // TODO: Make unique inserts function with nearly sorted data, as currently
+                    // duplicate keys can be generated
                     let key = is
                         .key
                         .as_ref()

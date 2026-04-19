@@ -30,8 +30,8 @@ enum DistributionConfig {
     Uniform { min: f64, max: f64 },
     Normal { mean: f64, std_dev: f64 },
     Beta { alpha: f64, beta: f64 },
-    Zipf { n: usize, s: f64 },
-    Latest { n: usize, s: f64 },
+    Zipf { n: f64, s: f64 },
+    Latest { n: f64, s: f64 },
     Exponential { lambda: f64 },
     LogNormal { mean: f64, std_dev: f64 },
     Poisson { lambda: f64 },
@@ -68,14 +68,14 @@ pub enum Distribution {
     },
     /// Zipf distribution with the given n and s parameters.
     Zipf {
-        n: usize,
+        n: f64,
         s: f64,
         distr: rand_distr::Zipf<f64>,
     },
     /// Inverse Zipf distribution with the given n and s parameters. Tends to pick most recently
     /// generated values
     Latest {
-        n: usize,
+        n: f64,
         s: f64,
         distr: rand_distr::Zipf<f64>,
     },
@@ -110,14 +110,12 @@ impl Scalable for Distribution {
                     .expect("Failed to scale uniform distribution")
             }
             Distribution::Zipf { n, s, distr } => {
-                *n = (*n as f64 * factor) as usize;
-                *distr = rand_distr::Zipf::new(*n as f64, *s)
-                    .expect("Failed to scale Zipf Distribution");
+                *n *= factor;
+                *distr = rand_distr::Zipf::new(*n, *s).expect("Failed to scale Zipf Distribution");
             }
             Distribution::Latest { n, s, distr } => {
-                *n = (*n as f64 * factor) as usize;
-                *distr = rand_distr::Zipf::new(*n as f64, *s)
-                    .expect("Failed to scale Zipf Distribution");
+                *n *= factor;
+                *distr = rand_distr::Zipf::new(*n, *s).expect("Failed to scale Zipf Distribution");
             }
             Distribution::Weibull {
                 scale,
@@ -140,7 +138,7 @@ impl Scalable for Distribution {
             _ => (),
         }
         if let Self::Zipf { n, .. } = self {
-            *n = (*n as f64 * factor) as usize
+            *n *= factor
         }
     }
 }
@@ -173,12 +171,12 @@ impl TryFrom<DistributionConfig> for Distribution {
             DC::Zipf { n, s } => Self::Zipf {
                 n,
                 s,
-                distr: rand_distr::Zipf::new(n as f64, s)?,
+                distr: rand_distr::Zipf::new(n, s)?,
             },
             DC::Latest { n, s } => Self::Latest {
                 n,
                 s,
-                distr: rand_distr::Zipf::new(n as f64, s)?,
+                distr: rand_distr::Zipf::new(n, s)?,
             },
             DC::LogNormal {
                 mean: mu,
@@ -231,7 +229,7 @@ impl Distribution {
             Self::Exponential { distr, .. } => distr.sample(rng),
             Self::Beta { distr, .. } => distr.sample(rng),
             Self::Zipf { distr, .. } => distr.sample(rng),
-            Self::Latest { distr, n, .. } => *n as f64 - distr.sample(rng),
+            Self::Latest { distr, n, .. } => *n - distr.sample(rng),
             Self::LogNormal { distr, .. } => distr.sample(rng),
             Self::Poisson { distr, .. } => distr.sample(rng),
             Self::Weibull { distr, .. } => distr.sample(rng),
@@ -253,7 +251,7 @@ impl Distribution {
             Self::Latest { n, s, .. } => {
                 let hs = gen_harmonic(*n as u64, *s);
                 let hs_minus1 = gen_harmonic(*n as u64, *s - 1.0);
-                return *n as f64 - (hs_minus1 / hs);
+                return *n - (hs_minus1 / hs);
             }
             Self::LogNormal {
                 mean: mu,

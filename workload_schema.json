@@ -352,9 +352,8 @@
               "type": "object",
               "properties": {
                 "n": {
-                  "type": "integer",
-                  "format": "uint",
-                  "minimum": 0
+                  "type": "number",
+                  "format": "double"
                 },
                 "s": {
                   "type": "number",
@@ -370,6 +369,32 @@
           "additionalProperties": false,
           "required": [
             "zipf"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "latest": {
+              "type": "object",
+              "properties": {
+                "n": {
+                  "type": "number",
+                  "format": "double"
+                },
+                "s": {
+                  "type": "number",
+                  "format": "double"
+                }
+              },
+              "required": [
+                "n",
+                "s"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "latest"
           ]
         },
         {

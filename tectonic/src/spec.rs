@@ -31,6 +31,7 @@ enum DistributionConfig {
     Normal { mean: f64, std_dev: f64 },
     Beta { alpha: f64, beta: f64 },
     Zipf { n: usize, s: f64 },
+    Latest { n: usize, s: f64 },
     Exponential { lambda: f64 },
     LogNormal { mean: f64, std_dev: f64 },
     Poisson { lambda: f64 },
@@ -71,6 +72,13 @@ pub enum Distribution {
         s: f64,
         distr: rand_distr::Zipf<f64>,
     },
+    /// Inverse Zipf distribution with the given n and s parameters. Tends to pick most recently
+    /// generated values
+    Latest {
+        n: usize,
+        s: f64,
+        distr: rand_distr::Zipf<f64>,
+    },
     LogNormal {
         mean: f64,
         std_dev: f64,
@@ -90,6 +98,51 @@ pub enum Distribution {
         shape: f64,
         distr: rand_distr::Pareto<f64>,
     },
+}
+
+impl Scalable for Distribution {
+    fn scale(&mut self, factor: f64) {
+        match self {
+            Distribution::Uniform { min, max, distr } => {
+                *min *= factor;
+                *max *= factor;
+                *distr = rand_distr::Uniform::new(*min, *max)
+                    .expect("Failed to scale uniform distribution")
+            }
+            Distribution::Zipf { n, s, distr } => {
+                *n = (*n as f64 * factor) as usize;
+                *distr = rand_distr::Zipf::new(*n as f64, *s)
+                    .expect("Failed to scale Zipf Distribution");
+            }
+            Distribution::Latest { n, s, distr } => {
+                *n = (*n as f64 * factor) as usize;
+                *distr = rand_distr::Zipf::new(*n as f64, *s)
+                    .expect("Failed to scale Zipf Distribution");
+            }
+            Distribution::Weibull {
+                scale,
+                shape,
+                distr,
+            } => {
+                *scale *= factor;
+                *distr = rand_distr::Weibull::new(*scale, *shape)
+                    .expect("Failed to scale Weibull Distribution");
+            }
+            Distribution::Pareto {
+                scale,
+                shape,
+                distr,
+            } => {
+                *scale *= factor;
+                *distr = rand_distr::Pareto::new(*scale, *shape)
+                    .expect("Failed to scale Weibull Distribution");
+            }
+            _ => (),
+        }
+        if let Self::Zipf { n, .. } = self {
+            *n = (*n as f64 * factor) as usize
+        }
+    }
 }
 
 impl TryFrom<DistributionConfig> for Distribution {
@@ -118,6 +171,11 @@ impl TryFrom<DistributionConfig> for Distribution {
                 distr: rand_distr::Beta::new(alpha, beta)?,
             },
             DC::Zipf { n, s } => Self::Zipf {
+                n,
+                s,
+                distr: rand_distr::Zipf::new(n as f64, s)?,
+            },
+            DC::Latest { n, s } => Self::Latest {
                 n,
                 s,
                 distr: rand_distr::Zipf::new(n as f64, s)?,
@@ -173,6 +231,7 @@ impl Distribution {
             Self::Exponential { distr, .. } => distr.sample(rng),
             Self::Beta { distr, .. } => distr.sample(rng),
             Self::Zipf { distr, .. } => distr.sample(rng),
+            Self::Latest { distr, n, .. } => *n as f64 - distr.sample(rng),
             Self::LogNormal { distr, .. } => distr.sample(rng),
             Self::Poisson { distr, .. } => distr.sample(rng),
             Self::Weibull { distr, .. } => distr.sample(rng),
@@ -190,6 +249,11 @@ impl Distribution {
                 let hs = gen_harmonic(*n as u64, *s);
                 let hs_minus1 = gen_harmonic(*n as u64, *s - 1.0);
                 return hs_minus1 / hs;
+            }
+            Self::Latest { n, s, .. } => {
+                let hs = gen_harmonic(*n as u64, *s);
+                let hs_minus1 = gen_harmonic(*n as u64, *s - 1.0);
+                return *n as f64 - (hs_minus1 / hs);
             }
             Self::LogNormal {
                 mean: mu,
@@ -725,33 +789,51 @@ pub trait Scalable {
     fn scale(&mut self, factor: f64);
 }
 
-// Implement for each type, or if they all have op_count you could use a macro
-macro_rules! impl_scalable {
+macro_rules! impl_scalable_regular {
     ($($t:ty),*) => {
         $(impl Scalable for $t {
             fn scale(&mut self, factor: f64) {
-                if let NumberExpr::Constant(op_count) = &mut self.op_count {
-                    *op_count *= factor;
-                } else {
-                    panic!("Scalable workload should only have constant number expressions in op_count");
+                match &mut self.op_count {
+                    NumberExpr::Constant(op_count) => *op_count *= factor,
+                    NumberExpr::Sampled(distr) => distr.scale(factor),
                 }
             }
         })*
     }
 }
 
-impl_scalable!(
+macro_rules! impl_scalable_with_selection {
+    ($($t:ty),*) => {
+        $(impl Scalable for $t {
+            fn scale(&mut self, factor: f64) {
+                match &mut self.op_count {
+                    NumberExpr::Constant(op_count) => *op_count *= factor,
+                    NumberExpr::Sampled(distr) => distr.scale(factor),
+                }
+
+                if let Some(distr) = &mut self.selection {
+                    distr.scale(factor);
+                }
+            }
+        })*
+    }
+}
+
+impl_scalable_regular!(
     Inserts,
+    EmptyPointDeletes,
+    EmptyPointQueries,
+    BlindPointQueries,
+    BlindRangeQueries
+);
+
+impl_scalable_with_selection!(
     Updates,
     Merges,
     PointDeletes,
-    EmptyPointDeletes,
     RangeDeletes,
     PointQueries,
-    EmptyPointQueries,
-    RangeQueries,
-    BlindPointQueries,
-    BlindRangeQueries
+    RangeQueries
 );
 
 #[derive(serde::Deserialize, JsonSchema, Clone, Debug)]

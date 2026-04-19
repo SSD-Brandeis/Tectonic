@@ -36,9 +36,9 @@
             "op_count": 950000,
             "scan_length": 100,
             "selection": {
-              "beta": {
-                "alpha": 0.1,
-                "beta": 5
+              "zipf": {
+                "s": 0.99,
+                "n": 1000000
               }
             }
           },

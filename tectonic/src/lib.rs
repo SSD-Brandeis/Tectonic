@@ -1390,12 +1390,54 @@ macro_rules! scale_fields {
     };
 }
 
-fn scale_spec(workload_spec: &mut WorkloadSpec, scale: f64) {
+fn scale_spec(workload_spec: &mut WorkloadSpec, factor: f64) {
+    workload_spec
+        .default_distributions
+        .updates_selection
+        .scale(factor);
+    workload_spec
+        .default_distributions
+        .merges_selection
+        .scale(factor);
+    workload_spec
+        .default_distributions
+        .point_deletes_selection
+        .scale(factor);
+    workload_spec
+        .default_distributions
+        .range_queries_selection
+        .scale(factor);
+    workload_spec
+        .default_distributions
+        .point_queries_selection
+        .scale(factor);
+    workload_spec
+        .default_distributions
+        .range_deletes_selection
+        .scale(factor);
     for section in workload_spec.sections.iter_mut() {
+        if let Some(distr) = &mut section.default_distributions.updates_selection {
+            distr.scale(factor);
+        }
+        if let Some(distr) = &mut section.default_distributions.merges_selection {
+            distr.scale(factor);
+        }
+        if let Some(distr) = &mut section.default_distributions.point_deletes_selection {
+            distr.scale(factor);
+        }
+        if let Some(distr) = &mut section.default_distributions.range_queries_selection {
+            distr.scale(factor);
+        }
+        if let Some(distr) = &mut section.default_distributions.point_queries_selection {
+            distr.scale(factor);
+        }
+        if let Some(distr) = &mut section.default_distributions.range_deletes_selection {
+            distr.scale(factor);
+        }
         for group in section.groups.iter_mut() {
             scale_fields!(
                 group,
-                scale,
+                factor,
                 [
                     unique_inserts,
                     inserts,

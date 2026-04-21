@@ -69,10 +69,9 @@ pub trait KeySet {
     fn remove(&mut self, idx: usize) -> Key;
 
     fn remove_random(&mut self, rng: &mut impl Rng, distribution: &Distribution) -> Key {
-        let x = distribution.evaluate(rng).clamp(0., 1. - f64::EPSILON);
-        let idx = (x * self.len() as f64) as usize;
-        let idx_hashed = unbiased_index(idx, self.len());
-        return self.remove(idx_hashed);
+        let idx = distribution.evaluate_index(rng, self.len());
+        // let idx_hashed = unbiased_index(idx, self.len());
+        return self.remove(idx);
     }
 
     fn remove_range(&mut self, idx_range: Range<usize>) -> (Key, Key);
@@ -85,8 +84,7 @@ pub trait KeySet {
         let num_keys = self.len();
         let valid_len = num_keys - range_len;
 
-        let x = distribution.evaluate(rng).clamp(0., 1. - f64::EPSILON);
-        let start_idx = (x * valid_len as f64) as usize;
+        let start_idx = distribution.evaluate_index(rng, valid_len);
         let end_idx = start_idx + range_len;
 
         return self.remove_range(start_idx..end_idx);
@@ -95,10 +93,9 @@ pub trait KeySet {
     fn get(&self, idx: usize) -> &Key;
 
     fn get_random(&self, rng: &mut impl Rng, distribution: &Distribution) -> &Key {
-        let x = distribution.evaluate(rng).clamp(0., 1. - f64::EPSILON);
-        let idx = (x * self.len() as f64) as usize;
-        let idx_hashed = unbiased_index(idx, self.len());
-        return self.get(idx_hashed);
+        let idx = distribution.evaluate_index(rng, self.len());
+        // let idx_hashed = unbiased_index(idx, self.len());
+        return self.get(idx);
     }
 
     fn get_random_range_start(
@@ -110,8 +107,7 @@ pub trait KeySet {
         let num_keys = self.len();
         let valid_len = num_keys - range_len;
 
-        let x = distribution.evaluate(rng).clamp(0., 1. - f64::EPSILON);
-        let start_idx = (x * valid_len as f64) as usize;
+        let start_idx = distribution.evaluate_index(rng, valid_len);
 
         return (start_idx, self.get(start_idx));
     }
@@ -125,8 +121,7 @@ pub trait KeySet {
         let num_keys = self.len();
         let valid_len = num_keys - range_len;
 
-        let x = distribution.evaluate(rng).clamp(0., 1. - f64::EPSILON);
-        let start_idx = (x * valid_len as f64) as usize;
+        let start_idx = distribution.evaluate_index(rng, valid_len);
         let end_idx = start_idx + range_len;
 
         let key1 = self.get(start_idx);

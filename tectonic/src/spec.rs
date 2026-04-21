@@ -221,6 +221,48 @@ impl JsonSchema for Distribution {
     }
 }
 
+// Modified from https://github.com/servo/rust-fnv/blob/main/lib.rs#L146-L157 (MIT)
+const INITIAL_STATE: u64 = 0xcbf2_9ce4_8422_2325;
+const PRIME: u64 = 0x0100_0000_01b3;
+#[inline]
+#[must_use]
+pub const fn fnv_hash(mut bytes: u64) -> u64 {
+    let mut hash = INITIAL_STATE;
+    let mut i = 0;
+    while i < u64::BITS {
+        hash ^= bytes & 0xFF;
+        hash = hash.wrapping_mul(PRIME);
+        bytes >>= 8;
+        i += 1;
+    }
+    hash
+}
+
+fn unbiased_index_(mut idx: usize, len: usize) -> usize {
+    let range = usize::MAX - usize::MAX % len;
+    loop {
+        idx ^= idx >> 33;
+        idx = idx.wrapping_mul(0xff51afd7ed558ccd);
+        idx ^= idx >> 33;
+        idx = idx.wrapping_mul(0xc4ceb9fe1a85ec53);
+        idx ^= idx >> 33;
+
+        if idx < range {
+            return idx % len;
+        }
+    }
+}
+
+// TODO: How does this hold up when there are interleaved inserts? Are the same keys targed or does
+// it get "spread out".
+/// Spreads out key indicies more evenly throughout the keyspace through hashing
+#[inline]
+#[must_use]
+fn unbiased_index(idx: usize, len: usize) -> usize {
+    // return unbiased_index_(idx + 1, len + 1) - 1;
+    return (fnv_hash(idx as u64) as usize) % len;
+}
+
 impl Distribution {
     pub fn evaluate(&self, rng: &mut impl Rng) -> f64 {
         return match self {
@@ -235,6 +277,105 @@ impl Distribution {
             Self::Weibull { distr, .. } => distr.sample(rng),
             Self::Pareto { distr, .. } => distr.sample(rng),
         };
+    }
+
+    pub fn evaluate_index(&self, rng: &mut impl Rng, len: usize) -> usize {
+        match self {
+            Self::Uniform { min, max, distr } => {
+                let x = (distr.sample(rng) - min) / (max - min);
+                (x.clamp(0.0, 1.0 - f64::EPSILON) * len as f64) as usize
+            }
+            Self::Normal {
+                mean,
+                std_dev,
+                distr,
+            } => {
+                let x = distr.sample(rng);
+                let low = mean - 3.0 * std_dev;
+                let high = mean + 3.0 * std_dev;
+                let normalized = (x - low) / (high - low);
+                unbiased_index(
+                    (normalized.clamp(0.0, 1.0 - f64::EPSILON) * len as f64) as usize,
+                    len,
+                )
+            }
+            Self::Exponential { lambda, distr } => {
+                let x = distr.sample(rng);
+                let normalized = x / (5.0 / lambda);
+                unbiased_index(
+                    (normalized.clamp(0.0, 1.0 - f64::EPSILON) * len as f64) as usize,
+                    len,
+                )
+            }
+            Self::Beta { distr, .. } => {
+                let x = distr.sample(rng);
+                unbiased_index(
+                    (x.clamp(0.0, 1.0 - f64::EPSILON) * len as f64) as usize,
+                    len,
+                )
+            }
+            Self::Zipf { distr, n, .. } => {
+                let x = (distr.sample(rng) - 1.0) / (n - 1.0);
+                unbiased_index(
+                    (x.clamp(0.0, 1.0 - f64::EPSILON) * len as f64) as usize,
+                    len,
+                )
+            }
+            Self::Latest { distr, n, .. } => {
+                let x = (n - distr.sample(rng)) / *n;
+                unbiased_index(
+                    (x.clamp(0.0, 1.0 - f64::EPSILON) * len as f64) as usize,
+                    len,
+                )
+            }
+            Self::LogNormal {
+                mean,
+                std_dev,
+                distr,
+            } => {
+                let x = distr.sample(rng);
+                let high = (mean + 3.0 * std_dev).exp();
+                let normalized = x / high;
+                unbiased_index(
+                    (normalized.clamp(0.0, 1.0 - f64::EPSILON) * len as f64) as usize,
+                    len,
+                )
+            }
+            Self::Poisson { lambda, distr } => {
+                let x = distr.sample(rng);
+                let normalized = x / (3.0 * lambda);
+                unbiased_index(
+                    (normalized.clamp(0.0, 1.0 - f64::EPSILON) * len as f64) as usize,
+                    len,
+                )
+            }
+            Self::Weibull {
+                scale,
+                shape,
+                distr,
+            } => {
+                let x = distr.sample(rng);
+                let high = scale * (-0.01f64.ln()).powf(1.0 / shape);
+                let normalized = x / high;
+                unbiased_index(
+                    (normalized.clamp(0.0, 1.0 - f64::EPSILON) * len as f64) as usize,
+                    len,
+                )
+            }
+            Self::Pareto {
+                scale,
+                shape,
+                distr,
+            } => {
+                let x = distr.sample(rng);
+                let high = scale * 100f64.powf(1.0 / shape);
+                let normalized = (x - scale) / (high - scale);
+                unbiased_index(
+                    (normalized.clamp(0.0, 1.0 - f64::EPSILON) * len as f64) as usize,
+                    len,
+                )
+            }
+        }
     }
 
     pub fn expected_value(&self) -> f64 {

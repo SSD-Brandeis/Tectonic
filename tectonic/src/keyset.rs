@@ -16,47 +16,6 @@ pub type Key = Rc<[u8]>;
 // TODO: Fix lifetime issue by maybe keeping the vec separate from the keysets so the lifetimes are
 // tied to it?
 
-// Modified from https://github.com/servo/rust-fnv/blob/main/lib.rs#L146-L157 (MIT)
-const INITIAL_STATE: u64 = 0xcbf2_9ce4_8422_2325;
-const PRIME: u64 = 0x0100_0000_01b3;
-#[inline]
-#[must_use]
-pub const fn fnv_hash(mut bytes: u64) -> u64 {
-    let mut hash = INITIAL_STATE;
-    let mut i = 0;
-    while i < u64::BITS {
-        hash ^= bytes & 0xFF;
-        hash = hash.wrapping_mul(PRIME);
-        bytes >>= 8;
-        i += 1;
-    }
-    hash
-}
-
-fn unbiased_index_(mut idx: usize, len: usize) -> usize {
-    let range = usize::MAX - usize::MAX % len;
-    loop {
-        idx ^= idx >> 33;
-        idx = idx.wrapping_mul(0xff51afd7ed558ccd);
-        idx ^= idx >> 33;
-        idx = idx.wrapping_mul(0xc4ceb9fe1a85ec53);
-        idx ^= idx >> 33;
-
-        if idx < range {
-            return idx % len;
-        }
-    }
-}
-
-// TODO: How does this hold up when there are interleaved inserts? Are the same keys targed or does
-// it get "spread out".
-#[inline]
-#[must_use]
-fn unbiased_index(idx: usize, len: usize) -> usize {
-    // return unbiased_index_(idx + 1, len + 1) - 1;
-    return (fnv_hash(idx as u64) as usize) % len;
-}
-
 pub trait KeySet {
     fn new(capacity: usize) -> Self;
 

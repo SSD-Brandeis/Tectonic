@@ -115,7 +115,8 @@ impl Scalable for Distribution {
             }
             Distribution::Latest { n, s, distr } => {
                 *n *= factor;
-                *distr = rand_distr::Zipf::new(*n, *s).expect("Failed to scale Zipf Distribution");
+                *distr =
+                    rand_distr::Zipf::new(*n, *s).expect("Failed to scale latest Distribution");
             }
             Distribution::Weibull {
                 scale,
@@ -133,7 +134,7 @@ impl Scalable for Distribution {
             } => {
                 *scale *= factor;
                 *distr = rand_distr::Pareto::new(*scale, *shape)
-                    .expect("Failed to scale Weibull Distribution");
+                    .expect("Failed to scale pareto Distribution");
             }
             _ => (),
         }

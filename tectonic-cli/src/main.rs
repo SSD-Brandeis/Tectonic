@@ -37,6 +37,10 @@ enum Command {
         /// Scale factor for the operation counts of the workload
         #[arg(short = 's', long = "scale")]
         scale: Option<f64>,
+
+        /// Number of threads to divide the workload into
+        #[arg(short = 't', long = "threads", default_value_t = 1)]
+        threads: usize,
     },
     /// Prints the JSON schema for IDE integration.
     Schema,
@@ -54,6 +58,12 @@ enum Command {
         /// Configuration string (database dependent)
         #[arg(short = 'c', long = "config")]
         config: Option<String>,
+        /// Number of threads to use for execution
+        #[arg(short = 't', long = "threads", default_value_t = 1)]
+        threads: usize,
+        /// Target rate in operations per second
+        #[arg(long = "target-rate")]
+        target_rate: Option<u64>,
     },
     /// Generate and Execute a workload from a spec file against a specific database
     Benchmark {
@@ -72,6 +82,18 @@ enum Command {
         /// Scale factor for the operation counts of the workload
         #[arg(short = 's', long = "scale")]
         scale: Option<f64>,
+        /// Number of threads to use for execution
+        #[arg(short = 't', long = "threads", default_value_t = 1)]
+        threads: usize,
+        /// Target rate in operations per second
+        #[arg(long = "target-rate")]
+        target_rate: Option<u64>,
+        /// Print status interval in seconds
+        #[arg(long)]
+        status_interval: Option<u64>,
+        /// Path to output periodic stats CSV
+        #[arg(long)]
+        csv_log: Option<String>,
     },
     ///// Generate and Execute a Ycsb workload
     //Ycsb {
@@ -177,28 +199,24 @@ fn main() -> Result<()> {
             workload_path,
             output,
             scale,
+            threads,
         } => {
             let workload_path = workload_path.into_path()?;
+            let base_scale = scale.unwrap_or(1.0);
+            let thread_scale = base_scale / (threads as f64);
 
-            if let Some(scale) = scale
-                && scale != 1.0
-            {
-                return invoke_generate(
-                    &workload_path,
-                    output.as_deref(),
-                    |workload_spec_string, output_file_path| {
-                        scale_and_generate_workload(workload_spec_string, output_file_path, scale)
-                    },
-                );
-            } else {
-                return invoke_generate(
-                    &workload_path,
-                    output.as_deref(),
-                    |workload_spec_string, output_file_path| {
-                        generate_workload(workload_spec_string, output_file_path)
-                    },
-                );
-            }
+            return invoke_generate(
+                &workload_path,
+                output.as_deref(),
+                threads,
+                move |workload_spec_string, output_file_path, thread_id| {
+                    if base_scale != 1.0 || threads > 1 {
+                        scale_and_generate_workload(workload_spec_string, output_file_path, thread_scale, thread_id)
+                    } else {
+                        generate_workload(workload_spec_string, output_file_path, thread_id)
+                    }
+                },
+            );
         }
         Command::Schema => return invoke_schema(),
         Command::Execute {
@@ -206,12 +224,16 @@ fn main() -> Result<()> {
             database,
             db_path,
             config,
+            threads,
+            target_rate,
         } => {
             return execute_operations(
                 &database,
                 input_file,
                 db_path.as_deref(),
                 config.as_deref(),
+                threads,
+                target_rate,
             );
         }
         Command::Benchmark {
@@ -220,6 +242,10 @@ fn main() -> Result<()> {
             db_path,
             config,
             scale,
+            threads,
+            target_rate,
+            status_interval,
+            csv_log,
         } => {
             let workload_path = workload_path.into_path()?;
 
@@ -236,6 +262,10 @@ fn main() -> Result<()> {
                             db_path.as_deref(),
                             config.as_deref(),
                             scale,
+                            threads,
+                            target_rate,
+                            status_interval,
+                            csv_log.as_deref(),
                         )
                     },
                 );
@@ -249,6 +279,10 @@ fn main() -> Result<()> {
                             database_name,
                             db_path.as_deref(),
                             config.as_deref(),
+                            threads,
+                            target_rate,
+                            status_interval,
+                            csv_log.as_deref(),
                         )
                     },
                 );
@@ -284,8 +318,13 @@ fn spec_path_to_workload_name(spec_path: impl AsRef<Path>) -> String {
 fn invoke_generate(
     workload_path: &str,
     output: Option<&str>,
-    generate_func: impl Fn(String, &PathBuf) -> Result<()> + Send + Sync,
+    threads: usize,
+    generate_func: impl Fn(String, &PathBuf, Option<usize>) -> Result<()> + Send + Sync,
 ) -> Result<()> {
+    use rayon::iter::IntoParallelIterator;
+    use rayon::iter::ParallelIterator;
+    use tectonic::spec::WorkloadSpec;
+
     let workload_path = PathBuf::from(workload_path);
     if !workload_path.exists() {
         bail!("File or folder does not exist {}", workload_path.display());
@@ -310,7 +349,7 @@ fn invoke_generate(
                         .file_name()
                         .and_then(|name| name.to_str())
                         .map(
-                            |name| name.ends_with(".spec.json"), // || name.ends_with(".spec.jsonc")
+                            |name| name.ends_with(".spec.json"),
                         )
                         .unwrap_or(false)
             })
@@ -320,12 +359,39 @@ fn invoke_generate(
                 info!("Generating workload for: {}", path.display());
                 let contents = fs::read_to_string(path)?;
 
+                let env_ok = std::env::var("TECTONIC_PARALLEL_GEN").is_ok();
+                let run_parallel = threads > 1 && env_ok;
+
+                if threads > 1 && !env_ok {
+                    eprintln!("=================================================================================");
+                    eprintln!("WARNING: MULTI-THREADED WORKLOAD GENERATION FALLING BACK TO SEQUENTIAL EXECUTION!");
+                    eprintln!("  Reason: The environment variable TECTONIC_PARALLEL_GEN is not set.");
+                    eprintln!("=================================================================================");
+                }
+
                 let output_file = spec_path_to_workload_name(path);
 
                 let mut output_file_path = output_dir.clone();
                 output_file_path.push(output_file);
 
-                return generate_func(contents, &output_file_path);
+                if run_parallel {
+                    (0..threads).into_par_iter().try_for_each(|t| -> Result<()> {
+                        let mut final_path = output_file_path.clone();
+                        final_path.set_extension(format!("txt.{}", t));
+                        generate_func(contents.clone(), &final_path, Some(t))?;
+                        Ok(())
+                    })?;
+                } else {
+                    for t in 0..threads {
+                        let mut final_path = output_file_path.clone();
+                        if threads > 1 {
+                            final_path.set_extension(format!("txt.{}", t));
+                        }
+                        let tid = if threads > 1 { Some(t) } else { None };
+                        generate_func(contents.clone(), &final_path, tid)?;
+                    }
+                }
+                Ok(())
             })
             .collect::<Result<Vec<_>>>()?;
     } else if workload_path.is_file() {
@@ -335,7 +401,39 @@ fn invoke_generate(
 
         let contents = fs::read_to_string(&workload_path)?;
 
-        generate_func(contents, &output_file)?;
+        let env_ok = std::env::var("TECTONIC_PARALLEL_GEN").is_ok();
+        let run_parallel = threads > 1 && env_ok;
+
+        if threads > 1 && !env_ok {
+            eprintln!("=================================================================================");
+            eprintln!("WARNING: MULTI-THREADED WORKLOAD GENERATION FALLING BACK TO SEQUENTIAL EXECUTION!");
+            eprintln!("  Reason: The environment variable TECTONIC_PARALLEL_GEN is not set.");
+            eprintln!("=================================================================================");
+        }
+
+        if run_parallel {
+            (0..threads).into_par_iter().try_for_each(|t| -> Result<()> {
+                let mut final_path = output_file.clone();
+                let ext = final_path.extension().unwrap_or_default().to_string_lossy();
+                let new_ext = if ext.is_empty() { format!("{}", t) } else { format!("{}.{}", ext, t) };
+                final_path.set_extension(new_ext);
+                generate_func(contents.clone(), &final_path, Some(t))?;
+                Ok(())
+            })?;
+        } else {
+            for t in 0..threads {
+                let mut final_path = output_file.clone();
+                let tid = if threads > 1 {
+                    let ext = final_path.extension().unwrap_or_default().to_string_lossy();
+                    let new_ext = if ext.is_empty() { format!("{}", t) } else { format!("{}.{}", ext, t) };
+                    final_path.set_extension(new_ext);
+                    Some(t)
+                } else {
+                    None
+                };
+                generate_func(contents.clone(), &final_path, tid)?;
+            }
+        }
     } else {
         unreachable!("Path is neither a file nor a directory");
     };

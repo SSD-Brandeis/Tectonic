@@ -14,12 +14,19 @@ use rand::prelude::SliceRandom;
 use rand::seq::IndexedMutRandom;
 use rand::{Rng, SeedableRng};
 use rand_xoshiro::Xoshiro256Plus;
-use std::fs::File;
-use std::io::{BufWriter, Write};
+use std::{
+    borrow::Cow,
+    collections::HashMap,
+    fs::File,
+    io::{BufRead, BufReader, BufWriter, Write},
+    path::Path,
+    sync::atomic::{AtomicUsize, Ordering},
+    sync::Arc,
+};
 use std::mem::variant_count;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
-use tracing::{debug, info, trace};
+use tracing::{debug, info, trace, warn};
 
 mod keyset;
 pub mod spec;
@@ -40,7 +47,7 @@ use crate::keyset::{
     BloomFilterKeySet, EmptyKeySet, Key, KeySet, VecBloomFilterKeySet, VecHashSetKeySet, VecKeySet,
     VecOptionHashSetKeySet, VecOptionKeySet,
 };
-use crate::spec::{CharacterSet, RangeFormat, StringExpr, WorkloadSpec, WorkloadSpecSection};
+use crate::spec::{CharacterSet, RangeFormat, StringExpr, WorkloadSpec, WorkloadSpecSection, BlindRangeQueries};
 
 pub trait OperationHandler {
     fn handle_insert(
@@ -70,6 +77,9 @@ pub trait OperationHandler {
     fn handle_range_query_count(&mut self, key1: &Key, count: usize) -> Result<()>;
     fn handle_range_delete(&mut self, key1: &Key, key2: &Key) -> Result<()>;
     fn handle_range_delete_count(&mut self, key1: &Key, count: usize) -> Result<()>;
+    fn handle_blind_point_query(&mut self, key: &Key) -> Result<()>;
+    fn handle_blind_point_delete(&mut self, key: &Key) -> Result<()>;
+    fn handle_blind_range_query(&mut self, key: &Key, count: usize) -> Result<()>;
     fn start_stat_flush(&mut self, benchmarker: BenchmarkerType) -> Result<()>;
     fn end_stat_flush(&mut self, name: &str, benchmarker: BenchmarkerType) -> Result<()>;
 }
@@ -221,9 +231,90 @@ impl<'a, W: Write> OperationHandler for WriteHandler<'a, W> {
 
         Ok(())
     }
+
+    fn handle_blind_point_query(&mut self, key: &Key) -> Result<()> {
+        let w = &mut self.0;
+        w.write_all("BP ".as_bytes())?;
+        w.write_all(key)?;
+        w.write_all("\n".as_bytes())?;
+        return Ok(());
+    }
+
+    fn handle_blind_point_delete(&mut self, key: &Key) -> Result<()> {
+        let w = &mut self.0;
+        w.write_all("BD ".as_bytes())?;
+        w.write_all(key)?;
+        w.write_all("\n".as_bytes())?;
+        return Ok(());
+    }
+
+    fn handle_blind_range_query(&mut self, key: &Key, count: usize) -> Result<()> {
+        let w = &mut self.0;
+        w.write_all("BR ".as_bytes())?;
+        w.write_all(key)?;
+        w.write_all(" ".as_bytes())?;
+        w.write_all(count.to_string().as_bytes())?;
+        w.write_all("\n".as_bytes())?;
+        return Ok(());
+    }
 }
 
-struct DBHandler<'a, 'b>(&'a mut Benchmarker<'b>);
+pub struct DBHandler<'a, 'b> {
+    benchmarker: &'a mut Benchmarker<'b>,
+    prefix: Option<Vec<u8>>,
+    target_rate_per_thread: Option<u64>,
+    start_time: std::time::Instant,
+    operations_done: u64,
+    global_ops: Option<Arc<AtomicUsize>>,
+    global_read_latency_sum: Option<Arc<std::sync::atomic::AtomicU64>>,
+    global_read_count: Option<Arc<AtomicUsize>>,
+}
+
+impl<'a, 'b> DBHandler<'a, 'b> {
+    pub fn new(
+        benchmarker: &'a mut Benchmarker<'b>,
+        prefix: Option<Vec<u8>>,
+        target_rate_per_thread: Option<u64>,
+        global_ops: Option<Arc<AtomicUsize>>,
+        global_read_latency_sum: Option<Arc<std::sync::atomic::AtomicU64>>,
+        global_read_count: Option<Arc<AtomicUsize>>,
+    ) -> Self {
+        Self {
+            benchmarker,
+            prefix,
+            target_rate_per_thread,
+            start_time: std::time::Instant::now(),
+            operations_done: 0,
+            global_ops,
+            global_read_latency_sum,
+            global_read_count,
+        }
+    }
+
+    fn apply_prefix<'c>(prefix: &Option<Vec<u8>>, key: &'c [u8]) -> std::borrow::Cow<'c, [u8]> {
+        if let Some(p) = prefix {
+            let mut new_key = p.clone();
+            new_key.extend_from_slice(key);
+            std::borrow::Cow::Owned(new_key)
+        } else {
+            std::borrow::Cow::Borrowed(key)
+        }
+    }
+
+    fn throttle(&mut self) {
+        self.operations_done += 1;
+        if let Some(rate) = self.target_rate_per_thread {
+            let expected_time = std::time::Duration::from_secs_f64(self.operations_done as f64 / rate as f64);
+            let elapsed = self.start_time.elapsed();
+            if elapsed < expected_time {
+                std::thread::sleep(expected_time - elapsed);
+            }
+        }
+        if let Some(global_ops) = &self.global_ops {
+            global_ops.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+}
 
 impl<'a, 'b> OperationHandler for DBHandler<'a, 'b> {
     fn handle_insert(
@@ -233,8 +324,10 @@ impl<'a, 'b> OperationHandler for DBHandler<'a, 'b> {
         val: &StringExpr,
         character_set: Option<CharacterSet>,
     ) -> Result<()> {
-        let value = val.generate(rng, character_set);
-        self.0.handle_insert(key, value.as_ref())
+        self.throttle();
+        let value = val.generate(rng, character_set, None);
+        let prefixed_key = Self::apply_prefix(&self.prefix, key);
+        self.benchmarker.handle_insert(&prefixed_key, value.as_ref())
     }
 
     fn handle_update(
@@ -244,8 +337,10 @@ impl<'a, 'b> OperationHandler for DBHandler<'a, 'b> {
         val: &StringExpr,
         character_set: Option<CharacterSet>,
     ) -> Result<()> {
-        let value = val.generate(rng, character_set);
-        self.0.handle_update(key, value.as_ref())
+        self.throttle();
+        let value = val.generate(rng, character_set, None);
+        let prefixed_key = Self::apply_prefix(&self.prefix, key);
+        self.benchmarker.handle_update(&prefixed_key, value.as_ref())
     }
 
     fn handle_merge(
@@ -255,44 +350,96 @@ impl<'a, 'b> OperationHandler for DBHandler<'a, 'b> {
         val: &StringExpr,
         character_set: Option<CharacterSet>,
     ) -> Result<()> {
-        let value = val.generate(rng, character_set);
-        self.0.handle_merge(key, value.as_ref())
+        self.throttle();
+        let value = val.generate(rng, character_set, None);
+        let prefixed_key = Self::apply_prefix(&self.prefix, key);
+        self.benchmarker.handle_merge(&prefixed_key, value.as_ref())
     }
 
     fn handle_point_delete(&mut self, key: &Key) -> Result<()> {
-        self.0.handle_point_delete(key)
+        self.throttle();
+        let prefixed_key = Self::apply_prefix(&self.prefix, key);
+        self.benchmarker.handle_point_delete(&prefixed_key)
     }
 
     fn handle_point_query(&mut self, key: &Key) -> Result<()> {
-        self.0.handle_point_query(key)
+        self.throttle();
+        let prefixed_key = Self::apply_prefix(&self.prefix, key);
+        let start = std::time::Instant::now();
+        let res = self.benchmarker.handle_point_query(&prefixed_key);
+        let latency_nanos = start.elapsed().as_nanos() as u64;
+        if let Some(sum) = &self.global_read_latency_sum {
+            sum.fetch_add(latency_nanos, Ordering::Relaxed);
+        }
+        if let Some(count) = &self.global_read_count {
+            count.fetch_add(1, Ordering::Relaxed);
+        }
+        res
     }
 
     fn handle_range_query(&mut self, key1: &Key, key2: &Key) -> Result<()> {
-        self.0.handle_range_query(key1, key2)
+        self.throttle();
+        let prefixed_key1 = Self::apply_prefix(&self.prefix, key1);
+        let prefixed_key2 = Self::apply_prefix(&self.prefix, key2);
+        self.benchmarker.handle_range_query(&prefixed_key1, &prefixed_key2)
     }
 
     fn handle_range_query_count(&mut self, key1: &Key, count: usize) -> Result<()> {
-        self.0.handle_range_query_count(key1, count)
+        self.throttle();
+        let prefixed_key1 = Self::apply_prefix(&self.prefix, key1);
+        self.benchmarker.handle_range_query_count(&prefixed_key1, count)
     }
 
     fn handle_range_delete(&mut self, key1: &Key, key2: &Key) -> Result<()> {
-        self.0.handle_range_delete(key1, key2)
+        self.throttle();
+        let prefixed_key1 = Self::apply_prefix(&self.prefix, key1);
+        let prefixed_key2 = Self::apply_prefix(&self.prefix, key2);
+        self.benchmarker.handle_range_delete(&prefixed_key1, &prefixed_key2)
     }
 
     fn handle_range_delete_count(&mut self, key1: &Key, count: usize) -> Result<()> {
-        self.0.handle_range_delete_count(key1, count)
+        self.throttle();
+        let prefixed_key1 = Self::apply_prefix(&self.prefix, key1);
+        self.benchmarker.handle_range_delete_count(&prefixed_key1, count)
     }
 
     fn start_stat_flush(&mut self, benchmarker: BenchmarkerType) -> Result<()> {
-        self.0.start_stat_flush(benchmarker);
+        self.benchmarker.start_stat_flush(benchmarker);
 
         Ok(())
     }
 
     fn end_stat_flush(&mut self, name: &str, benchmarker: BenchmarkerType) -> Result<()> {
-        self.0.end_stat_flush(name, benchmarker)?;
+        self.benchmarker.end_stat_flush(name, benchmarker)?;
 
         Ok(())
+    }
+
+    fn handle_blind_point_query(&mut self, key: &Key) -> Result<()> {
+        self.throttle();
+        let prefixed_key = Self::apply_prefix(&self.prefix, key);
+        let start = std::time::Instant::now();
+        let res = self.benchmarker.handle_point_query(&prefixed_key);
+        let latency_nanos = start.elapsed().as_nanos() as u64;
+        if let Some(sum) = &self.global_read_latency_sum {
+            sum.fetch_add(latency_nanos, Ordering::Relaxed);
+        }
+        if let Some(count) = &self.global_read_count {
+            count.fetch_add(1, Ordering::Relaxed);
+        }
+        res
+    }
+
+    fn handle_blind_point_delete(&mut self, key: &Key) -> Result<()> {
+        self.throttle();
+        let prefixed_key = Self::apply_prefix(&self.prefix, key);
+        self.benchmarker.handle_point_delete(&prefixed_key)
+    }
+
+    fn handle_blind_range_query(&mut self, key: &Key, count: usize) -> Result<()> {
+        self.throttle();
+        let prefixed_key = Self::apply_prefix(&self.prefix, key);
+        self.benchmarker.handle_range_query_count(&prefixed_key, count)
     }
 }
 
@@ -352,127 +499,142 @@ enum Op {
 // TODO: Allow for different sections to use different keysets
 
 /// Generates a workload given the spec and writes it to the given writer.
+pub fn generate_section<OP: OperationHandler>(
+    operation_handler: &mut OP,
+    operation_timings: &mut OperationTimings,
+    workload: &WorkloadSpec,
+    section: &WorkloadSpecSection,
+    section_idx: usize,
+    thread_id: Option<usize>,
+) -> Result<()> {
+    let no_keyset = !(section.has_unique_insert()
+        || section.has_update()
+        || section.has_merge()
+        || section.has_query_point()
+        || section.has_query_point_empty()
+        || section.has_delete_point()
+        || section.has_delete_point_empty()
+        || section.has_query_range()
+        || section.has_query_range_count()
+        || section.has_delete_range());
+
+    let requires_deletion = section.has_delete_point() || section.has_delete_range();
+    let requires_sorting = section.has_query_range() || section.has_delete_range();
+
+    let requires_contains_check = !section.skip_contains_check()
+        && (section.has_unique_insert()
+            || section.has_query_point_empty()
+            || section.has_delete_point_empty());
+    let requires_random_element = section.has_update()
+        || section.has_merge()
+        || section.has_delete_point()
+        || section.has_delete_range()
+        || section.has_query_point()
+        || section.has_query_range()
+        || section.has_query_range_count();
+
+    if no_keyset {
+        info!("Using EmptyKeySet");
+        write_operations_with_keyset(
+            operation_handler,
+            operation_timings,
+            workload,
+            section,
+            section_idx,
+            EmptyKeySet::new,
+            thread_id,
+        )?
+    } else if requires_sorting && requires_deletion && requires_contains_check {
+        info!("Using VecHashSetOptionKeySet");
+        write_operations_with_keyset(
+            operation_handler,
+            operation_timings,
+            workload,
+            section,
+            section_idx,
+            VecOptionHashSetKeySet::new,
+            thread_id,
+        )?
+    } else if requires_sorting && requires_deletion && !requires_contains_check {
+        info!("Using VecOptionKeySet");
+        write_operations_with_keyset(
+            operation_handler,
+            operation_timings,
+            workload,
+            section,
+            section_idx,
+            VecOptionKeySet::new,
+            thread_id,
+        )?
+    } else if (requires_sorting || requires_deletion) && requires_contains_check {
+        info!("Using VecHashSetKeySet");
+        write_operations_with_keyset(
+            operation_handler,
+            operation_timings,
+            workload,
+            section,
+            section_idx,
+            VecHashSetKeySet::new,
+            thread_id,
+        )?
+    } else if requires_sorting || requires_deletion {
+        info!("Using VecKeySet");
+        write_operations_with_keyset(
+            operation_handler,
+            operation_timings,
+            workload,
+            section,
+            section_idx,
+            VecKeySet::new,
+            thread_id,
+        )?
+    } else if requires_contains_check && requires_random_element {
+        info!("Using VecBloomFilterKeySet");
+        write_operations_with_keyset(
+            operation_handler,
+            operation_timings,
+            workload,
+            section,
+            section_idx,
+            VecBloomFilterKeySet::new,
+            thread_id,
+        )?
+    } else if requires_contains_check {
+        info!("Using BloomFilterKeySet");
+        write_operations_with_keyset(
+            operation_handler,
+            operation_timings,
+            workload,
+            section,
+            section_idx,
+            BloomFilterKeySet::new,
+            thread_id,
+        )?
+    } else {
+        info!("Using VecKeySet");
+        write_operations_with_keyset(
+            operation_handler,
+            operation_timings,
+            workload,
+            section,
+            section_idx,
+            VecKeySet::new,
+            thread_id,
+        )?
+    }
+
+    Ok(())
+}
+
+/// Generates a workload given the spec and writes it to the given writer.
 pub fn generate_operations<OP: OperationHandler>(
     mut operation_handler: OP,
     workload: &WorkloadSpec,
 ) -> Result<()> {
-    // write_operations_with_keyset(writer, workload, VecBloomFilterKeySet::new)
-
-    // WARN: This doesn't make sense to me
-    // Shouldn't we be using bloom filters or a hash_map if we have empty queries
-    // Also why do we need a vector if we don't have range queries, can't we just use a hashmap, or
-    // just a set
     let mut operation_timings = OperationTimings::default();
 
     for (i, section) in workload.sections.iter().enumerate() {
-        let no_keyset = !(section.has_unique_insert()
-            || section.has_update()
-            || section.has_merge()
-            || section.has_query_point()
-            || section.has_query_point_empty()
-            || section.has_delete_point()
-            || section.has_delete_point_empty()
-            || section.has_query_range()
-            || section.has_query_range_count()
-            || section.has_delete_range());
-
-        let requires_deletion = section.has_delete_point() || section.has_delete_range();
-        let requires_sorting = section.has_query_range() || section.has_delete_range();
-
-        let requires_contains_check = !section.skip_contains_check()
-            && (section.has_unique_insert()
-                || section.has_query_point_empty()
-                || section.has_delete_point_empty());
-        let requires_random_element = section.has_update()
-            || section.has_merge()
-            || section.has_delete_point()
-            || section.has_delete_range()
-            || section.has_query_point()
-            || section.has_query_range()
-            || section.has_query_range_count();
-
-        if no_keyset {
-            info!("Using EmptyKeySet");
-            write_operations_with_keyset(
-                &mut operation_handler,
-                &mut operation_timings,
-                workload,
-                section,
-                i,
-                EmptyKeySet::new,
-            )?
-        } else if requires_sorting && requires_deletion && requires_contains_check {
-            // TODO: Should use skip list or b+ tree
-            info!("Using VecHashSetOptionKeySet");
-            write_operations_with_keyset(
-                &mut operation_handler,
-                &mut operation_timings,
-                workload,
-                section,
-                i,
-                VecOptionHashSetKeySet::new,
-            )?
-        } else if requires_sorting && requires_deletion && !requires_contains_check {
-            info!("Using VecOptionKeySet");
-            write_operations_with_keyset(
-                &mut operation_handler,
-                &mut operation_timings,
-                workload,
-                section,
-                i,
-                VecOptionKeySet::new,
-            )?
-        } else if (requires_sorting || requires_deletion) && requires_contains_check {
-            info!("Using VecHashSetKeySet");
-            write_operations_with_keyset(
-                &mut operation_handler,
-                &mut operation_timings,
-                workload,
-                section,
-                i,
-                VecHashSetKeySet::new,
-            )?
-        } else if requires_sorting || requires_deletion {
-            info!("Using VecKeySet");
-            write_operations_with_keyset(
-                &mut operation_handler,
-                &mut operation_timings,
-                workload,
-                section,
-                i,
-                VecKeySet::new,
-            )?
-        } else if requires_contains_check && requires_random_element {
-            info!("Using VecBloomFilterKeySet");
-            write_operations_with_keyset(
-                &mut operation_handler,
-                &mut operation_timings,
-                workload,
-                section,
-                i,
-                VecBloomFilterKeySet::new,
-            )?
-        } else if requires_contains_check {
-            info!("Using BloomFilterKeySet");
-            write_operations_with_keyset(
-                &mut operation_handler,
-                &mut operation_timings,
-                workload,
-                section,
-                i,
-                BloomFilterKeySet::new,
-            )?
-        } else {
-            info!("Using VecKeySet");
-            write_operations_with_keyset(
-                &mut operation_handler,
-                &mut operation_timings,
-                workload,
-                section,
-                i,
-                VecKeySet::new,
-            )?
-        }
+        generate_section(&mut operation_handler, &mut operation_timings, workload, section, i, None)?;
     }
 
     debug!(
@@ -578,8 +740,98 @@ impl Iterator for MarkerIter {
         //     }
         // }
         //
-        // unreachable!("Failed to generate next operation");
     }
+}
+
+fn pregenerate_keys_parallel(
+    expr: &StringExpr,
+    char_set: Option<CharacterSet>,
+    count: usize,
+    thread_id: Option<usize>,
+) -> Vec<Key> {
+    if count == 0 {
+        return Vec::new();
+    }
+    let num_threads = std::thread::available_parallelism()
+        .map(|p| p.get())
+        .unwrap_or(4)
+        .min(count);
+    let chunk_size = count / num_threads;
+    let remainder = count % num_threads;
+
+    let mut handles = Vec::new();
+    for t in 0..num_threads {
+        let expr = expr.clone();
+        let char_set = char_set;
+        let thread_count = chunk_size + if t == 0 { remainder } else { 0 };
+        
+        let handle = std::thread::spawn(move || {
+            let mut rng = Xoshiro256Plus::from_os_rng();
+            let mut keys = Vec::with_capacity(thread_count);
+            for _ in 0..thread_count {
+                let key = expr.generate(&mut rng, char_set, thread_id);
+                keys.push(key);
+            }
+            keys
+        });
+        handles.push(handle);
+    }
+
+    let mut all_keys = Vec::with_capacity(count);
+    for h in handles {
+        if let Ok(keys) = h.join() {
+            all_keys.extend(keys);
+        }
+    }
+    all_keys
+}
+
+fn pregenerate_range_queries_parallel(
+    brq: &BlindRangeQueries,
+    char_set: Option<CharacterSet>,
+    count: usize,
+    default_key: Option<&StringExpr>,
+    total_entries: usize,
+    thread_id: Option<usize>,
+) -> Vec<(Key, usize)> {
+    if count == 0 {
+        return Vec::new();
+    }
+    let num_threads = std::thread::available_parallelism()
+        .map(|p| p.get())
+        .unwrap_or(4)
+        .min(count);
+    let chunk_size = count / num_threads;
+    let remainder = count % num_threads;
+
+    let mut handles = Vec::new();
+    for t in 0..num_threads {
+        let brq = brq.clone();
+        let char_set = char_set;
+        let default_key = default_key.cloned();
+        let thread_count = chunk_size + if t == 0 { remainder } else { 0 };
+        
+        let handle = std::thread::spawn(move || {
+            let mut rng = Xoshiro256Plus::from_os_rng();
+            let mut queries = Vec::with_capacity(thread_count);
+            for _ in 0..thread_count {
+                let key_expr = brq.key.as_ref().or(default_key.as_ref()).expect("No key or default key set for blind range queries");
+                let key = key_expr.generate(&mut rng, brq.character_set.or(char_set), thread_id);
+                let range_count = brq.get_range_length(&mut rng, total_entries);
+                queries.push((key, range_count));
+            }
+            queries
+        });
+        handles.push(handle);
+    }
+
+    let mut all_queries = Vec::with_capacity(count);
+    for h in handles {
+        if let Ok(queries) = h.join() {
+            all_queries.extend(queries);
+        }
+    }
+    all_queries
 }
 
 pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
@@ -589,6 +841,7 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
     section: &WorkloadSpecSection,
     section_num: usize,
     keyset_constructor: impl Fn(usize) -> KeySetT,
+    thread_id: Option<usize>,
 ) -> Result<()> {
     if section.enable_granular_stats {
         operation_handler.start_stat_flush(BenchmarkerType::Section)?;
@@ -721,9 +974,9 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
             ?query_range_count
         );
 
-        let more_delete_point_than_keys = delete_point_count > keys_valid.len();
+        let more_delete_point_than_keys = delete_point_count > keys_valid.len() + unique_insert_count + upsert_count;
         if more_delete_point_than_keys {
-            bail!("Cannot have more point deletes than existing valid keys.");
+            bail!("Cannot have more point deletes than existing valid keys plus new inserts in the group.");
         }
 
         let mut key_pool = if let Some(sorted) = &group.sorted {
@@ -745,7 +998,7 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                         .as_ref()
                         .or(key)
                         .expect("No key or default key set for unique inserts")
-                        .generate(rng_ref, is.character_set.or(character_set));
+                        .generate(rng_ref, is.character_set.or(character_set), thread_id);
                     pool.push(key);
                 }
             }
@@ -757,7 +1010,7 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                         .as_ref()
                         .or(key)
                         .expect("No key or default key set for inserts")
-                        .generate(rng_ref, ups.character_set.or(character_set));
+                        .generate(rng_ref, ups.character_set.or(character_set), thread_id);
                     pool.push(key);
                 }
             }
@@ -796,7 +1049,7 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                             .as_ref()
                             .or(key)
                             .expect("No key or default key set for unique inserts")
-                            .generate(rng_ref, is.character_set.or(character_set))
+                            .generate(rng_ref, is.character_set.or(character_set), thread_id)
                     });
                 // let key = is.key.as_ref().or(key).expect("No key or default key set for unique inserts").generate(rng_ref, is.character_set);
                 operation_handler.handle_insert(
@@ -828,7 +1081,7 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                         .as_ref()
                         .or(key)
                         .expect("No key or default key set for inserts")
-                        .generate(rng_ref, ups.character_set.or(character_set))
+                        .generate(rng_ref, ups.character_set.or(character_set), thread_id)
                 });
             // let key = is.key.as_ref().or(key).expect("No key or default key set for unique inserts").generate(rng_ref, is.character_set);
             operation_handler.handle_insert(
@@ -858,6 +1111,55 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
         markers.add_op_count(Op::BlindRangeQuery, blind_range_query_count);
         markers.prepare_iter();
         let total_markers = markers.total;
+
+        let default_fallback = StringExpr::Inner(crate::spec::StringExprInner::Segmented {
+            separator: "".to_string(),
+            segments: vec![
+                StringExpr::Constant("usertable:user".to_string()),
+                StringExpr::Inner(crate::spec::StringExprInner::Uniform {
+                    len: crate::spec::NumberExpr::Constant(19.0),
+                    character_set: Some(CharacterSet::Numeric),
+                }),
+            ],
+        });
+
+        let mut pregen_blind_point_queries = if let Some(bpq) = &group.blind_point_queries {
+            pregenerate_keys_parallel(
+                bpq.key.as_ref().or(key).unwrap_or(&default_fallback),
+                bpq.character_set.or(character_set),
+                blind_point_query_count,
+                thread_id,
+            )
+        } else {
+            Vec::new()
+        };
+        pregen_blind_point_queries.reverse();
+
+        let mut pregen_blind_point_deletes = if let Some(bpd) = &group.blind_point_deletes {
+            pregenerate_keys_parallel(
+                bpd.key.as_ref().or(key).unwrap_or(&default_fallback),
+                bpd.character_set.or(character_set),
+                blind_point_delete_count,
+                thread_id,
+            )
+        } else {
+            Vec::new()
+        };
+        pregen_blind_point_deletes.reverse();
+
+        let mut pregen_blind_range_queries = if let Some(brq) = &group.blind_range_queries {
+            pregenerate_range_queries_parallel(
+                brq,
+                character_set,
+                blind_range_query_count,
+                key.or(Some(&default_fallback)),
+                total_entries,
+                thread_id,
+            )
+        } else {
+            Vec::new()
+        };
+        pregen_blind_range_queries.reverse();
 
         eprintln!("[Generating] Section {} | Group {}", section_num, group_num);
         let progress_bar = ProgressBar::with_draw_target(
@@ -895,7 +1197,7 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                                     .as_ref()
                                     .or(key)
                                     .expect("No key or default key set for unique inserts")
-                                    .generate(rng_ref, is.character_set.or(character_set))
+                                    .generate(rng_ref, is.character_set.or(character_set), thread_id)
                             });
                         if !keys_valid.contains(&key) {
                             break key;
@@ -931,7 +1233,7 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                                 .as_ref()
                                 .or(key)
                                 .expect("No key or default key set for unique inserts")
-                                .generate(rng_ref, is.character_set.or(character_set))
+                                .generate(rng_ref, is.character_set.or(character_set), thread_id)
                         });
                     operation_handler.handle_insert(
                         rng_ref,
@@ -956,7 +1258,7 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                         anyhow!("Update marker can only appear when updates is not None")
                     })?;
                     if keys_valid.is_empty() {
-                        bail!("Cannot have updates when there are no valid keys.");
+                        continue;
                     }
                     // keys_valid.sort();
                     let key = keys_valid.get_random(
@@ -990,7 +1292,7 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                         anyhow!("Merge marker can only appear when updates is not None")
                     })?;
                     if keys_valid.is_empty() {
-                        bail!("Cannot have merges when there are no valid keys.");
+                        continue;
                     }
                     // keys_valid.sort();
                     let key = keys_valid.get_random(
@@ -1020,6 +1322,9 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                 }
                 Op::PointDelete => {
                     let start = Instant::now();
+                    if keys_valid.is_empty() {
+                        continue;
+                    }
                     let pds = group.point_deletes.as_ref().ok_or_else(|| {
                         anyhow!(
                             "Point delete marker can only appear when point deletes is not None"
@@ -1047,7 +1352,7 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                 Op::PointQuery => {
                     let start = Instant::now();
                     if keys_valid.is_empty() {
-                        bail!("Cannot have point queries when there are no valid keys.");
+                        continue;
                     }
                     let pqs = group.point_queries.as_ref().ok_or_else(|| {
                         anyhow!("Point query marker can only appear when updates is not None")
@@ -1081,7 +1386,7 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                             .as_ref()
                             .or(key)
                             .expect("No key or default key set for empty point deletes")
-                            .generate(rng_ref, epd.character_set.or(character_set));
+                            .generate(rng_ref, epd.character_set.or(character_set), thread_id);
                         if !keys_valid.contains(&k) {
                             break k;
                         }
@@ -1106,7 +1411,7 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                             .as_ref()
                             .or(key)
                             .expect("No key or default key set for empty point queries")
-                            .generate(rng_ref, char_set);
+                            .generate(rng_ref, char_set, thread_id);
                         if !keys_valid.contains(&k) {
                             break k;
                         }
@@ -1125,7 +1430,7 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                         anyhow!("Range query marker can only appear when range_queries is not None")
                     })?;
                     if keys_valid.is_empty() {
-                        bail!("Cannot have range queries when there are no valid keys.");
+                        continue;
                     }
 
                     let range_length = rqs.get_range_length(rng_ref, keys_valid.len());
@@ -1181,7 +1486,7 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                             )
                         })?;
                     if keys_valid.is_empty() {
-                        bail!("Cannot have range deletes when there are no valid keys.");
+                        continue;
                     }
 
                     let range_length = rds.get_range_length(rng_ref, keys_valid.len());
@@ -1232,21 +1537,9 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                 }
                 Op::BlindPointQuery => {
                     let start = Instant::now();
-                    let bpq = group.blind_point_queries.as_ref().ok_or_else(||
-                        anyhow!("BlindPointQuery marker can only appear when blind_point_queries is not None"))?;
+                    let key = pregen_blind_point_queries.pop().expect("pregenerated blind query key");
 
-                    if keys_valid.is_empty() {
-                        bail!("Cannot have range deletes when there are no valid keys.");
-                    }
-
-                    let key = bpq
-                        .key
-                        .as_ref()
-                        .or(key)
-                        .expect("No key or default key set for blind point queries")
-                        .generate(rng_ref, bpq.character_set.or(character_set));
-
-                    operation_handler.handle_point_query(&key)?;
+                    operation_handler.handle_blind_point_query(&key)?;
 
                     let duration = Instant::now().duration_since(start);
                     operation_timings.time_blind_point_query += duration;
@@ -1256,21 +1549,9 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                 }
                 Op::BlindPointDelete => {
                     let start = Instant::now();
-                    let bpd = group.blind_point_deletes.as_ref().ok_or_else(
-                        || anyhow!("BlindPointDelete marker can only appear when blind_point_queries is not None"))?;
+                    let key = pregen_blind_point_deletes.pop().expect("pregenerated blind delete key");
 
-                    if keys_valid.is_empty() {
-                        bail!("Cannot have range deletes when there are no valid keys.");
-                    }
-
-                    let key = bpd
-                        .key
-                        .as_ref()
-                        .or(key)
-                        .expect("No key or default key set for blind point deletes")
-                        .generate(rng_ref, bpd.character_set.or(character_set));
-
-                    operation_handler.handle_point_query(&key)?;
+                    operation_handler.handle_blind_point_delete(&key)?;
 
                     let duration = Instant::now().duration_since(start);
                     operation_timings.time_blind_point_delete += duration;
@@ -1280,22 +1561,9 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                 }
                 Op::BlindRangeQuery => {
                     let start = Instant::now();
-                    let brq = group.blind_range_queries.as_ref().ok_or_else(
-                        || anyhow!("BlindPointDelete marker can only appear when blind_point_queries is not None"))?;
+                    let (key, count) = pregen_blind_range_queries.pop().expect("pregenerated blind range query");
 
-                    if keys_valid.is_empty() {
-                        bail!("Cannot have range deletes when there are no valid keys.");
-                    }
-
-                    let key = brq
-                        .key
-                        .as_ref()
-                        .or(key)
-                        .expect("No key or default key set for blind range queries")
-                        .generate(rng_ref, brq.character_set.or(character_set));
-
-                    let count = brq.get_range_length(rng_ref, total_entries);
-                    operation_handler.handle_range_query_count(&key, count)?;
+                    operation_handler.handle_blind_range_query(&key, count)?;
 
                     let duration = Instant::now().duration_since(start);
                     operation_timings.time_blind_range_query += duration;
@@ -1330,35 +1598,76 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
     return Ok(());
 }
 
+fn generate_workload_spec(workload_spec: WorkloadSpec, output_file: &PathBuf, thread_id: Option<usize>) -> Result<()> {
+    let global_start = std::time::Instant::now();
+    if std::env::var("TECTONIC_PARALLEL_GEN").is_ok() && workload_spec.sections.len() > 1 {
+        println!("[Tectonic Parallel Gen] Spawning {} threads (one per section) to generate workload sections in parallel", workload_spec.sections.len());
+        let workload_spec = Arc::new(workload_spec);
+        let mut handles = Vec::new();
+
+        for i in 0..workload_spec.sections.len() {
+            let spec = Arc::clone(&workload_spec);
+            let handle = std::thread::spawn(move || -> Result<Vec<u8>> {
+                let section_name = spec.sections[i].name.clone().unwrap_or_else(|| format!("Section {}", i));
+                let start_elapsed = global_start.elapsed().as_secs_f64();
+                let mut buffer = Vec::new();
+                {
+                    let mut write_handler = WriteHandler(&mut buffer);
+                    let mut timings = OperationTimings::default();
+                    generate_section(&mut write_handler, &mut timings, &spec, &spec.sections[i], i, thread_id)?;
+                }
+                let end_elapsed = global_start.elapsed().as_secs_f64();
+                println!("[Tectonic Parallel Gen] Section {} ({}) started at {:.4}s, finished at {:.4}s (duration: {:.4}s)", i, section_name, start_elapsed, end_elapsed, end_elapsed - start_elapsed);
+                Ok(buffer)
+            });
+            handles.push(handle);
+        }
+
+        let mut final_file = BufWriter::with_capacity(1024 * 1024, File::create(output_file)?);
+        for handle in handles {
+            let buffer = handle.join().map_err(|e| anyhow!("Thread panicked: {:?}", e))??;
+            final_file.write_all(&buffer)?;
+        }
+        final_file.flush()?;
+    } else {
+        println!("[Tectonic Sequential Gen] Generating {} sections sequentially", workload_spec.sections.len());
+        let mut final_file = BufWriter::with_capacity(1024 * 1024, File::create(output_file)?);
+        {
+            let mut write_handler = WriteHandler(&mut final_file);
+            let mut timings = OperationTimings::default();
+            for i in 0..workload_spec.sections.len() {
+                let section_name = workload_spec.sections[i].name.clone().unwrap_or_else(|| format!("Section {}", i));
+                let start_elapsed = global_start.elapsed().as_secs_f64();
+                generate_section(&mut write_handler, &mut timings, &workload_spec, &workload_spec.sections[i], i, thread_id)?;
+                let end_elapsed = global_start.elapsed().as_secs_f64();
+                println!("[Tectonic Sequential Gen] Section {} ({}) started at {:.4}s, finished at {:.4}s (duration: {:.4}s)", i, section_name, start_elapsed, end_elapsed, end_elapsed - start_elapsed);
+            }
+        }
+        final_file.flush()?;
+    }
+    Ok(())
+}
+
 /// Takes in a JSON representation of a workload specification and writes the workload to a file.
-pub fn generate_workload(workload_spec_string: String, output_file: &PathBuf) -> Result<()> {
+pub fn generate_workload(workload_spec_string: String, output_file: &PathBuf, thread_id: Option<usize>) -> Result<()> {
     let workload_spec: WorkloadSpec =
         serde_json::from_str(workload_spec_string.as_str()).context("Parsing spec file")?;
     drop(workload_spec_string);
-    let mut buf_writer = BufWriter::with_capacity(1024 * 1024, File::create(output_file)?);
-    let write_handler = WriteHandler(&mut buf_writer);
-    generate_operations(write_handler, &workload_spec)?;
-    buf_writer.flush()?;
-
-    Ok(())
+    generate_workload_spec(workload_spec, output_file, thread_id)
 }
 
 pub fn scale_and_generate_workload(
     workload_spec_string: String,
     output_file: &PathBuf,
     scale: f64,
+    thread_id: Option<usize>,
 ) -> Result<()> {
     let mut workload_spec: WorkloadSpec =
         serde_json::from_str(workload_spec_string.as_str()).context("Parsing spec file")?;
     drop(workload_spec_string);
     println!("Scaling spec");
     scale_spec(&mut workload_spec, scale);
-    let mut buf_writer = BufWriter::with_capacity(1024 * 1024, File::create(output_file)?);
-    let write_handler = WriteHandler(&mut buf_writer);
-    generate_operations(write_handler, &workload_spec)?;
-    buf_writer.flush()?;
-
-    Ok(())
+    generate_workload_spec(workload_spec, output_file, thread_id)
 }
 
 pub fn scale_and_benchmark_workload(
@@ -1367,16 +1676,109 @@ pub fn scale_and_benchmark_workload(
     db_path: Option<&str>,
     config: Option<&str>,
     scale: f64,
+    threads: usize,
+    target_rate: Option<u64>,
+    status_interval: Option<u64>,
+    csv_log: Option<&str>,
 ) -> Result<()> {
-    let mut workload_spec: WorkloadSpec =
-        serde_json::from_str(&workload_spec_string).context("Parsing spec file")?;
-    drop(workload_spec_string);
-    scale_spec(&mut workload_spec, scale);
-    let mut benchmarker = Benchmarker::new(Db::new(database_name, db_path, config)?);
-    benchmarker.start();
-    generate_operations(DBHandler(&mut benchmarker), &workload_spec)?;
-    benchmarker.end();
-    benchmarker.print_summary();
+    let database_name = database_name.to_string();
+    let db_path = db_path.map(String::from);
+    let config = config.map(String::from);
+
+    let mut handles = Vec::new();
+    let global_ops = Arc::new(AtomicUsize::new(0));
+    let global_read_latency_sum = Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let global_read_count = Arc::new(AtomicUsize::new(0));
+    let stop_signal = Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+    if let Some(interval) = status_interval {
+        let global_ops_clone = global_ops.clone();
+        let global_read_latency_sum_clone = global_read_latency_sum.clone();
+        let global_read_count_clone = global_read_count.clone();
+        let stop_clone = stop_signal.clone();
+        let csv_path = csv_log.map(|s| s.to_string());
+        
+        std::thread::spawn(move || {
+            let mut last_ops = 0;
+            let start = std::time::Instant::now();
+            if let Some(ref path) = csv_path {
+                if let Ok(mut f) = std::fs::File::create(path) {
+                    use std::io::Write;
+                    let _ = writeln!(f, "TimeElapsed(s),AvgReadLatency(ms)");
+                }
+            }
+            while !stop_clone.load(Ordering::Relaxed) {
+                std::thread::sleep(std::time::Duration::from_secs(interval));
+                let current_ops = global_ops_clone.load(Ordering::Relaxed);
+                let ops_in_interval = current_ops.saturating_sub(last_ops);
+                last_ops = current_ops;
+                
+                let sum = global_read_latency_sum_clone.swap(0, Ordering::Relaxed);
+                let count = global_read_count_clone.swap(0, Ordering::Relaxed);
+                let avg_latency_ms = if count > 0 {
+                    (sum as f64 / count as f64) / 1_000_000.0
+                } else {
+                    0.0
+                };
+                let elapsed = start.elapsed().as_secs();
+                if avg_latency_ms > 0.0 {
+                    println!("[Periodic] {}s elapsed: {} ops/sec, Avg Read Latency: {:.4} ms", elapsed, ops_in_interval as f64 / (interval as f64), avg_latency_ms);
+                } else {
+                    println!("[Periodic] {}s elapsed: {} ops/sec", elapsed, ops_in_interval as f64 / (interval as f64));
+                }
+                
+                if let Some(ref path) = csv_path {
+                    if let Ok(mut f) = std::fs::OpenOptions::new().append(true).open(path) {
+                        use std::io::Write;
+                        if avg_latency_ms > 0.0 {
+                            let _ = writeln!(f, "{},{:.4}", elapsed, avg_latency_ms);
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    for t in 0..threads {
+        let db_name_clone = database_name.clone();
+        let db_path_clone = db_path.clone();
+        let config_clone = config.clone();
+        let spec_string_clone = workload_spec_string.clone();
+        let global_ops_clone = global_ops.clone();
+        
+        let global_read_latency_sum_clone = global_read_latency_sum.clone();
+        let global_read_count_clone = global_read_count.clone();
+        
+        let prefix = if threads > 1 {
+            Some(format!("t{}:", t).into_bytes())
+        } else {
+            None
+        };
+
+        let handle = std::thread::spawn(move || -> Result<()> {
+            let mut spec_clone: WorkloadSpec =
+                serde_json::from_str(&spec_string_clone).context("Parsing spec file")?;
+            scale_spec(&mut spec_clone, scale / (threads as f64));
+            let mut benchmarker = Benchmarker::new(Db::new(&db_name_clone, db_path_clone.as_deref(), config_clone.as_deref())?);
+            benchmarker.start();
+            let mut handler = DBHandler::new(&mut benchmarker, prefix, target_rate.map(|r| r / (threads as u64).max(1)), Some(global_ops_clone), Some(global_read_latency_sum_clone), Some(global_read_count_clone));
+            generate_operations(handler, &spec_clone)?;
+            benchmarker.end();
+            if threads > 1 {
+                println!("--- Thread {} Summary ---", t);
+            }
+            benchmarker.print_summary();
+            Ok(())
+        });
+        handles.push(handle);
+    }
+
+    for handle in handles {
+        handle.join().unwrap()?;
+    }
+    
+    stop_signal.store(true, Ordering::Relaxed);
+
     Ok(())
 }
 
@@ -1468,14 +1870,108 @@ pub fn benchmark_workload(
     database_name: &str,
     db_path: Option<&str>,
     config: Option<&str>,
+    threads: usize,
+    target_rate: Option<u64>,
+    status_interval: Option<u64>,
+    csv_log: Option<&str>,
 ) -> Result<()> {
-    let workload_spec: WorkloadSpec =
-        serde_json::from_str(&workload_spec_string).context("Parsing spec file")?;
-    drop(workload_spec_string);
-    let mut benchmarker = Benchmarker::new(Db::new(database_name, db_path, config)?);
-    benchmarker.start();
-    generate_operations(DBHandler(&mut benchmarker), &workload_spec)?;
-    benchmarker.end();
-    benchmarker.print_summary();
+    let database_name = database_name.to_string();
+    let db_path = db_path.map(String::from);
+    let config = config.map(String::from);
+
+    let mut handles = Vec::new();
+    let global_ops = Arc::new(AtomicUsize::new(0));
+    let global_read_latency_sum = Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let global_read_count = Arc::new(AtomicUsize::new(0));
+    let stop_signal = Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+    if let Some(interval) = status_interval {
+        let global_ops_clone = global_ops.clone();
+        let global_read_latency_sum_clone = global_read_latency_sum.clone();
+        let global_read_count_clone = global_read_count.clone();
+        let stop_clone = stop_signal.clone();
+        let csv_path = csv_log.map(|s| s.to_string());
+        
+        std::thread::spawn(move || {
+            let mut last_ops = 0;
+            let start = std::time::Instant::now();
+            if let Some(ref path) = csv_path {
+                if let Ok(mut f) = std::fs::File::create(path) {
+                    use std::io::Write;
+                    let _ = writeln!(f, "TimeElapsed(s),AvgReadLatency(ms)");
+                }
+            }
+            while !stop_clone.load(Ordering::Relaxed) {
+                std::thread::sleep(std::time::Duration::from_secs(interval));
+                let current_ops = global_ops_clone.load(Ordering::Relaxed);
+                let ops_in_interval = current_ops.saturating_sub(last_ops);
+                last_ops = current_ops;
+                
+                let sum = global_read_latency_sum_clone.swap(0, Ordering::Relaxed);
+                let count = global_read_count_clone.swap(0, Ordering::Relaxed);
+                let avg_latency_ms = if count > 0 {
+                    (sum as f64 / count as f64) / 1_000_000.0
+                } else {
+                    0.0
+                };
+                let elapsed = start.elapsed().as_secs();
+                if avg_latency_ms > 0.0 {
+                    println!("[Periodic] {}s elapsed: {} ops/sec, Avg Read Latency: {:.4} ms", elapsed, ops_in_interval as f64 / (interval as f64), avg_latency_ms);
+                } else {
+                    println!("[Periodic] {}s elapsed: {} ops/sec", elapsed, ops_in_interval as f64 / (interval as f64));
+                }
+                
+                if let Some(ref path) = csv_path {
+                    if let Ok(mut f) = std::fs::OpenOptions::new().append(true).open(path) {
+                        use std::io::Write;
+                        if avg_latency_ms > 0.0 {
+                            let _ = writeln!(f, "{},{:.4}", elapsed, avg_latency_ms);
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    for t in 0..threads {
+        let db_name_clone = database_name.clone();
+        let db_path_clone = db_path.clone();
+        let config_clone = config.clone();
+        let spec_string_clone = workload_spec_string.clone();
+        let global_ops_clone = global_ops.clone();
+        
+        let global_read_latency_sum_clone = global_read_latency_sum.clone();
+        let global_read_count_clone = global_read_count.clone();
+        
+        let prefix = if threads > 1 {
+            Some(format!("t{}:", t).into_bytes())
+        } else {
+            None
+        };
+
+        let handle = std::thread::spawn(move || -> Result<()> {
+            let mut spec_clone: WorkloadSpec =
+                serde_json::from_str(&spec_string_clone).context("Parsing spec file")?;
+            scale_spec(&mut spec_clone, 1.0 / (threads as f64));
+            let mut benchmarker = Benchmarker::new(Db::new(&db_name_clone, db_path_clone.as_deref(), config_clone.as_deref())?);
+            benchmarker.start();
+            let mut handler = DBHandler::new(&mut benchmarker, prefix, target_rate.map(|r| r / (threads as u64).max(1)), Some(global_ops_clone), Some(global_read_latency_sum_clone), Some(global_read_count_clone));
+            generate_operations(handler, &spec_clone)?;
+            benchmarker.end();
+            if threads > 1 {
+                println!("--- Thread {} Summary ---", t);
+            }
+            benchmarker.print_summary();
+            Ok(())
+        });
+        handles.push(handle);
+    }
+
+    for handle in handles {
+        handle.join().unwrap()?;
+    }
+    
+    stop_signal.store(true, Ordering::Relaxed);
+
     Ok(())
 }

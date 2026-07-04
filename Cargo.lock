@@ -2149,6 +2149,7 @@ dependencies = [
  "clap",
  "db-layer",
  "rayon",
+ "serde_json",
  "tectonic",
  "tracing",
  "tracing-subscriber",

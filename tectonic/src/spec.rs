@@ -261,6 +261,9 @@ fn unbiased_index_(mut idx: usize, len: usize) -> usize {
 #[must_use]
 fn unbiased_index(idx: usize, len: usize) -> usize {
     // return unbiased_index_(idx + 1, len + 1) - 1;
+    if len == 0 {
+        return 0;
+    }
     return (fnv_hash(idx as u64) as usize) % len;
 }
 
@@ -586,8 +589,8 @@ pub enum RangeFormat {
 }
 
 impl StringExpr {
-    pub fn generate(&self, rng: &mut impl Rng, character_set_parent: Option<CharacterSet>) -> Key {
-        return match self {
+    pub fn generate(&self, rng: &mut impl Rng, character_set_parent: Option<CharacterSet>, thread_id: Option<usize>) -> Key {
+        let key = match self {
             Self::Constant(val) => Key::from(val.as_bytes()),
             Self::Inner(inner) => {
                 use StringExprInner as S;
@@ -615,7 +618,7 @@ impl StringExpr {
                     S::Weighted { items, distr } => {
                         let random_value = rng.sample(distr);
                         let item = &items[random_value];
-                        item.value.generate(rng, None)
+                        item.value.generate(rng, None, thread_id)
                     }
                     S::Segmented {
                         separator,
@@ -640,17 +643,25 @@ impl StringExpr {
                         ..
                     } => {
                         let is_hot = rng.random_bool(*probability);
-                        return if is_hot {
+                        if is_hot {
                             let index = rng.random_range(0..hot_ranges.len());
                             hot_ranges[index].clone()
                         } else {
                             let key: Key = rng.sample_iter(Alphanumeric).take(*len).collect();
                             Key::from(key)
-                        };
+                        }
                     }
                 }
             }
         };
+
+        if let Some(tid) = thread_id {
+            let mut vec = key.to_vec();
+            enforce_thread_uniqueness(&mut vec, tid);
+            Key::from(vec)
+        } else {
+            key
+        }
     }
     /// Evaluates the expression to a value.
     pub fn write_all(
@@ -680,9 +691,8 @@ impl StringExpr {
                             distr: impl rand::distr::Distribution<u8>,
                             len: usize,
                         ) -> Result<()> {
-                            for ch in rng.sample_iter(distr).take(len) {
-                                writer.write_all(&[ch]).context("Writing sampled string")?;
-                            }
+                            let buf: Vec<u8> = rng.sample_iter(distr).take(len).collect();
+                            writer.write_all(&buf).context("Writing sampled string")?;
                             Ok(())
                         }
                         return match character_set {
@@ -910,13 +920,18 @@ macro_rules! impl_range_query {
     ($($t:ty), *) => {
         $(impl $t {
             pub fn get_range_length(&self, rng: &mut impl Rng, num_keys: usize) -> usize {
-                if let Some(sel) = &self.selectivity {
+                let len = if let Some(sel) = &self.selectivity {
                     (sel.evaluate(rng) * num_keys as f64) as usize
                 } else {
                     self.scan_length
                         .as_ref()
                         .expect("Scan length should be specified if selectivity is not")
                         .evaluate(rng) as usize
+                };
+                if num_keys == 0 {
+                    1
+                } else {
+                    std::cmp::min(num_keys, std::cmp::max(1, len))
                 }
             }
         })*
@@ -1276,5 +1291,39 @@ impl WorkloadSpec {
             .sections
             .iter()
             .all(|section| section.skip_contains_check());
+    }
+}
+
+fn enforce_thread_uniqueness(key: &mut [u8], thread_id: usize) {
+    let len = key.len();
+    if len == 0 {
+        return;
+    }
+    
+    let mut t_temp = thread_id;
+    let mut digits = [0u8; 4];
+    for i in (0..4).rev() {
+        digits[i] = (t_temp % 10) as u8;
+        t_temp /= 10;
+    }
+    
+    let mut t_temp = thread_id;
+    let mut letters_upper = [0u8; 4];
+    for i in (0..4).rev() {
+        letters_upper[i] = (t_temp % 26) as u8;
+        t_temp /= 26;
+    }
+    
+    let count = 4.min(len);
+    for i in 0..count {
+        let pos = len - 1 - i;
+        let c = key[pos];
+        if c >= b'0' && c <= b'9' {
+            key[pos] = b'0' + digits[3 - i];
+        } else if c >= b'A' && c <= b'Z' {
+            key[pos] = b'A' + letters_upper[3 - i];
+        } else if c >= b'a' && c <= b'z' {
+            key[pos] = b'a' + letters_upper[3 - i];
+        }
     }
 }

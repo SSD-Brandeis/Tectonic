@@ -1,10 +1,23 @@
 target/
-**/*.txt
+**/*.txt*
 **.log
 
 flamegraph.svg
 perf.data*
-
+*.csv
+*.png
+*.pdf
+*.json
 .idea/
 
-test.json
+# Scratch files
+scratch_test
+scratch_test.cc
+Sleep.class
+Sleep.java
+
+# Agent configuration
+.agents/
+
+# Python compiled bytecode
+__pycache__/

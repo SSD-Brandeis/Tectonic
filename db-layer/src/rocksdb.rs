@@ -119,6 +119,9 @@ impl RocksDB {
 
 impl DBTranslationLayer for RocksDB {
     fn cleanup(self) -> Result<()> {
+        if let Ok(Some(stats)) = self.db.property_value("rocksdb.stats") {
+            println!("=== RocksDB Internal Stats ===\n{}", stats);
+        }
         std::mem::drop(self);
         return Ok(());
     }

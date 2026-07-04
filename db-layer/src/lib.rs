@@ -7,7 +7,8 @@ use hdrhistogram::{Counter, Histogram};
 use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{BufRead, BufReader};
+use std::path::PathBuf;
+use std::io::{BufRead, BufReader, Write};
 use std::num::TryFromIntError;
 use std::ops::AddAssign;
 use std::time::{self};
@@ -38,6 +39,7 @@ pub type Value = [u8];
 
 trait Latency = Counter + AddAssign + Default;
 
+#[derive(Clone)]
 struct Statistics {
     histogram: Histogram<u64>,
     failed_count: usize,
@@ -60,6 +62,14 @@ impl Default for Statistics {
 }
 
 impl Statistics {
+    pub fn merge(&mut self, other: &Statistics) -> Result<()> {
+        self.count += other.count;
+        self.sum += other.sum;
+        self.failed_count += other.failed_count;
+        self.histogram.add(&other.histogram).map_err(|e| anyhow!("Failed to merge histograms: {:?}", e))?;
+        Ok(())
+    }
+
     fn add_latency(&mut self, latency_nanos: u128) {
         let latency_nanos: u64 = {
             let res: Result<u64, TryFromIntError> = latency_nanos.try_into();
@@ -112,145 +122,246 @@ impl Statistics {
 //     // 50th percentile latency for operations
 //     //
 
-pub fn execute_and_benchmark_db(db_layer: Db, input_file: String) -> Result<()> {
-    let file = File::open(input_file)?;
-
-    let file_size = file.metadata()?.len();
-
+pub fn execute_and_benchmark_db(
+    database_name: &str,
+    input_file: String,
+    db_path: Option<&str>,
+    config: Option<&str>,
+    threads: usize,
+    target_rate: Option<u64>,
+) -> Result<()> {
     eprintln!("[Executing]");
-    let progress_bar =
-        ProgressBar::with_draw_target(Some(file_size), ProgressDrawTarget::stderr_with_hz(5));
-    progress_bar.set_style(ProgressStyle::default_bar().template("{bar:40} {percent}% ({eta})")?);
 
-    let mut buf_reader = BufReader::new(progress_bar.wrap_read(file));
+    let thread_rate = target_rate.map(|r| r / (threads as u64).max(1));
+    let mut handles = Vec::new();
 
-    let mut benchmarker = Benchmarker::new(db_layer);
+    let db_name = database_name.to_string();
+    let db_path = db_path.map(String::from);
+    let config = config.map(String::from);
 
-    benchmarker.start();
-    // for line in buf_reader.lines() {
-    //     process_line(&line?, &mut benchmarker)?;
-    // }
-
-    let mut buf = Vec::<u8>::new();
-    while buf_reader.read_until(b'\n', &mut buf)? > 0 {
-        let end = buf.len() - 1;
-        if buf[end] == b'\n' {
-            buf.pop();
-            if buf[end - 1] == b'\r' {
-                buf.pop();
-            }
+    for t in 0..threads {
+        let db_name_clone = db_name.clone();
+        let db_path_clone = db_path.clone();
+        let config_clone = config.clone();
+        
+        let mut final_path = PathBuf::from(&input_file);
+        if threads > 1 {
+            let ext = final_path.extension().unwrap_or_default().to_string_lossy();
+            let new_ext = if ext.is_empty() { format!("{}", t) } else { format!("{}.{}", ext, t) };
+            final_path.set_extension(new_ext);
         }
-        // println!("Line: {}", unsafe {
-        //     String::from_utf8_unchecked(buf.clone())
-        // });
 
-        process_line(&buf, &mut benchmarker)?;
-        buf.clear();
+        let handle = std::thread::spawn(move || -> Result<Benchmarker<'static>> {
+            let thread_db_path = if db_name_clone == "rocksdb" && threads > 1 {
+                db_path_clone.as_ref().map(|path| format!("{}_{}", path, t))
+            } else {
+                db_path_clone.clone()
+            };
+            let db = Db::new(&db_name_clone, thread_db_path.as_deref(), config_clone.as_deref())?;
+            let mut benchmarker = Benchmarker::new(db);
+            benchmarker.start();
+
+            let file = File::open(&final_path)?;
+            let file_size = file.metadata()?.len();
+
+            let progress_bar = if threads == 1 || t == 0 {
+                let pb = ProgressBar::with_draw_target(Some(file_size), ProgressDrawTarget::stderr_with_hz(5));
+                pb.set_style(ProgressStyle::default_bar().template("{bar:40} {percent}% ({eta})")?);
+                Some(pb)
+            } else {
+                None
+            };
+
+            let mut buf_reader = if let Some(pb) = &progress_bar {
+                BufReader::new(Box::new(pb.clone().wrap_read(file)) as Box<dyn std::io::Read>)
+            } else {
+                BufReader::new(Box::new(file) as Box<dyn std::io::Read>)
+            };
+
+            let mut buf = Vec::<u8>::new();
+            let mut operations_done = 0;
+            let start_time = time::Instant::now();
+
+            while buf_reader.read_until(b'\n', &mut buf)? > 0 {
+                let end = buf.len() - 1;
+                if buf[end] == b'\n' {
+                    buf.pop();
+                    if !buf.is_empty() && buf[buf.len() - 1] == b'\r' {
+                        buf.pop();
+                    }
+                }
+
+                process_line(&buf, &mut benchmarker)?;
+                buf.clear();
+
+                operations_done += 1;
+                if let Some(rate) = thread_rate {
+                    let expected_time = std::time::Duration::from_secs_f64(operations_done as f64 / rate as f64);
+                    let elapsed = start_time.elapsed();
+                    if elapsed < expected_time {
+                        std::thread::sleep(expected_time - elapsed);
+                    }
+                }
+            }
+
+            benchmarker.end();
+            if let Some(pb) = progress_bar {
+                pb.finish_and_clear();
+            }
+
+            Ok(benchmarker)
+        });
+        handles.push(handle);
     }
 
-    benchmarker.end();
-    progress_bar.finish_and_clear();
+    let mut benchmarkers = Vec::new();
+    for handle in handles {
+        benchmarkers.push(handle.join().map_err(|e| anyhow!("Thread panicked: {:?}", e))??);
+    }
+
+    let mut merged_benchmarker = benchmarkers.remove(0);
+    for b in benchmarkers {
+        merged_benchmarker.overall.merge(&b.overall)?;
+        if let Some(other_section) = b.section {
+            if let Some(my_section) = &mut merged_benchmarker.section {
+                my_section.merge(&other_section)?;
+            } else {
+                merged_benchmarker.section = Some(other_section);
+            }
+        }
+        if let Some(other_group) = b.group {
+            if let Some(my_group) = &mut merged_benchmarker.group {
+                my_group.merge(&other_group)?;
+            } else {
+                merged_benchmarker.group = Some(other_group);
+            }
+        }
+    }
 
     // Print out statistics
-    benchmarker.print_summary();
-
-    return Ok(());
-}
-
-fn process_line(line: &[u8], benchmarker: &mut Benchmarker) -> Result<()> {
-    let mut line_iter = line.split(|&b| b == b' ').filter(|s| !s.is_empty());
-    let operation = match line_iter.next() {
-        Some(op) => op,
-        None => return Ok(()),
-    };
-
-    match operation {
-        [b'I'] => {
-            let key = line_iter.next().ok_or(anyhow!("Missing Argument"))?;
-            let value = line_iter.next().ok_or(anyhow!("Missing Argument"))?;
-
-            benchmarker.handle_insert(key, value)?;
-        }
-        [b'P'] => {
-            let key = line_iter.next().ok_or(anyhow!("Missing Argument"))?;
-            benchmarker.handle_point_query(key)?;
-        }
-        [b'U'] => {
-            let key = line_iter.next().ok_or(anyhow!("Missing Argument"))?;
-            let value = line_iter.next().ok_or(anyhow!("Missing Argument"))?;
-            benchmarker.handle_update(key, value)?;
-        }
-        [b'M'] => {
-            let key = line_iter.next().ok_or(anyhow!("Missing Argument"))?;
-            let value = line_iter.next().ok_or(anyhow!("Missing Argument"))?;
-
-            benchmarker.handle_merge(key, value)?;
-        }
-        [b'D'] => {
-            let key = line_iter.next().ok_or(anyhow!("Missing Argument"))?;
-            benchmarker.handle_point_delete(key)?;
-        }
-        [b'S', b'C'] => {
-            let start_key = line_iter.next().ok_or(anyhow!("Missing Argument"))?;
-            let count: usize =
-                str::from_utf8(line_iter.next().ok_or(anyhow!("Missing Argument"))?)?.parse()?;
-
-            benchmarker.handle_range_query_count(start_key, count)?;
-        }
-        [b'S'] => {
-            let start_key = line_iter.next().ok_or(anyhow!("Missing Argument"))?;
-            let bound = line_iter.next().ok_or(anyhow!("Missing Argument"))?;
-
-            benchmarker.handle_range_query(start_key, bound)?;
-        }
-        [b'R', b'C'] => {
-            // Range delete
-            let start_key = line_iter.next().ok_or(anyhow!("Missing Argument"))?;
-            let count: usize =
-                str::from_utf8(line_iter.next().ok_or(anyhow!("Missing Argument"))?)?.parse()?;
-
-            benchmarker.handle_range_delete_count(start_key, count)?;
-        }
-        [b'R'] => {
-            // Range delete
-            let start_key = line_iter.next().ok_or(anyhow!("Missing Argument"))?;
-            let bound = line_iter.next().ok_or(anyhow!("Missing Argument"))?;
-
-            benchmarker.handle_range_delete(start_key, bound)?;
-        }
-        [b'F', b'S'] => {
-            let which_benchmarker = match line_iter.next().ok_or(anyhow!("Missing Argument"))? {
-                [b'O'] => BenchmarkerType::Overall,
-                [b'S'] => BenchmarkerType::Section,
-                [b'G'] => BenchmarkerType::Group,
-                _ => bail!("Unknown Benchmarker Type"),
-            };
-            benchmarker.start_stat_flush(which_benchmarker);
-        }
-        [b'F', b'E'] => {
-            let which_benchmarker = match line_iter.next().ok_or(anyhow!("Missing Argument"))? {
-                [b'O'] => BenchmarkerType::Overall,
-                [b'S'] => BenchmarkerType::Section,
-                [b'G'] => BenchmarkerType::Group,
-                _ => bail!("Unknown Benchmarker Type"),
-            };
-            let remaining = line_iter.collect::<Vec<&[u8]>>().join(" ".as_bytes());
-            if remaining.is_empty() {
-                bail!("Missing Argument")
-            }
-            let name = str::from_utf8(&remaining)?;
-            benchmarker.end_stat_flush(name, which_benchmarker)?;
-        }
-        _ => bail!(
-            "Unknown operation \"{}\"",
-            str::from_utf8(operation).context("Operation is not valid utf8")?
-        ),
-    };
+    merged_benchmarker.print_summary();
 
     Ok(())
 }
 
-#[derive(Default)]
+fn process_line(line: &[u8], benchmarker: &mut Benchmarker) -> Result<()> {
+    use std::str;
+
+    // Find the first space to split the operation from the rest of the line
+    let first_space = line.iter().position(|&b| b == b' ');
+    let (operation, rest) = match first_space {
+        Some(pos) => (&line[..pos], &line[pos + 1..]),
+        None => (line, &[][..]),
+    };
+
+    if operation.is_empty() {
+        return Ok(());
+    }
+
+    match operation {
+        [b'I'] => {
+            let mut parts = rest.splitn(2, |&b| b == b' ');
+            let key = parts.next().ok_or_else(|| anyhow!("Missing Key for I"))?;
+            let value = parts.next().ok_or_else(|| anyhow!("Missing Value for I"))?;
+            benchmarker.handle_insert(key, value)?;
+        }
+        [b'U'] => {
+            let mut parts = rest.splitn(2, |&b| b == b' ');
+            let key = parts.next().ok_or_else(|| anyhow!("Missing Key for U"))?;
+            let value = parts.next().ok_or_else(|| anyhow!("Missing Value for U"))?;
+            benchmarker.handle_update(key, value)?;
+        }
+        [b'M'] => {
+            let mut parts = rest.splitn(2, |&b| b == b' ');
+            let key = parts.next().ok_or_else(|| anyhow!("Missing Key for M"))?;
+            let value = parts.next().ok_or_else(|| anyhow!("Missing Value for M"))?;
+            benchmarker.handle_merge(key, value)?;
+        }
+        _ => {
+            // For other operations, we can split using space
+            let mut line_iter = rest.split(|&b| b == b' ').filter(|s| !s.is_empty());
+            match operation {
+                [b'P'] => {
+                    let key = line_iter.next().ok_or_else(|| anyhow!("Missing Argument"))?;
+                    benchmarker.handle_point_query(key)?;
+                }
+                [b'B', b'P'] => {
+                    let key = line_iter.next().ok_or_else(|| anyhow!("Missing Argument"))?;
+                    benchmarker.handle_point_query(key)?;
+                }
+                [b'B', b'D'] => {
+                    let key = line_iter.next().ok_or_else(|| anyhow!("Missing Argument"))?;
+                    benchmarker.handle_point_delete(key)?;
+                }
+                [b'B', b'R'] => {
+                    let start_key = line_iter.next().ok_or_else(|| anyhow!("Missing Argument"))?;
+                    let count: usize = str::from_utf8(
+                        line_iter.next().ok_or_else(|| anyhow!("Missing Argument"))?
+                    )?.parse()?;
+                    benchmarker.handle_range_query_count(start_key, count)?;
+                }
+                [b'D'] => {
+                    let key = line_iter.next().ok_or_else(|| anyhow!("Missing Argument"))?;
+                    benchmarker.handle_point_delete(key)?;
+                }
+                [b'S', b'C'] => {
+                    let start_key = line_iter.next().ok_or_else(|| anyhow!("Missing Argument"))?;
+                    let count: usize = str::from_utf8(
+                        line_iter.next().ok_or_else(|| anyhow!("Missing Argument"))?
+                    )?.parse()?;
+                    benchmarker.handle_range_query_count(start_key, count)?;
+                }
+                [b'S'] => {
+                    let start_key = line_iter.next().ok_or_else(|| anyhow!("Missing Argument"))?;
+                    let bound = line_iter.next().ok_or_else(|| anyhow!("Missing Argument"))?;
+                    benchmarker.handle_range_query(start_key, bound)?;
+                }
+                [b'R', b'C'] => {
+                    let start_key = line_iter.next().ok_or_else(|| anyhow!("Missing Argument"))?;
+                    let count: usize = str::from_utf8(
+                        line_iter.next().ok_or_else(|| anyhow!("Missing Argument"))?
+                    )?.parse()?;
+                    benchmarker.handle_range_delete_count(start_key, count)?;
+                }
+                [b'R'] => {
+                    let start_key = line_iter.next().ok_or_else(|| anyhow!("Missing Argument"))?;
+                    let bound = line_iter.next().ok_or_else(|| anyhow!("Missing Argument"))?;
+                    benchmarker.handle_range_delete(start_key, bound)?;
+                }
+                [b'F', b'S'] => {
+                    let which_benchmarker = match line_iter.next().ok_or_else(|| anyhow!("Missing Argument"))? {
+                        [b'O'] => BenchmarkerType::Overall,
+                        [b'S'] => BenchmarkerType::Section,
+                        [b'G'] => BenchmarkerType::Group,
+                        _ => bail!("Unknown Benchmarker Type"),
+                    };
+                    benchmarker.start_stat_flush(which_benchmarker);
+                }
+                [b'F', b'E'] => {
+                    let which_benchmarker = match line_iter.next().ok_or_else(|| anyhow!("Missing Argument"))? {
+                        [b'O'] => BenchmarkerType::Overall,
+                        [b'S'] => BenchmarkerType::Section,
+                        [b'G'] => BenchmarkerType::Group,
+                        _ => bail!("Unknown Benchmarker Type"),
+                    };
+                    let remaining = line_iter.collect::<Vec<&[u8]>>().join(" ".as_bytes());
+                    if remaining.is_empty() {
+                        bail!("Missing Argument")
+                    }
+                    let name = str::from_utf8(&remaining)?;
+                    benchmarker.end_stat_flush(name, which_benchmarker)?;
+                }
+                _ => bail!(
+                    "Unknown operation \"{}\"",
+                    str::from_utf8(operation).context("Operation is not valid utf8")?
+                ),
+            }
+        }
+    }
+    Ok(())
+}
+
+#[derive(Default, Clone)]
 pub struct BenchmarkerInner<'a> {
     operation_statistics_map: HashMap<&'a str, Statistics>,
     start_time: Option<time::Instant>,
@@ -258,6 +369,35 @@ pub struct BenchmarkerInner<'a> {
 }
 
 impl<'a> BenchmarkerInner<'a> {
+    pub fn merge(&mut self, other: &BenchmarkerInner<'a>) -> Result<()> {
+        for (op, stats) in &other.operation_statistics_map {
+            if let Some(my_stats) = self.operation_statistics_map.get_mut(op) {
+                my_stats.merge(stats)?;
+            } else {
+                self.operation_statistics_map.insert(op, stats.clone());
+            }
+        }
+        if let Some(other_start) = other.start_time {
+            if let Some(my_start) = self.start_time {
+                if other_start < my_start {
+                    self.start_time = Some(other_start);
+                }
+            } else {
+                self.start_time = Some(other_start);
+            }
+        }
+        if let Some(other_end) = other.end_time {
+            if let Some(my_end) = self.end_time {
+                if other_end > my_end {
+                    self.end_time = Some(other_end);
+                }
+            } else {
+                self.end_time = Some(other_end);
+            }
+        }
+        Ok(())
+    }
+
     fn start(&mut self) {
         self.start_time = Some(time::Instant::now());
     }
@@ -304,6 +444,24 @@ impl<'a> BenchmarkerInner<'a> {
 
             println!("[{}] Minimum Latency: {:.5}us", operation, stats.min());
             println!("[{}] Maximum Latency: {:.5}us", operation, stats.max());
+
+            println!(
+                "[{}] 25th Percentile Latency: {:.5}us",
+                operation,
+                stats.value_at_percentile(25.0)
+            );
+
+            println!(
+                "[{}] 50th Percentile Latency: {:.5}us",
+                operation,
+                stats.value_at_percentile(50.0)
+            );
+
+            println!(
+                "[{}] 75th Percentile Latency: {:.5}us",
+                operation,
+                stats.value_at_percentile(75.0)
+            );
 
             println!(
                 "[{}] 95th Percentile Latency: {:.5}us",
@@ -606,6 +764,8 @@ pub fn execute_operations(
     input_file: String,
     db_path: Option<&str>,
     config: Option<&str>,
+    threads: usize,
+    target_rate: Option<u64>,
 ) -> Result<()> {
-    execute_and_benchmark_db(Db::new(name, db_path, config)?, input_file)
+    execute_and_benchmark_db(name, input_file, db_path, config, threads, target_rate)
 }

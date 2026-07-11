@@ -31,6 +31,17 @@ def to_small_caps(text):
 def format_label(text):
     return to_small_caps(text)
 
+def format_number_clean(y):
+    # Check if y is close to an integer
+    if abs(y - round(y)) < 1e-9:
+        return f"{int(round(y))}"
+    s = f"{y:.2f}"
+    if s.endswith(".00"):
+        return s[:-3]
+    if s.endswith("0") and "." in s:
+        return s[:-1]
+    return s
+
 # Unified styles for YCSB, Tectonic, and KVBench
 BAR_STYLES = {
     "Tectonic": {"facecolor": "tab:red", "edgecolor": "tab:red", "hatch": ""},
@@ -135,6 +146,8 @@ def apply_plot_style(ax, title=None, xlabel=None, ylabel=None):
             yticks = [y for y in yticks if y >= 0]
             yticks.insert(0, 0.0)
             ax.set_yticks(yticks)
+        # Apply clean number formatter to y-axis
+        ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda y, _: format_number_clean(y)))
             
     # Enforce axis limits on x-axis
     if ax.get_xscale() == 'log':
@@ -156,6 +169,8 @@ def apply_plot_style(ax, title=None, xlabel=None, ylabel=None):
                 xticks = [x for x in xticks if x >= 0]
                 xticks.insert(0, 0.0)
                 ax.set_xticks(xticks)
+            # Apply clean number formatter to x-axis
+            ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: format_number_clean(x)))
 
     # Clean up grid and borders (spines)
     ax.set_axisbelow(True)

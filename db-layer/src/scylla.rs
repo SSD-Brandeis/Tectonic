@@ -40,12 +40,21 @@ impl Scylla {
                     .map_err(|e| anyhow!("Failed to run user setup query: {:?}", e))?;
             }
         } else {
-            let query = format!(
+            let keyspace_with_tablets = format!(
+                "CREATE KEYSPACE IF NOT EXISTS {KEYSPACE_NAME} WITH replication = {{'class': 'SimpleStrategy', 'replication_factor': 1}} AND tablets = {{'enabled': false}};"
+            );
+            let keyspace_without_tablets = format!(
                 "CREATE KEYSPACE IF NOT EXISTS {KEYSPACE_NAME} WITH replication = {{'class': 'SimpleStrategy', 'replication_factor': 1}};"
             );
-            runtime
-                .block_on(session.query_unpaged(query, ()))
-                .map_err(|e| anyhow!("Failed to create keyspace: {:?}", e))?;
+            match runtime.block_on(session.query_unpaged(keyspace_with_tablets, ())) {
+                Ok(_) => {}
+                Err(e) if format!("{:?}", e).contains("Unknown property 'tablets'") => {
+                    runtime
+                        .block_on(session.query_unpaged(keyspace_without_tablets, ()))
+                        .map_err(|e| anyhow!("Failed to create keyspace: {:?}", e))?;
+                }
+                Err(e) => return Err(anyhow!("Failed to create keyspace: {:?}", e)),
+            }
             let query = format!(
                 "CREATE TABLE IF NOT EXISTS {TABLE_NAME} (key text PRIMARY KEY, value text);"
             );

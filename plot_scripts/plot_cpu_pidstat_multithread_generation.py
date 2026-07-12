@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Plot workload-generation CPU utilization and CPU work."""
+"""Plot 10x YCSB-E workload-generation CPU utilization and CPU work."""
 
 import json
 import math
@@ -14,18 +14,19 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 
 
-ROOT_DIR = Path("/home/cc/Tectonic")
+ROOT_DIR = Path(__file__).resolve().parents[1]
 OUT_DIR = ROOT_DIR / "data/CPU-utilization"
 RESULTS_PATH = OUT_DIR / "pidstat_multithread_generation_results.json"
 FONT_PATH = ROOT_DIR / "LinLibertine_Mah.ttf"
 
-TOOL_ORDER = ["YCSB", "Tectonic", "KVBench"]
+MULTI_TOOL_ORDER = ["YCSB", "Tectonic"]
+SINGLE_TOOL_ORDER = ["YCSB", "Tectonic", "KVBench"]
 TOOL_KEYS = {"YCSB": "ycsb", "Tectonic": "tectonic", "KVBench": "kvbench"}
 TOOL_LABELS = {"YCSB": "YCSB", "Tectonic": "Tectonic", "KVBench": "KVBench"}
 STYLE = {
-    "YCSB": {"color": "grey", "linestyle": "-", "marker": "^"},
-    "Tectonic": {"color": "tab:red", "linestyle": "-.", "marker": "s"},
-    "KVBench": {"color": "tab:blue", "linestyle": "--", "marker": "v"},
+    "YCSB": {"color": "grey", "linestyle": "-", "marker": "^", "hatch": "///"},
+    "Tectonic": {"color": "tab:red", "linestyle": "-.", "marker": "s", "hatch": "\\\\"},
+    "KVBench": {"color": "tab:blue", "linestyle": "--", "marker": "v", "hatch": "xx"},
 }
 
 
@@ -106,7 +107,7 @@ def pad_samples(samples, duration_s, common_end_s):
 
 
 def line_style(tool, count):
-    base = dict(STYLE[tool])
+    base = {key: STYLE[tool][key] for key in ("color", "linestyle", "marker")}
     color = STYLE[tool]["color"]
     base.update({
         "markersize": 4,
@@ -151,7 +152,6 @@ def save_legend(handles, labels, base):
     fig = plt.figure(figsize=(4.2, 0.65))
     fig.legend(handles, labels, loc="center", ncol=len(handles), frameon=False, prop=font(10))
     fig.savefig(f"{base}_legend.pdf", bbox_inches="tight", pad_inches=0.05)
-    fig.savefig(f"{base}_legend.png", bbox_inches="tight", pad_inches=0.05, dpi=300)
     plt.close(fig)
 
 
@@ -163,7 +163,7 @@ def run_for_thread(data, threads):
 
 
 def has_pidstat_samples(run):
-    return all(run[TOOL_KEYS[tool]].get("pidstat_samples") for tool in TOOL_ORDER)
+    return all(run[TOOL_KEYS[tool]].get("pidstat_samples") for tool in MULTI_TOOL_ORDER)
 
 
 def choose_time_series_threads(data):
@@ -180,40 +180,37 @@ def choose_time_series_threads(data):
 def plot_time_series(data):
     threads = choose_time_series_threads(data)
     run = run_for_thread(data, threads)
-    durations = [float(run[TOOL_KEYS[tool]]["duration_s"]) for tool in TOOL_ORDER]
+    durations = [float(run[TOOL_KEYS[tool]]["duration_s"]) for tool in MULTI_TOOL_ORDER]
     window_s = max(durations)
     samples_by_tool = {
         tool: pad_samples(run[TOOL_KEYS[tool]].get("pidstat_samples", []), run[TOOL_KEYS[tool]]["duration_s"], window_s)
-        for tool in TOOL_ORDER
+        for tool in MULTI_TOOL_ORDER
     }
 
     fig, ax = plt.subplots(1, 1, figsize=(5.6, 3.6))
-    handles = [plot_series(ax, samples_by_tool[tool], tool) for tool in TOOL_ORDER]
+    handles = [plot_series(ax, samples_by_tool[tool], tool) for tool in MULTI_TOOL_ORDER]
     set_numeric_axes(
         ax,
         "elapsed time (s)",
-        r"cpu utilization (\%)",
+        r"average cpu utilization (\%)",
         window_s,
         y_top=100.0,
         force_y_100=True,
     )
-    fig.subplots_adjust(left=0.30, right=0.94, bottom=0.30, top=0.90)
+    fig.subplots_adjust(left=0.34, right=0.94, bottom=0.30, top=0.90)
     base = OUT_DIR / "cpu_utilization_pidstat_multithread_timeseries"
     fig.savefig(f"{base}.pdf", bbox_inches="tight", pad_inches=0.20)
-    fig.savefig(f"{base}.png", dpi=300, bbox_inches="tight", pad_inches=0.20)
     plt.close(fig)
-    return handles, [TOOL_LABELS[tool] for tool in TOOL_ORDER], threads
+    return handles, [TOOL_LABELS[tool] for tool in MULTI_TOOL_ORDER], threads
 
 
 def plot_thread_categories(data, metric_key, ylabel, base_name, y_top=None, force_y_100=False):
     thread_counts = [int(t) for t in data["thread_counts"]]
-    labels = [str(t) for t in thread_counts]
     positions = list(range(len(thread_counts)))
-    width = 0.24
-    offsets = {"YCSB": -width, "Tectonic": 0.0, "KVBench": width}
+    labels = [str(t) for t in thread_counts]
     values_by_tool = {}
     max_value = 0.0
-    for tool in TOOL_ORDER:
+    for tool in MULTI_TOOL_ORDER:
         values = []
         key = TOOL_KEYS[tool]
         for threads in thread_counts:
@@ -227,24 +224,19 @@ def plot_thread_categories(data, metric_key, ylabel, base_name, y_top=None, forc
 
     fig, ax = plt.subplots(1, 1, figsize=(5.6, 3.6))
     handles = []
-    for tool in TOOL_ORDER:
-        color = STYLE[tool]["color"]
-        xs = [pos + offsets[tool] for pos in positions]
-        bars = ax.bar(
-            xs,
+    for tool in MULTI_TOOL_ORDER:
+        handle = ax.plot(
+            positions,
             values_by_tool[tool],
-            width=width,
             label=TOOL_LABELS[tool],
-            color=color,
-            edgecolor=color,
-            linewidth=0.8,
-        )
-        handles.append(bars[0])
+            **line_style(tool, len(thread_counts)),
+        )[0]
+        handles.append(handle)
     if y_top is None:
         y_top = max_value * 1.15 if max_value > 0 else 1.0
     ax.set_xlabel("number of threads", fontproperties=font(12))
     ax.set_ylabel(ylabel, fontproperties=font(12), labelpad=12)
-    ax.set_xlim(left=-0.65, right=len(thread_counts) - 0.35)
+    ax.set_xlim(left=-0.20, right=max(0.20, len(thread_counts) - 0.80))
     ax.set_ylim(bottom=0.0, top=max(float(y_top), 1.0))
     ax.set_xticks(positions)
     ax.set_xticklabels(labels, fontproperties=font(10))
@@ -256,12 +248,90 @@ def plot_thread_categories(data, metric_key, ylabel, base_name, y_top=None, forc
         yticks.append(100.0)
     ax.set_yticks(sorted(set(yticks)))
     style_spines(ax)
-    fig.subplots_adjust(left=0.30, right=0.94, bottom=0.30, top=0.90)
+    fig.subplots_adjust(left=0.38, right=0.94, bottom=0.30, top=0.90)
     base = OUT_DIR / base_name
     fig.savefig(f"{base}.pdf", bbox_inches="tight", pad_inches=0.20)
-    fig.savefig(f"{base}.png", dpi=300, bbox_inches="tight", pad_inches=0.20)
     plt.close(fig)
-    return handles, [TOOL_LABELS[tool] for tool in TOOL_ORDER]
+    return handles, [TOOL_LABELS[tool] for tool in MULTI_TOOL_ORDER]
+
+
+def plot_single_thread_cpu_time(data):
+    run = data["single_thread"]
+    values = [float(run[TOOL_KEYS[tool]]["cpu_seconds_per_million_ops"]) for tool in SINGLE_TOOL_ORDER]
+    positions = list(range(len(SINGLE_TOOL_ORDER)))
+    labels = [TOOL_LABELS[tool] for tool in SINGLE_TOOL_ORDER]
+    y_top = max(values) * 1.15 if values else 1.0
+
+    fig, ax = plt.subplots(1, 1, figsize=(4.8, 3.4))
+    for pos, tool, value in zip(positions, SINGLE_TOOL_ORDER, values):
+        style = STYLE[tool]
+        ax.bar(
+            pos,
+            value,
+            width=0.55,
+            color="white",
+            edgecolor=style["color"],
+            hatch=style["hatch"],
+            linewidth=1.0,
+        )
+    ax.set_xlabel("generator", fontproperties=font(12))
+    ax.set_ylabel(r"cpu time (s / M ops)", fontproperties=font(12), labelpad=12)
+    ax.set_xlim(left=-0.55, right=len(positions) - 0.45)
+    ax.set_ylim(bottom=0.0, top=max(y_top, 1.0))
+    ax.set_xticks(positions)
+    ax.set_xticklabels(labels, fontproperties=font(10))
+    ax.yaxis.set_major_locator(ticker.MaxNLocator(nbins=5))
+    yticks = [tick for tick in ax.get_yticks() if 0.0 <= tick <= ax.get_ylim()[1]]
+    if not any(abs(tick) < 1e-9 for tick in yticks):
+        yticks.insert(0, 0.0)
+    ax.set_yticks(sorted(set(yticks)))
+    style_spines(ax)
+    fig.subplots_adjust(left=0.32, right=0.94, bottom=0.30, top=0.90)
+    base = OUT_DIR / "cpu_utilization_single_thread_cpu_time"
+    fig.savefig(f"{base}.pdf", bbox_inches="tight", pad_inches=0.20)
+    plt.close(fig)
+
+
+def plot_single_thread_cpu_utilization(data):
+    run = data["single_thread"]
+    values = [
+        float(run[TOOL_KEYS[tool]]["cpu_seconds"]) / float(run[TOOL_KEYS[tool]]["duration_s"]) * 100.0
+        for tool in SINGLE_TOOL_ORDER
+    ]
+    positions = list(range(len(SINGLE_TOOL_ORDER)))
+    labels = [TOOL_LABELS[tool] for tool in SINGLE_TOOL_ORDER]
+    y_top = max(values) * 1.15 if values else 1.0
+
+    fig, ax = plt.subplots(1, 1, figsize=(4.8, 3.4))
+    for pos, tool, value in zip(positions, SINGLE_TOOL_ORDER, values):
+        style = STYLE[tool]
+        ax.bar(
+            pos,
+            value,
+            width=0.55,
+            color="white",
+            edgecolor=style["color"],
+            hatch=style["hatch"],
+            linewidth=1.0,
+        )
+    ax.set_xlabel("generator", fontproperties=font(12))
+    ax.set_ylabel(r"one-core cpu utilization (\%)", fontproperties=font(12), labelpad=12)
+    ax.set_xlim(left=-0.55, right=len(positions) - 0.45)
+    ax.set_ylim(bottom=0.0, top=max(y_top, 1.0))
+    ax.set_xticks(positions)
+    ax.set_xticklabels(labels, fontproperties=font(10))
+    ax.yaxis.set_major_locator(ticker.MaxNLocator(nbins=5))
+    yticks = [tick for tick in ax.get_yticks() if 0.0 <= tick <= ax.get_ylim()[1]]
+    if not any(abs(tick) < 1e-9 for tick in yticks):
+        yticks.insert(0, 0.0)
+    if not any(abs(tick - 100.0) < 1e-9 for tick in yticks):
+        yticks.append(100.0)
+    ax.set_yticks(sorted(set(yticks)))
+    style_spines(ax)
+    fig.subplots_adjust(left=0.36, right=0.94, bottom=0.30, top=0.90)
+    base = OUT_DIR / "cpu_utilization_single_thread_cpu_utilization"
+    fig.savefig(f"{base}.pdf", bbox_inches="tight", pad_inches=0.20)
+    plt.close(fig)
 
 
 def main():
@@ -271,7 +341,7 @@ def main():
     plot_thread_categories(
         data,
         "common_window_avg_cpu_percent",
-        r"cpu utilization (\%)",
+        r"average cpu utilization (\%)",
         "cpu_utilization_pidstat_multithread_by_threads",
         y_top=100.0,
         force_y_100=True,
@@ -282,11 +352,15 @@ def main():
         r"cpu time (s / M ops)",
         "cpu_utilization_cpu_time_by_threads",
     )
+    plot_single_thread_cpu_time(data)
+    plot_single_thread_cpu_utilization(data)
     save_legend(handles, labels, OUT_DIR / "cpu_utilization_pidstat_multithread")
     print(f"time-series thread count: {plotted_threads}")
     print(f"saved: {OUT_DIR / 'cpu_utilization_pidstat_multithread_timeseries.pdf'}")
     print(f"saved: {OUT_DIR / 'cpu_utilization_pidstat_multithread_by_threads.pdf'}")
     print(f"saved: {OUT_DIR / 'cpu_utilization_cpu_time_by_threads.pdf'}")
+    print(f"saved: {OUT_DIR / 'cpu_utilization_single_thread_cpu_time.pdf'}")
+    print(f"saved: {OUT_DIR / 'cpu_utilization_single_thread_cpu_utilization.pdf'}")
 
 
 if __name__ == "__main__":

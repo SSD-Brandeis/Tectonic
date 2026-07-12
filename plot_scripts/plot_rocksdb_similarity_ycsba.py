@@ -178,14 +178,28 @@ def main():
     n_ycsb = len(r_ycsb)
     n = min(n_tec, n_ycsb)
     
+    # Apply rolling average smoothing to reduce compaction noise
+    WINDOW = 3  # 3-second rolling average
+    def smooth(arr, window=WINDOW):
+        if len(arr) < window:
+            return arr
+        kernel = np.ones(window) / window
+        # 'same' mode keeps the output length equal to input length
+        return np.convolve(arr, kernel, mode='same')
+    
+    sr_ycsb = smooth(r_ycsb[:n])
+    sw_ycsb = smooth(w_ycsb[:n])
+    sr_tec  = smooth(r_tec[:n])
+    sw_tec  = smooth(w_tec[:n])
+    
     # Decimate marker frequency so they don't overlap, using markevery
     x = np.arange(n)
     
     # Apply standard LINE_STYLES
-    ax.plot(x, r_ycsb[:n], label="read (YCSB)", markevery=max(1, n//10), **{**plot_style.LINE_STYLES['YCSB'], "linestyle": "-"})
-    ax.plot(x, w_ycsb[:n], label="write (YCSB)", markevery=max(1, n//10), **{**plot_style.LINE_STYLES['YCSB'], "linestyle": "--"})
-    ax.plot(x, r_tec[:n], label="read (Tectonic)", markevery=max(1, n//10), **{**plot_style.LINE_STYLES['Tectonic'], "linestyle": "-"})
-    ax.plot(x, w_tec[:n], label="write (Tectonic)", markevery=max(1, n//10), **{**plot_style.LINE_STYLES['Tectonic'], "linestyle": "--"})
+    ax.plot(x, sr_ycsb, label="read (YCSB)", markevery=max(1, n//10), **{**plot_style.LINE_STYLES['YCSB'], "linestyle": "-"})
+    ax.plot(x, sw_ycsb, label="write (YCSB)", markevery=max(1, n//10), **{**plot_style.LINE_STYLES['YCSB'], "linestyle": "--"})
+    ax.plot(x, sr_tec, label="read (Tectonic)", markevery=max(1, n//10), **{**plot_style.LINE_STYLES['Tectonic'], "linestyle": "-"})
+    ax.plot(x, sw_tec, label="write (Tectonic)", markevery=max(1, n//10), **{**plot_style.LINE_STYLES['Tectonic'], "linestyle": "--"})
     
     ax.set_xlabel(plot_style.format_label("time (s)"))
     ax.set_ylabel(plot_style.format_label("MB/s"))

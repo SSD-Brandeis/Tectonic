@@ -2,7 +2,7 @@
 """
 Plot: YCSB vs Tectonic Workload A Similarity — All Four Databases
 =================================================================
-Produces 4 PDF+PNG figures (one per database).
+Produces 4 PDF figures (one per database).
 Each figure has 3 subplots (insert, point query, update).
 Each subplot: box plots at each scale (2^18..2^22) for YCSB vs Tectonic.
 
@@ -147,7 +147,7 @@ def plot_database(db, db_results):
         ax.set_xticks(x_centers)
         ax.set_xticklabels([scale_label(s) for s in SCALES], fontsize=7)
         ax.set_xlim(0.3, n_scales + 0.7)
-        ax.set_xlabel("operation count scale", fontsize=7)
+        ax.set_xlabel("operation count", fontsize=7)
         ax.set_ylim(bottom=0)
         ax.tick_params(axis='y', labelsize=7)
         ax.set_title(op_label, fontsize=8)
@@ -161,9 +161,8 @@ def plot_database(db, db_results):
 
     base = f"{OUT_DIR}/{db}_similarity"
     fig.savefig(f"{base}.pdf", bbox_inches="tight")
-    fig.savefig(f"{base}.png", dpi=150, bbox_inches="tight")
     plt.close(fig)
-    print(f"  saved: {base}.png")
+    print(f"  saved: {base}.pdf")
 
 def plot_legend():
     fig, ax = plt.subplots(figsize=(2.8, 0.5))
@@ -177,9 +176,8 @@ def plot_legend():
     ax.legend(handles=handles, loc="center", ncol=2, fontsize=9, frameon=False)
     base = f"{OUT_DIR}/similarity_legend"
     fig.savefig(f"{base}.pdf", bbox_inches="tight")
-    fig.savefig(f"{base}.png", dpi=150, bbox_inches="tight")
     plt.close(fig)
-    print(f"  saved: {base}.png")
+    print(f"  saved: {base}.pdf")
 
 # =============================================================================
 def main():

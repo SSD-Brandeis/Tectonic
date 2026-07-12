@@ -1,6 +1,7 @@
 target/
 **/*.txt*
 **.log
+*.pid
 
 flamegraph.svg
 perf.data*

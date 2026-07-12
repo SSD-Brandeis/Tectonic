@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Plot: YCSB vs Tectonic Workload A end-to-end runtime.
+Plot: YCSB vs Tectonic Workload A end-to-end latency.
 
-Produces PDF+PNG line plots from results.json. The plotted metric is
+Produces PDF line plots from results.json. The plotted metric is
 wall_time_s, which is the elapsed time to execute a full trace against a
 database.
 """
@@ -65,10 +65,9 @@ def style_axis(ax):
     ax.set_xticks(np.arange(1, len(SCALES) + 1))
     ax.set_xticklabels([scale_label(s) for s in SCALES], fontsize=7)
     ax.set_xlim(0.7, len(SCALES) + 0.3)
-    ax.set_xlabel("operation count scale", fontsize=7)
-    ax.set_ylabel("wall time (s)", fontsize=8)
+    ax.set_xlabel("operation count", fontsize=7)
+    ax.set_ylabel("end to end latency (s)", fontsize=8)
     ax.tick_params(axis="y", labelsize=7)
-    ax.grid(True, axis="y", linewidth=0.35, alpha=0.35)
     for spine in ["top", "right"]:
         ax.spines[spine].set_visible(False)
 
@@ -109,9 +108,8 @@ def plot_database(db, db_results):
 
     base = f"{OUT_DIR}/{db}_end_to_end_wall_time"
     fig.savefig(f"{base}.pdf", bbox_inches="tight")
-    fig.savefig(f"{base}.png", dpi=150, bbox_inches="tight")
     plt.close(fig)
-    print(f"  saved: {base}.png")
+    print(f"  saved: {base}.pdf")
 
 
 def plot_all_databases(db_results_all):
@@ -147,14 +145,13 @@ def plot_all_databases(db_results_all):
         style_axis(ax)
         ax.set_title(DB_LABELS.get(db, db), fontsize=8)
 
-    fig.suptitle("YCSB vs Tectonic workload A end-to-end runtime", fontsize=9, y=1.01)
+    fig.suptitle("YCSB vs Tectonic workload A end-to-end latency", fontsize=9, y=1.01)
     fig.tight_layout(pad=0.6)
 
     base = f"{OUT_DIR}/all_dbs_end_to_end_wall_time"
     fig.savefig(f"{base}.pdf", bbox_inches="tight")
-    fig.savefig(f"{base}.png", dpi=150, bbox_inches="tight")
     plt.close(fig)
-    print(f"  saved: {base}.png")
+    print(f"  saved: {base}.pdf")
 
 
 def plot_legend():
@@ -167,9 +164,8 @@ def plot_legend():
     ax.legend(handles=handles, loc="center", ncol=2, fontsize=9, frameon=False)
     base = f"{OUT_DIR}/end_to_end_wall_time_legend"
     fig.savefig(f"{base}.pdf", bbox_inches="tight")
-    fig.savefig(f"{base}.png", dpi=150, bbox_inches="tight")
     plt.close(fig)
-    print(f"  saved: {base}.png")
+    print(f"  saved: {base}.pdf")
 
 
 def main():
@@ -183,7 +179,7 @@ def main():
         print("No results yet; skipping plot.")
         sys.exit(0)
 
-    print(f"Plotting end-to-end runtime from {RESULTS_PATH}")
+    print(f"Plotting end-to-end latency from {RESULTS_PATH}")
     for db in DATABASES:
         if db not in db_results_all:
             print(f"  skip {db} (no data)")

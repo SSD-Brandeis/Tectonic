@@ -25,58 +25,36 @@ pub trait KeySet {
 
     fn push(&mut self, key: Key);
 
-    fn remove(&mut self, idx: usize) -> Option<Key>;
+    fn remove(&mut self, idx: usize) -> Key;
 
     fn remove_random(&mut self, rng: &mut impl Rng, distribution: &Distribution) -> Key {
-        if self.len() == 0 {
-            panic!("remove_random called on empty KeySet");
-        }
-        loop {
-            let idx = distribution.evaluate_index(rng, self.len());
-            if let Some(key) = self.remove(idx) {
-                return key;
-            }
-        }
+        let idx = distribution.evaluate_index(rng, self.len());
+        // let idx_hashed = unbiased_index(idx, self.len());
+        return self.remove(idx);
     }
 
-    fn remove_range(&mut self, idx_range: Range<usize>) -> Option<(Key, Key)>;
+    fn remove_range(&mut self, idx_range: Range<usize>) -> (Key, Key);
     fn remove_range_random(
         &mut self,
         range_len: usize,
         rng: &mut impl Rng,
         distribution: &Distribution,
     ) -> (Key, Key) {
-        if self.len() == 0 {
-            panic!("remove_range_random called on empty KeySet");
-        }
-        loop {
-            let num_keys = self.len();
-            let valid_len = num_keys.saturating_sub(range_len);
-            let start_idx = if valid_len == 0 {
-                0
-            } else {
-                distribution.evaluate_index(rng, valid_len)
-            };
-            let end_idx = start_idx + range_len;
+        let num_keys = self.len();
+        let valid_len = num_keys - range_len;
 
-            if let Some(keys) = self.remove_range(start_idx..end_idx) {
-                return keys;
-            }
-        }
+        let start_idx = distribution.evaluate_index(rng, valid_len);
+        let end_idx = start_idx + range_len;
+
+        return self.remove_range(start_idx..end_idx);
     }
 
-    fn get(&self, idx: usize) -> Option<&Key>;
+    fn get(&self, idx: usize) -> &Key;
 
     fn get_random(&self, rng: &mut impl Rng, distribution: &Distribution) -> &Key {
-        if self.len() == 0 {
-            panic!("get_random called on empty KeySet");
-        }
-        loop {
-            let idx = distribution.evaluate_index(rng, self.len());
-            if let Some(key) = self.get(idx) {
-                return key;
-            }
-        }
+        let idx = distribution.evaluate_index(rng, self.len());
+        // let idx_hashed = unbiased_index(idx, self.len());
+        return self.get(idx);
     }
 
     fn get_random_range_start(
@@ -85,21 +63,12 @@ pub trait KeySet {
         rng: &mut impl Rng,
         distribution: &Distribution,
     ) -> (usize, &Key) {
-        if self.len() == 0 {
-            panic!("get_random_range_start called on empty KeySet");
-        }
-        loop {
-            let num_keys = self.len();
-            let valid_len = num_keys.saturating_sub(range_len);
-            let start_idx = if valid_len == 0 {
-                0
-            } else {
-                distribution.evaluate_index(rng, valid_len)
-            };
-            if let Some(key) = self.get(start_idx) {
-                return (start_idx, key);
-            }
-        }
+        let num_keys = self.len();
+        let valid_len = num_keys - range_len;
+
+        let start_idx = distribution.evaluate_index(rng, valid_len);
+
+        return (start_idx, self.get(start_idx));
     }
 
     fn get_range_random(
@@ -108,25 +77,15 @@ pub trait KeySet {
         rng: &mut impl Rng,
         distribution: &Distribution,
     ) -> (&Key, &Key) {
-        if self.len() == 0 {
-            panic!("get_range_random called on empty KeySet");
-        }
-        loop {
-            let num_keys = self.len();
-            let valid_len = num_keys.saturating_sub(range_len);
-            let start_idx = if valid_len == 0 {
-                0
-            } else {
-                distribution.evaluate_index(rng, valid_len)
-            };
-            let end_idx = start_idx + range_len.saturating_sub(1);
+        let num_keys = self.len();
+        let valid_len = num_keys - range_len;
 
-            let key1 = self.get(start_idx);
-            let key2 = self.get(end_idx);
-            if let (Some(k1), Some(k2)) = (key1, key2) {
-                return (k1, k2);
-            }
-        }
+        let start_idx = distribution.evaluate_index(rng, valid_len);
+        let end_idx = start_idx + range_len;
+
+        let key1 = self.get(start_idx);
+        let key2 = self.get(end_idx);
+        return (key1, key2);
     }
 
     fn contains(&self, key: &Key) -> bool;
@@ -160,16 +119,16 @@ impl KeySet for EmptyKeySet {
         self.len += 1;
     }
 
-    fn remove(&mut self, _idx: usize) -> Option<Key> {
-        unimplemented!()
+    fn remove(&mut self, _idx: usize) -> Key {
+        panic!("Tried to remove from empty keyset")
     }
 
-    fn remove_range(&mut self, _idx_range: Range<usize>) -> Option<(Key, Key)> {
-        unimplemented!()
+    fn remove_range(&mut self, _idx_range: Range<usize>) -> (Key, Key) {
+        panic!("Tried to remove range from empty keyset")
     }
 
-    fn get(&self, _idx: usize) -> Option<&Key> {
-        unimplemented!()
+    fn get(&self, _idx: usize) -> &Key {
+        panic!("Tried to get from empty keyset")
     }
 
     fn contains(&self, _key: &Key) -> bool {
@@ -212,24 +171,24 @@ impl KeySet for VecKeySet {
         self.keys.push(key);
     }
 
-    fn remove(&mut self, idx: usize) -> Option<Key> {
-        if idx >= self.keys.len() { return None; }
-        return Some(self.keys.remove(idx));
+    fn remove(&mut self, idx: usize) -> Key {
+        let len = self.keys.len();
+        self.keys.swap(idx, len - 1);
+        return self.keys.remove(idx);
     }
 
-    fn remove_range(&mut self, idx_range: Range<usize>) -> Option<(Key, Key)> {
-        if idx_range.start >= self.keys.len() || idx_range.start == idx_range.end { return None; }
+    fn remove_range(&mut self, idx_range: Range<usize>) -> (Key, Key) {
+        // TODO: we could maybe optimize this by copying elements into the range, or shrinking the vector length of the range is large enough/at the end
         let mut drain = self.keys.drain(idx_range);
-        let key1 = drain.next()?;
-        let (key1, key2) = match drain.next_back() {
+        let key1 = drain.next().expect("to have at least one element");
+        match drain.next_back() {
             Some(key2) => (key1, key2),
             None => (key1.clone(), key1),
-        };
-        return Some((key1, key2));
+        }
     }
 
-    fn get(&self, idx: usize) -> Option<&Key> {
-        return self.keys.get(idx);
+    fn get(&self, idx: usize) -> &Key {
+        return &self.keys[idx];
     }
 
     fn contains(&self, key: &Key) -> bool {
@@ -308,23 +267,23 @@ impl KeySet for VecOptionHashSetKeySet {
         self.keys.push(Some(key));
     }
 
-    fn remove(&mut self, mut idx: usize) -> Option<Key> {
+    fn remove(&mut self, mut idx: usize) -> Key {
         for _ in 0..self.keys.len() {
             match self.maybe_remove(idx) {
                 Some(key) => {
                     self.set.remove(&key);
                     self.maybe_flatten_in_place();
-                    return Some(key);
+                    return key;
                 }
                 None => {
                     idx = (idx + 1) % self.keys.len();
                 }
             }
         }
-        None
+        panic!("Called remove on an empty keyset");
     }
 
-    fn remove_range(&mut self, idx_range: Range<usize>) -> Option<(Key, Key)> {
+    fn remove_range(&mut self, idx_range: Range<usize>) -> (Key, Key) {
         let mut key1 = None;
         let mut key2 = None;
         for idx in idx_range {
@@ -337,8 +296,7 @@ impl KeySet for VecOptionHashSetKeySet {
 
         self.maybe_flatten_in_place();
 
-        if key1.is_none() { return None; }
-        return Some((key1.unwrap(), key2.unwrap()));
+        return (key1.expect("to not be none"), key2.expect("to not be none"));
     }
 
     // fn remove_range(&mut self, idx_range: Range<usize>) -> (Key, Key) {
@@ -362,18 +320,18 @@ impl KeySet for VecOptionHashSetKeySet {
     //     return (key1, key2);
     // }
 
-    fn get(&self, mut idx: usize) -> Option<&Key> {
+    fn get(&self, mut idx: usize) -> &Key {
         for _ in 0..self.keys.len() {
             match self.maybe_get(idx) {
                 Some(key) => {
-                    return Some(key);
+                    return key;
                 }
                 None => {
                     idx = (idx + 1) % self.keys.len();
                 }
             }
         }
-        None
+        panic!("Called get on an empty keyset");
     }
 
     // TODO: this can be binary search if it is sorted
@@ -449,22 +407,22 @@ impl KeySet for VecOptionKeySet {
         self.keys.push(Some(key));
     }
 
-    fn remove(&mut self, mut idx: usize) -> Option<Key> {
+    fn remove(&mut self, mut idx: usize) -> Key {
         for _ in 0..self.keys.len() {
             match self.maybe_remove(idx) {
                 Some(key) => {
                     self.maybe_flatten_in_place();
-                    return Some(key);
+                    return key;
                 }
                 None => {
                     idx = (idx + 1) % self.keys.len();
                 }
             }
         }
-        None
+        panic!("Called remove on an empty keyset");
     }
 
-    fn remove_range(&mut self, idx_range: Range<usize>) -> Option<(Key, Key)> {
+    fn remove_range(&mut self, idx_range: Range<usize>) -> (Key, Key) {
         let mut key1 = None;
         let mut key2 = None;
         for idx in idx_range {
@@ -473,9 +431,10 @@ impl KeySet for VecOptionKeySet {
                 key2 = Some(key);
             }
         }
+
         self.maybe_flatten_in_place();
-        if key1.is_none() { return None; }
-        return Some((key1.unwrap(), key2.unwrap()));
+
+        return (key1.expect("to not be none"), key2.expect("to not be none"));
     }
 
     // fn remove_range(&mut self, idx_range: Range<usize>) -> (Key, Key) {
@@ -499,18 +458,18 @@ impl KeySet for VecOptionKeySet {
     //     return (key1, key2);
     // }
 
-    fn get(&self, mut idx: usize) -> Option<&Key> {
+    fn get(&self, mut idx: usize) -> &Key {
         for _ in 0..self.keys.len() {
             match self.maybe_get(idx) {
                 Some(key) => {
-                    return Some(key);
+                    return key;
                 }
                 None => {
                     idx = (idx + 1) % self.keys.len();
                 }
             }
         }
-        None
+        panic!("Called get on an empty keyset");
     }
 
     // TODO: this can be binary search if it is sorted
@@ -559,28 +518,25 @@ impl KeySet for VecHashSetKeySet {
         self.key_set.insert(key);
     }
 
-    fn remove(&mut self, idx: usize) -> Option<Key> {
-        if idx >= self.keys.len() { return None; }
+    fn remove(&mut self, idx: usize) -> Key {
         let key = self.keys.remove(idx);
         self.key_set.remove(&key);
-        return Some(key);
+        return key;
     }
-    fn remove_range(&mut self, idx_range: Range<usize>) -> Option<(Key, Key)> {
-        if idx_range.start >= self.keys.len() || idx_range.start == idx_range.end { return None; }
+    fn remove_range(&mut self, idx_range: Range<usize>) -> (Key, Key) {
         for idx in idx_range.clone() {
             self.key_set.remove(&self.keys[idx]);
         }
         let mut drain = self.keys.drain(idx_range);
-        let key1 = drain.next()?;
-        let (key1, key2) = match drain.next_back() {
+        let key1 = drain.next().expect("to have at least one element");
+        match drain.next_back() {
             Some(key2) => (key1, key2),
             None => (key1.clone(), key1),
-        };
-        return Some((key1, key2));
+        }
     }
 
-    fn get(&self, idx: usize) -> Option<&Key> {
-        return self.keys.get(idx);
+    fn get(&self, idx: usize) -> &Key {
+        return &self.keys[idx];
     }
 
     fn contains(&self, key: &Key) -> bool {
@@ -627,7 +583,7 @@ impl KeySet for BloomFilterKeySet {
         self.len += 1
     }
 
-    fn remove(&mut self, _idx: usize) -> Option<Key> {
+    fn remove(&mut self, _idx: usize) -> Key {
         panic!("BloomFilterKeySet does not support deletion")
         // NOTE: leaving this out is an optimization for the case when the keyspace is much larger than the number of keys being generated.
         // self.bf.clear();
@@ -636,7 +592,7 @@ impl KeySet for BloomFilterKeySet {
         // }
     }
 
-    fn remove_range(&mut self, _idx_range: Range<usize>) -> Option<(Key, Key)> {
+    fn remove_range(&mut self, _idx_range: Range<usize>) -> (Key, Key) {
         panic!("BloomFilterKeySet does not support deletion")
         // NOTE: leaving this out is an optimization for the case when the keyspace is much larger than the number of keys being generated.
         // self.bf.clear();
@@ -645,7 +601,7 @@ impl KeySet for BloomFilterKeySet {
         // }
     }
 
-    fn get(&self, _idx: usize) -> Option<&Key> {
+    fn get(&self, _idx: usize) -> &Key {
         panic!("BloomFilterKeySet does not support get")
     }
 
@@ -683,9 +639,8 @@ impl KeySet for VecBloomFilterKeySet {
         self.keys.push(key);
     }
 
-    fn remove(&mut self, idx: usize) -> Option<Key> {
-        if idx >= self.keys.len() { return None; }
-        return Some(self.keys.remove(idx));
+    fn remove(&mut self, idx: usize) -> Key {
+        return self.keys.remove(idx);
         // NOTE: leaving this out is an optimization for the case when the keyspace is much larger than the number of keys being generated.
         // self.bf.clear();
         // for k in &self.keys {
@@ -693,15 +648,13 @@ impl KeySet for VecBloomFilterKeySet {
         // }
     }
 
-    fn remove_range(&mut self, idx_range: Range<usize>) -> Option<(Key, Key)> {
-        if idx_range.start >= self.keys.len() || idx_range.start == idx_range.end { return None; }
+    fn remove_range(&mut self, idx_range: Range<usize>) -> (Key, Key) {
         let mut drain = self.keys.drain(idx_range);
-        let key1 = drain.next()?;
-        let (key1, key2) = match drain.next_back() {
+        let key1 = drain.next().expect("to have at least one element");
+        match drain.next_back() {
             Some(key2) => (key1, key2),
             None => (key1.clone(), key1),
-        };
-        return Some((key1, key2));
+        }
         // NOTE: leaving this out is an optimization for the case when the keyspace is much larger than the number of keys being generated.
         // self.bf.clear();
         // for k in &self.keys {
@@ -709,8 +662,8 @@ impl KeySet for VecBloomFilterKeySet {
         // }
     }
 
-    fn get(&self, idx: usize) -> Option<&Key> {
-        return self.keys.get(idx);
+    fn get(&self, idx: usize) -> &Key {
+        return &self.keys[idx];
     }
 
     fn contains(&self, key: &Key) -> bool {
@@ -759,8 +712,8 @@ impl KeySet for VecHashMapIndexKeySet {
         }
     }
 
-    fn remove(&mut self, idx: usize) -> Option<Key> {
-        if idx >= self.keys.len() { return None; }
+    fn remove(&mut self, idx: usize) -> Key {
+        assert!(idx < self.keys.len());
 
         // Swap with last, pop, and update hashmap
         let swap_idx = self.keys.len() - 1;
@@ -774,24 +727,24 @@ impl KeySet for VecHashMapIndexKeySet {
             self.key_to_index.insert(swapped_key.clone(), idx);
         }
 
-        return Some(removed);
+        return removed;
     }
 
-    fn remove_range(&mut self, idx_range: Range<usize>) -> Option<(Key, Key)> {
+    fn remove_range(&mut self, idx_range: Range<usize>) -> (Key, Key) {
         let mut iter = idx_range.rev();
-        let key1 = self.remove(iter.next()?)?;
+        let key1 = self.remove(iter.next().expect("to have at least one element"));
         let mut key2 = None;
         for idx in iter {
-            key2 = Some(self.remove(idx)?);
+            key2 = Some(self.remove(idx));
         }
         match key2 {
-            Some(key2) => Some((key1, key2)),
-            None => Some((key1.clone(), key1)),
+            Some(key2) => (key1, key2),
+            None => (key1.clone(), key1),
         }
     }
 
-    fn get(&self, idx: usize) -> Option<&Key> {
-        return self.keys.get(idx);
+    fn get(&self, idx: usize) -> &Key {
+        return &self.keys[idx];
     }
 
     fn contains(&self, key: &Key) -> bool {
@@ -835,21 +788,22 @@ impl KeySet for BTreeSetKeySet {
         self.keys.insert(key);
     }
 
-    fn remove(&mut self, idx: usize) -> Option<Key> {
-        let key = self.keys.iter().nth(idx)?.clone();
+    fn remove(&mut self, idx: usize) -> Key {
+        let key = self.keys.iter().nth(idx).unwrap().clone();
         self.keys.remove(&key);
-        return Some(key);
+        return key;
         // let mut cursor = self.keys.lower_bound_mut(Bound::Included(&idx));
         // return Some(cursor
         //     .remove_next()
         //     .expect("to be a valid key because idx is in range"));
     }
 
-    fn remove_range(&mut self, idx_range: Range<usize>) -> Option<(Key, Key)> {
+    fn remove_range(&mut self, idx_range: Range<usize>) -> (Key, Key) {
         let key1 = self
             .keys
             .iter()
-            .nth(idx_range.start)?
+            .nth(idx_range.start)
+            .expect("idx to be in range")
             .clone();
         let mut cursor = self.keys.lower_bound_mut(Bound::Included(&key1));
         let count = idx_range.end - idx_range.start;
@@ -858,13 +812,13 @@ impl KeySet for BTreeSetKeySet {
             key2 = cursor.remove_next().or(key2);
         }
         match key2 {
-            Some(key2) => Some((key1, key2)),
-            None => Some((key1.clone(), key1)),
+            Some(key2) => (key1, key2),
+            None => (key1.clone(), key1),
         }
     }
 
-    fn get(&self, idx: usize) -> Option<&Key> {
-        return self.keys.iter().nth(idx);
+    fn get(&self, idx: usize) -> &Key {
+        return self.keys.iter().nth(idx).expect("idx to be in range");
     }
 
     // fn get_random(&self, _rng: &mut impl Rng) -> &Key {
@@ -907,17 +861,20 @@ impl KeySet for BPlusTreeKeySet {
         self.keys.insert(key);
     }
 
-    fn remove(&mut self, idx: usize) -> Option<Key> {
+    fn remove(&mut self, idx: usize) -> Key {
         let iter = self.keys.iter();
         let mut iter = iter.skip(idx - 1);
-        return iter.next().cloned();
+        return iter
+            .next()
+            .cloned()
+            .expect("Tried to remove an index not in the keyset");
     }
 
-    fn remove_range(&mut self, idx_range: Range<usize>) -> Option<(Key, Key)> {
+    fn remove_range(&mut self, idx_range: Range<usize>) -> (Key, Key) {
         todo!()
     }
 
-    fn get(&self, idx: usize) -> Option<&Key> {
+    fn get(&self, idx: usize) -> &Key {
         todo!()
     }
 

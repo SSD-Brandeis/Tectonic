@@ -3,8 +3,12 @@
 
 import json
 import math
+import os
 from pathlib import Path
 import sys
+from pathlib import Path
+sys.path.append(str(Path(__file__).resolve().parents[1] / "plot_scripts"))
+import plot_style
 
 import matplotlib
 
@@ -15,14 +19,14 @@ import matplotlib.ticker as ticker
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
-OUT_DIR = ROOT_DIR / "data/CPU-utilization"
+OUT_DIR = Path(os.environ.get("CPU_UTILIZATION_OUT_DIR", str(ROOT_DIR / "data/CPU-utilization")))
 RESULTS_PATH = OUT_DIR / "pidstat_multithread_generation_results.json"
 FONT_PATH = ROOT_DIR / "LinLibertine_Mah.ttf"
 
 MULTI_TOOL_ORDER = ["YCSB", "Tectonic"]
 SINGLE_TOOL_ORDER = ["YCSB", "Tectonic", "KVBench"]
 TOOL_KEYS = {"YCSB": "ycsb", "Tectonic": "tectonic", "KVBench": "kvbench"}
-TOOL_LABELS = {"YCSB": "YCSB", "Tectonic": "Tectonic", "KVBench": "KVBench"}
+TOOL_LABELS = {"YCSB": "YCSB", "Tectonic": "X-Bench", "KVBench": "KVBench"}
 STYLE = {
     "YCSB": {"color": "grey", "linestyle": "-", "marker": "^", "hatch": "///"},
     "Tectonic": {"color": "tab:red", "linestyle": "-.", "marker": "s", "hatch": "\\\\"},
@@ -38,7 +42,7 @@ def configure_font():
     if not FONT_PATH.exists():
         raise FileNotFoundError(f"strict font file not found: {FONT_PATH}")
     font_manager.fontManager.addfont(str(FONT_PATH))
-    prop = font(12)
+    prop = font(20)
     font_name = prop.get_name()
     plt.rcParams["font.family"] = font_name
     plt.rcParams["font.sans-serif"] = [font_name]
@@ -54,10 +58,10 @@ def configure_font():
     plt.rcParams["ps.fonttype"] = 42
     plt.rcParams["pdf.compression"] = 0
     plt.rcParams["axes.unicode_minus"] = False
-    plt.rcParams["font.size"] = 12
-    plt.rcParams["axes.labelsize"] = 12
-    plt.rcParams["xtick.labelsize"] = 10
-    plt.rcParams["ytick.labelsize"] = 10
+    plt.rcParams["font.size"] = 20
+    plt.rcParams["axes.labelsize"] = 20
+    plt.rcParams["xtick.labelsize"] = 20
+    plt.rcParams["ytick.labelsize"] = 20
 
 
 def load_results():
@@ -73,7 +77,7 @@ def finite(value):
 
 
 def apply_tick_font(ax):
-    tick_font = font(10)
+    tick_font = font(20)
     for label in ax.get_xticklabels() + ax.get_yticklabels():
         label.set_fontproperties(tick_font)
 
@@ -109,8 +113,9 @@ def pad_samples(samples, duration_s, common_end_s):
 def line_style(tool, count):
     base = {key: STYLE[tool][key] for key in ("color", "linestyle", "marker")}
     color = STYLE[tool]["color"]
+    # For parallel settings, markers are filled matching the line color.
     base.update({
-        "markersize": 4,
+        "markersize": 8,
         "markerfacecolor": color,
         "markeredgecolor": color,
         "linewidth": 1.4,
@@ -127,8 +132,10 @@ def plot_series(ax, samples, tool):
 
 
 def set_numeric_axes(ax, xlabel, ylabel, x_right, y_top=None, force_y_100=False):
-    ax.set_xlabel(xlabel, fontproperties=font(12))
-    ax.set_ylabel(ylabel, fontproperties=font(12), labelpad=12)
+    xlabel_formatted = plot_style.format_label(xlabel)
+    ylabel_formatted = plot_style.format_label(ylabel)
+    ax.set_xlabel(xlabel_formatted, fontproperties=font(20))
+    ax.set_ylabel(ylabel_formatted, fontproperties=font(20), labelpad=16)
     ax.set_xlim(left=0.0, right=max(float(x_right or 0.0), 1.0))
     if y_top is None:
         y_top = ax.get_ylim()[1]
@@ -145,12 +152,14 @@ def set_numeric_axes(ax, xlabel, ylabel, x_right, y_top=None, force_y_100=False)
         yticks.append(100.0)
     ax.set_xticks(sorted(set(xticks)))
     ax.set_yticks(sorted(set(yticks)))
+    ax.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: plot_style.format_number_clean(x)))
+    ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda y, _: plot_style.format_number_clean(y)))
     style_spines(ax)
 
 
 def save_legend(handles, labels, base):
-    fig = plt.figure(figsize=(4.2, 0.65))
-    fig.legend(handles, labels, loc="center", ncol=len(handles), frameon=False, prop=font(10))
+    fig = plt.figure(figsize=(6.5, 1.1))
+    fig.legend(handles, labels, loc="center", ncol=len(handles), frameon=False, prop=font(20))
     fig.savefig(f"{base}_legend.pdf", bbox_inches="tight", pad_inches=0.05)
     plt.close(fig)
 
@@ -177,9 +186,11 @@ def choose_time_series_threads(data):
     return preferred
 
 
-def plot_time_series(data):
-    threads = choose_time_series_threads(data)
+def plot_time_series(data, requested_threads=None, base_name="cpu_utilization_pidstat_multithread_timeseries"):
+    threads = choose_time_series_threads(data) if requested_threads is None else int(requested_threads)
     run = run_for_thread(data, threads)
+    if not has_pidstat_samples(run):
+        raise ValueError(f"missing pidstat samples for thread count {threads}")
     durations = [float(run[TOOL_KEYS[tool]]["duration_s"]) for tool in MULTI_TOOL_ORDER]
     window_s = max(durations)
     samples_by_tool = {
@@ -187,7 +198,7 @@ def plot_time_series(data):
         for tool in MULTI_TOOL_ORDER
     }
 
-    fig, ax = plt.subplots(1, 1, figsize=(5.6, 3.6))
+    fig, ax = plt.subplots(1, 1, figsize=(7.4, 5.0))
     handles = [plot_series(ax, samples_by_tool[tool], tool) for tool in MULTI_TOOL_ORDER]
     set_numeric_axes(
         ax,
@@ -197,8 +208,8 @@ def plot_time_series(data):
         y_top=100.0,
         force_y_100=True,
     )
-    fig.subplots_adjust(left=0.34, right=0.94, bottom=0.30, top=0.90)
-    base = OUT_DIR / "cpu_utilization_pidstat_multithread_timeseries"
+    fig.subplots_adjust(left=0.30, right=0.96, bottom=0.28, top=0.92)
+    base = OUT_DIR / base_name
     fig.savefig(f"{base}.pdf", bbox_inches="tight", pad_inches=0.20)
     plt.close(fig)
     return handles, [TOOL_LABELS[tool] for tool in MULTI_TOOL_ORDER], threads
@@ -222,7 +233,7 @@ def plot_thread_categories(data, metric_key, ylabel, base_name, y_top=None, forc
             values.append(value)
         values_by_tool[tool] = values
 
-    fig, ax = plt.subplots(1, 1, figsize=(5.6, 3.6))
+    fig, ax = plt.subplots(1, 1, figsize=(7.4, 5.0))
     handles = []
     for tool in MULTI_TOOL_ORDER:
         handle = ax.plot(
@@ -234,12 +245,12 @@ def plot_thread_categories(data, metric_key, ylabel, base_name, y_top=None, forc
         handles.append(handle)
     if y_top is None:
         y_top = max_value * 1.15 if max_value > 0 else 1.0
-    ax.set_xlabel("number of threads", fontproperties=font(12))
-    ax.set_ylabel(ylabel, fontproperties=font(12), labelpad=12)
+    ax.set_xlabel(plot_style.format_label(r"\# threads"), fontproperties=font(20))
+    ax.set_ylabel(plot_style.format_label(ylabel), fontproperties=font(20), labelpad=16)
     ax.set_xlim(left=-0.20, right=max(0.20, len(thread_counts) - 0.80))
     ax.set_ylim(bottom=0.0, top=max(float(y_top), 1.0))
     ax.set_xticks(positions)
-    ax.set_xticklabels(labels, fontproperties=font(10))
+    ax.set_xticklabels(labels, fontproperties=font(20))
     ax.yaxis.set_major_locator(ticker.MaxNLocator(nbins=5))
     yticks = [tick for tick in ax.get_yticks() if 0.0 <= tick <= ax.get_ylim()[1]]
     if not any(abs(tick) < 1e-9 for tick in yticks):
@@ -247,8 +258,9 @@ def plot_thread_categories(data, metric_key, ylabel, base_name, y_top=None, forc
     if force_y_100 and not any(abs(tick - 100.0) < 1e-9 for tick in yticks):
         yticks.append(100.0)
     ax.set_yticks(sorted(set(yticks)))
+    ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda y, _: plot_style.format_number_clean(y)))
     style_spines(ax)
-    fig.subplots_adjust(left=0.38, right=0.94, bottom=0.30, top=0.90)
+    fig.subplots_adjust(left=0.34, right=0.96, bottom=0.28, top=0.92)
     base = OUT_DIR / base_name
     fig.savefig(f"{base}.pdf", bbox_inches="tight", pad_inches=0.20)
     plt.close(fig)
@@ -262,7 +274,7 @@ def plot_single_thread_cpu_time(data):
     labels = [TOOL_LABELS[tool] for tool in SINGLE_TOOL_ORDER]
     y_top = max(values) * 1.15 if values else 1.0
 
-    fig, ax = plt.subplots(1, 1, figsize=(4.8, 3.4))
+    fig, ax = plt.subplots(1, 1, figsize=(6.6, 4.8))
     for pos, tool, value in zip(positions, SINGLE_TOOL_ORDER, values):
         style = STYLE[tool]
         ax.bar(
@@ -274,19 +286,20 @@ def plot_single_thread_cpu_time(data):
             hatch=style["hatch"],
             linewidth=1.0,
         )
-    ax.set_xlabel("generator", fontproperties=font(12))
-    ax.set_ylabel(r"cpu time (s / M ops)", fontproperties=font(12), labelpad=12)
+    ax.set_xlabel(plot_style.format_label("generator"), fontproperties=font(20))
+    ax.set_ylabel(plot_style.format_label(r"cpu time (s / M ops)"), fontproperties=font(20), labelpad=16)
     ax.set_xlim(left=-0.55, right=len(positions) - 0.45)
     ax.set_ylim(bottom=0.0, top=max(y_top, 1.0))
     ax.set_xticks(positions)
-    ax.set_xticklabels(labels, fontproperties=font(10))
+    ax.set_xticklabels(labels, fontproperties=font(20))
     ax.yaxis.set_major_locator(ticker.MaxNLocator(nbins=5))
     yticks = [tick for tick in ax.get_yticks() if 0.0 <= tick <= ax.get_ylim()[1]]
     if not any(abs(tick) < 1e-9 for tick in yticks):
         yticks.insert(0, 0.0)
     ax.set_yticks(sorted(set(yticks)))
+    ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda y, _: plot_style.format_number_clean(y)))
     style_spines(ax)
-    fig.subplots_adjust(left=0.32, right=0.94, bottom=0.30, top=0.90)
+    fig.subplots_adjust(left=0.30, right=0.96, bottom=0.28, top=0.92)
     base = OUT_DIR / "cpu_utilization_single_thread_cpu_time"
     fig.savefig(f"{base}.pdf", bbox_inches="tight", pad_inches=0.20)
     plt.close(fig)
@@ -302,7 +315,7 @@ def plot_single_thread_cpu_utilization(data):
     labels = [TOOL_LABELS[tool] for tool in SINGLE_TOOL_ORDER]
     y_top = max(values) * 1.15 if values else 1.0
 
-    fig, ax = plt.subplots(1, 1, figsize=(4.8, 3.4))
+    fig, ax = plt.subplots(1, 1, figsize=(6.6, 4.8))
     for pos, tool, value in zip(positions, SINGLE_TOOL_ORDER, values):
         style = STYLE[tool]
         ax.bar(
@@ -314,12 +327,12 @@ def plot_single_thread_cpu_utilization(data):
             hatch=style["hatch"],
             linewidth=1.0,
         )
-    ax.set_xlabel("generator", fontproperties=font(12))
-    ax.set_ylabel(r"one-core cpu utilization (\%)", fontproperties=font(12), labelpad=12)
+    ax.set_xlabel(plot_style.format_label("generator"), fontproperties=font(20))
+    ax.set_ylabel(plot_style.format_label(r"one-core cpu utilization (\%)"), fontproperties=font(20), labelpad=16)
     ax.set_xlim(left=-0.55, right=len(positions) - 0.45)
     ax.set_ylim(bottom=0.0, top=max(y_top, 1.0))
     ax.set_xticks(positions)
-    ax.set_xticklabels(labels, fontproperties=font(10))
+    ax.set_xticklabels(labels, fontproperties=font(20))
     ax.yaxis.set_major_locator(ticker.MaxNLocator(nbins=5))
     yticks = [tick for tick in ax.get_yticks() if 0.0 <= tick <= ax.get_ylim()[1]]
     if not any(abs(tick) < 1e-9 for tick in yticks):
@@ -327,8 +340,9 @@ def plot_single_thread_cpu_utilization(data):
     if not any(abs(tick - 100.0) < 1e-9 for tick in yticks):
         yticks.append(100.0)
     ax.set_yticks(sorted(set(yticks)))
+    ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda y, _: plot_style.format_number_clean(y)))
     style_spines(ax)
-    fig.subplots_adjust(left=0.36, right=0.94, bottom=0.30, top=0.90)
+    fig.subplots_adjust(left=0.34, right=0.96, bottom=0.28, top=0.92)
     base = OUT_DIR / "cpu_utilization_single_thread_cpu_utilization"
     fig.savefig(f"{base}.pdf", bbox_inches="tight", pad_inches=0.20)
     plt.close(fig)
@@ -352,15 +366,26 @@ def main():
         r"cpu time (s / M ops)",
         "cpu_utilization_cpu_time_by_threads",
     )
-    plot_single_thread_cpu_time(data)
-    plot_single_thread_cpu_utilization(data)
+    extra_threads = os.environ.get("CPU_UTILIZATION_EXTRA_TIME_SERIES_THREADS", "")
+    extra_plotted_threads = []
+    for item in extra_threads.split(","):
+        item = item.strip()
+        if not item:
+            continue
+        extra_thread = int(item)
+        _, _, plotted_extra_thread = plot_time_series(
+            data,
+            requested_threads=extra_thread,
+            base_name=f"cpu_utilization_pidstat_multithread_timeseries_threads{extra_thread}",
+        )
+        extra_plotted_threads.append(plotted_extra_thread)
     save_legend(handles, labels, OUT_DIR / "cpu_utilization_pidstat_multithread")
     print(f"time-series thread count: {plotted_threads}")
     print(f"saved: {OUT_DIR / 'cpu_utilization_pidstat_multithread_timeseries.pdf'}")
+    for extra_thread in extra_plotted_threads:
+        print(f"saved: {OUT_DIR / f'cpu_utilization_pidstat_multithread_timeseries_threads{extra_thread}.pdf'}")
     print(f"saved: {OUT_DIR / 'cpu_utilization_pidstat_multithread_by_threads.pdf'}")
     print(f"saved: {OUT_DIR / 'cpu_utilization_cpu_time_by_threads.pdf'}")
-    print(f"saved: {OUT_DIR / 'cpu_utilization_single_thread_cpu_time.pdf'}")
-    print(f"saved: {OUT_DIR / 'cpu_utilization_single_thread_cpu_utilization.pdf'}")
 
 
 if __name__ == "__main__":

@@ -9,9 +9,11 @@ import plot_style
 
 # ================= CONFIGURATION VARIABLES =================
 # Toggle between 'linear' and 'log' scale for y-axis of latency/performance plots (Figure 1 and Figure 3)
-Y_AXIS_SCALE = 'linear'
+Y_AXIS_SCALE = 'log'
 # Toggle between 'linear' and 'log' scale for x-axis (time) of memory footprint line plots (Figure 2 and Figure 4)
 TIME_AXIS_SCALE = 'linear'
+# Common figure size for latency plots (Figure 1 and Figure 3) to ensure consistency and compact layout
+LATENCY_FIGURE_SIZE = (5, 3.6)
 # ==========================================================
 
 STATS_DIR = "/home/cc/Tectonic/data/generator_comparison"
@@ -21,17 +23,17 @@ os.makedirs(PLOTS_DIR, exist_ok=True)
 ALL_OPS = ['Insert', 'Point Query', 'Update', 'Point Delete', 'Range Query', 'Range Delete']
 
 OP_COLORS = {
-    'Insert': '#1f77b4',
+    'Insert': '#9467bd',
     'Point Query': '#ff7f0e',
     'Update': '#2ca02c',
-    'Point Delete': '#d62728',
-    'Range Query': '#9467bd',
+    'Point Delete': '#e377c2',
+    'Range Query': '#1f77b4',
     'Range Delete': '#8c564b'
 }
 
 TOOL_HATCHES = {
     'Tectonic': '',
-    'YCSB': '///',
+    'YCSB': '/////',
     'KVbench': '\\\\',
     'KVBench': '\\\\'
 }
@@ -94,9 +96,9 @@ def apply_scale_and_ticks(ax, max_val, is_percentage=False):
     if Y_AXIS_SCALE == 'log':
         ax.set_yscale('log')
         ax.set_ylim(bottom=1.0, top=max_val * 1.5 if max_val > 0 else 100.0)
-        # Format ticks as whole numbers for log scale
         ax.yaxis.set_major_locator(mticker.LogLocator(base=10.0))
-        ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda y, _: f"{int(round(y))}"))
+        ax.yaxis.set_major_formatter(mticker.LogFormatterMathtext(base=10.0))
+        ax.yaxis.set_minor_locator(mticker.NullLocator())
     else:
         ax.set_yscale('linear')
         ax.set_ylim(bottom=0.0, top=max_val * 1.1 if max_val > 0 else 100.0)
@@ -123,7 +125,7 @@ def plot_fig1_fig2():
     workloads = ["I", "II", "III", "IV", "V"]
     
     # ------------------ FIGURE 1: Latency Breakdown (Subplot A Only) ------------------
-    fig1, ax1 = plt.subplots(figsize=(8, 6))
+    fig1, ax1 = plt.subplots(figsize=LATENCY_FIGURE_SIZE)
     
     x = np.arange(len(workloads))
     width = 0.35
@@ -173,21 +175,19 @@ def plot_fig1_fig2():
         ax1.bar(x + width/2, kv_vals, width, bottom=bottom_kv, color=OP_COLORS[op], edgecolor='black', linewidth=0.5, hatch=TOOL_HATCHES['KVbench'])
         bottom_kv += kv_vals
 
-    x_ticks = []
-    x_tick_labels = []
-    for idx, w in enumerate(workloads):
-        x_ticks.extend([idx - width/2, idx + width/2])
-        x_tick_labels.extend([f"Tec\n({w})", f"KV\n({w})"])
+    x_ticks = x
+    x_tick_labels = workloads
 
     ax1.set_ylabel(plot_style.format_label('End-to-End Latency (s)'))
     ax1.set_xticks(x_ticks)
-    ax1.set_xticklabels(x_tick_labels, fontsize=9)
+    ax1.set_xticklabels(x_tick_labels)
     
     # Combined legend for operation colors and tool hatches
-    color_patches = [Patch(facecolor=OP_COLORS[op], label=op) for op in ALL_OPS]
+    present_ops = [op for op in ALL_OPS if any(WORKLOAD_OP_COUNTS[w].get(op, 0) > 0 for w in workloads)]
+    color_patches = [Patch(facecolor=OP_COLORS[op], label=op.lower()) for op in present_ops]
     tool_patches = [
-        Patch(facecolor='#d3d3d3', edgecolor='black', hatch=TOOL_HATCHES['Tectonic'], label='Tectonic'),
-        Patch(facecolor='#d3d3d3', edgecolor='black', hatch=TOOL_HATCHES['KVbench'], label='KVbench')
+        Patch(facecolor='#d3d3d3', edgecolor='black', hatch=TOOL_HATCHES['Tectonic'], label='X-Bench'),
+        Patch(facecolor='#d3d3d3', edgecolor='black', hatch=TOOL_HATCHES['KVbench'], label='KVBench')
     ]
     ax1.legend(handles=color_patches + tool_patches, loc='upper left', bbox_to_anchor=(1, 1))
     
@@ -196,7 +196,7 @@ def plot_fig1_fig2():
     
     plot_style.save_legend(ax1, f"{PLOTS_DIR}/fig1")
     
-    fig1.savefig(f"{PLOTS_DIR}/fig1.png", dpi=150, bbox_inches='tight')
+    fig1.tight_layout()
     fig1.savefig(f"{PLOTS_DIR}/fig1.pdf", bbox_inches='tight')
     plt.close(fig1)
     
@@ -226,7 +226,7 @@ def plot_fig1_fig2():
             if mem_log:
                 times = [m[0] for m in mem_log]
                 rss = [m[1] for m in mem_log]
-                ax.plot(times, rss, label='Tectonic', **plot_style.LINE_STYLES['Tectonic'])
+                ax.plot(times, rss, label='X-Bench', **plot_style.LINE_STYLES['Tectonic'])
                 max_mem_subplot = max(max_mem_subplot, max(rss, default=0.0))
                 
         if kv_data and "mem_log" in kv_data:
@@ -234,7 +234,7 @@ def plot_fig1_fig2():
             if mem_log:
                 times = [m[0] for m in mem_log]
                 rss = [m[1] for m in mem_log]
-                ax.plot(times, rss, label='KVbench', **plot_style.LINE_STYLES['KVBench'])
+                ax.plot(times, rss, label='KVBench', **plot_style.LINE_STYLES['KVBench'])
                 max_mem_subplot = max(max_mem_subplot, max(rss, default=0.0))
  
         ax.text(0.05, 0.95, plot_style.format_label(f"workload {w.lower()}"), transform=ax.transAxes, va='top', ha='left', fontweight='bold', fontsize=12)
@@ -245,15 +245,14 @@ def plot_fig1_fig2():
         format_subplot_y_axis(ax, max_mem_subplot)
  
     legend_elements = [
-        plt.Line2D([0], [0], label='Tectonic', **plot_style.LINE_STYLES['Tectonic']),
-        plt.Line2D([0], [0], label='KVbench', **plot_style.LINE_STYLES['KVBench'])
+        plt.Line2D([0], [0], label='X-Bench', **plot_style.LINE_STYLES['Tectonic']),
+        plt.Line2D([0], [0], label='KVBench', **plot_style.LINE_STYLES['KVBench'])
     ]
     axs2[1, 2].legend(handles=legend_elements, loc='center', fontsize=14, frameon=False)
     
     plot_style.save_legend(axs2[1, 2], f"{PLOTS_DIR}/fig2")
     
     plt.tight_layout()
-    fig2.savefig(f"{PLOTS_DIR}/fig2.png", dpi=150, bbox_inches='tight')
     fig2.savefig(f"{PLOTS_DIR}/fig2.pdf", bbox_inches='tight')
     plt.close(fig2)
 
@@ -261,13 +260,13 @@ def plot_fig3_fig4():
     workloads = ["A", "B", "C", "D", "E", "F"]
     
     # ------------------ FIGURE 3: Phase-Based Performance Breakdown ------------------
-    fig3, ax3 = plt.subplots(figsize=(10, 6))
+    fig3, ax3 = plt.subplots(figsize=LATENCY_FIGURE_SIZE)
     
     x = np.arange(len(workloads))
     width = 0.25  # three bars side-by-side
     
-    load_phase_color = '#a1c4fd'
-    exec_phase_color = '#38f9d7'
+    load_phase_color = 'tab:blue'
+    exec_phase_color = 'tab:red'
     
     max_latency = 0.0
     
@@ -312,30 +311,23 @@ def plot_fig3_fig4():
             ax3.bar(idx + width, exec_kv, width, bottom=load_kv, color=exec_phase_color, edgecolor='black', linewidth=0.5, hatch=TOOL_HATCHES['KVbench'])
             max_latency = max(max_latency, total_kv)
 
-    x_ticks = []
-    x_tick_labels = []
-    for idx, w in enumerate(workloads):
-        if w == "F":
-            x_ticks.extend([idx - width, idx])
-            x_tick_labels.extend([f"Tec\n({w})", f"YCSB\n({w})"])
-        else:
-            x_ticks.extend([idx - width, idx, idx + width])
-            x_tick_labels.extend([f"Tec\n({w})", f"YCSB\n({w})", f"KV\n({w})"])
+    x_ticks = [idx - width/2 if w == "F" else idx for idx, w in enumerate(workloads)]
+    x_tick_labels = workloads
 
     phase_patches = [
-        Patch(facecolor=load_phase_color, label='Loading Phase'),
-        Patch(facecolor=exec_phase_color, label='Execution Phase')
+        Patch(facecolor=load_phase_color, label='loading phase'),
+        Patch(facecolor=exec_phase_color, label='execution phase')
     ]
     tool_patches = [
-        Patch(facecolor='#d3d3d3', edgecolor='black', hatch=TOOL_HATCHES['Tectonic'], label='Tectonic'),
-        Patch(facecolor='#d3d3d3', edgecolor='black', hatch=TOOL_HATCHES['YCSB'], label='YCSB'),
-        Patch(facecolor='#d3d3d3', edgecolor='black', hatch=TOOL_HATCHES['KVbench'], label='KVbench')
+        Patch(facecolor='none', edgecolor='black', hatch=TOOL_HATCHES['Tectonic'], label='X-Bench'),
+        Patch(facecolor='none', edgecolor='black', hatch=TOOL_HATCHES['YCSB'], label='YCSB'),
+        Patch(facecolor='none', edgecolor='black', hatch=TOOL_HATCHES['KVbench'], label='KVBench')
     ]
     ax3.legend(handles=phase_patches + tool_patches, loc='upper right')
     
     ax3.set_ylabel(plot_style.format_label('End-to-End Latency (s)'))
     ax3.set_xticks(x_ticks)
-    ax3.set_xticklabels(x_tick_labels, fontsize=8)
+    ax3.set_xticklabels(x_tick_labels)
     
     # Apply scale and max line
     apply_scale_and_ticks(ax3, max_latency)
@@ -343,7 +335,6 @@ def plot_fig3_fig4():
     plot_style.save_legend(ax3, f"{PLOTS_DIR}/fig3")
     
     plt.tight_layout()
-    fig3.savefig(f"{PLOTS_DIR}/fig3.png", dpi=150, bbox_inches='tight')
     fig3.savefig(f"{PLOTS_DIR}/fig3.pdf", bbox_inches='tight')
     plt.close(fig3)
  
@@ -374,7 +365,7 @@ def plot_fig3_fig4():
             if mem_log:
                 times = [m[0] for m in mem_log]
                 rss = [m[1] for m in mem_log]
-                ax.plot(times, rss, label='Tectonic', **plot_style.LINE_STYLES['Tectonic'])
+                ax.plot(times, rss, label='X-Bench', **plot_style.LINE_STYLES['Tectonic'])
                 max_mem_subplot = max(max_mem_subplot, max(rss, default=0.0))
                 
         # 2. YCSB (combine load and run phase)
@@ -402,7 +393,7 @@ def plot_fig3_fig4():
             if mem_log:
                 times = [m[0] for m in mem_log]
                 rss = [m[1] for m in mem_log]
-                ax.plot(times, rss, label='KVbench', **plot_style.LINE_STYLES['KVBench'])
+                ax.plot(times, rss, label='KVBench', **plot_style.LINE_STYLES['KVBench'])
                 max_mem_subplot = max(max_mem_subplot, max(rss, default=0.0))
  
         # Labels & Ticks
@@ -414,20 +405,112 @@ def plot_fig3_fig4():
         format_subplot_y_axis(ax, max_mem_subplot)
  
     legend_elements = [
-        plt.Line2D([0], [0], label='Tectonic', **plot_style.LINE_STYLES['Tectonic']),
+        plt.Line2D([0], [0], label='X-Bench', **plot_style.LINE_STYLES['Tectonic']),
         plt.Line2D([0], [0], label='YCSB', **plot_style.LINE_STYLES['YCSB']),
-        plt.Line2D([0], [0], label='KVbench', **plot_style.LINE_STYLES['KVBench'])
+        plt.Line2D([0], [0], label='KVBench', **plot_style.LINE_STYLES['KVBench'])
     ]
     fig4.legend(handles=legend_elements, loc='upper center', ncol=3, bbox_to_anchor=(0.5, 0.98), fontsize=12)
     
     plot_style.save_legend(fig4, f"{PLOTS_DIR}/fig4")
     
     plt.tight_layout(rect=[0, 0, 1, 0.95])
-    fig4.savefig(f"{PLOTS_DIR}/fig4.png", dpi=150, bbox_inches='tight')
     fig4.savefig(f"{PLOTS_DIR}/fig4.pdf", bbox_inches='tight')
     plt.close(fig4)
+
+def plot_fig1_mem():
+    workloads = ["I", "II", "III", "IV", "V"]
+    fig1_mem, ax1_mem = plt.subplots(figsize=LATENCY_FIGURE_SIZE)
+    
+    x = np.arange(len(workloads))
+    width = 0.35
+    
+    tec_mem = []
+    kv_mem = []
+    
+    for w in workloads:
+        w_lower = w.lower()
+        tec_data = load_json(f"{STATS_DIR}/tectonic_{w_lower}_trace.json")
+        kv_data = load_json(f"{STATS_DIR}/kvbench_{w_lower}_trace.json")
+        
+        if tec_data and "mem_log" in tec_data and tec_data["mem_log"]:
+            tec_mem.append(max([m[1] for m in tec_data["mem_log"]]))
+        else:
+            tec_mem.append(0.0)
+            
+        if kv_data and "mem_log" in kv_data and kv_data["mem_log"]:
+            kv_mem.append(max([m[1] for m in kv_data["mem_log"]]))
+        else:
+            kv_mem.append(0.0)
+            
+    ax1_mem.bar(x - width/2, tec_mem, width, label='X-Bench', facecolor='none', edgecolor='black', linewidth=0.5, hatch=TOOL_HATCHES['Tectonic'])
+    ax1_mem.bar(x + width/2, kv_mem, width, label='KVBench', facecolor='none', edgecolor='black', linewidth=0.5, hatch=TOOL_HATCHES['KVbench'])
+    
+    ax1_mem.set_xticks(x)
+    ax1_mem.set_xticklabels(workloads)
+    
+    plot_style.apply_plot_style(ax1_mem, ylabel=' memory footprint(MB)')
+    
+    plot_style.save_legend(ax1_mem, f"{PLOTS_DIR}/fig1_mem")
+    
+    fig1_mem.tight_layout()
+    fig1_mem.savefig(f"{PLOTS_DIR}/fig1_mem.pdf", bbox_inches='tight')
+    plt.close(fig1_mem)
+
+def plot_fig3_mem():
+    workloads = ["A", "B", "C", "D", "E", "F"]
+    fig3_mem, ax3_mem = plt.subplots(figsize=LATENCY_FIGURE_SIZE)
+    
+    x = np.arange(len(workloads))
+    width = 0.25  # three bars side-by-side
+    
+    for idx, w in enumerate(workloads):
+        w_lower = w.lower()
+        
+        ycsb_data = load_json(f"{STATS_DIR}/ycsb_{w_lower}_trace.json")
+        tec_data = load_json(f"{STATS_DIR}/tectonic_{w_lower}_trace.json")
+        kv_data = load_json(f"{STATS_DIR}/kvbench_{w_lower}_trace.json")
+        
+        # 1. Tectonic peak memory
+        if tec_data and "mem_log" in tec_data and tec_data["mem_log"]:
+            tec_val = max([m[1] for m in tec_data["mem_log"]])
+            lbl = 'X-Bench' if idx == 0 else None
+            ax3_mem.bar(idx - width, tec_val, width, label=lbl, facecolor='none', edgecolor='black', linewidth=0.5, hatch=TOOL_HATCHES['Tectonic'])
+            
+        # 2. YCSB peak memory
+        if ycsb_data:
+            load_mem = ycsb_data["load"].get("mem_log", [])
+            run_mem = ycsb_data["run"].get("mem_log", [])
+            combined_rss = [m[1] for m in load_mem] + [m[1] for m in run_mem]
+            if combined_rss:
+                ycsb_val = max(combined_rss)
+                lbl = 'YCSB' if idx == 0 else None
+                ax3_mem.bar(idx, ycsb_val, width, label=lbl, facecolor='none', edgecolor='black', linewidth=0.5, hatch=TOOL_HATCHES['YCSB'])
+                
+        # 3. KVbench peak memory (missing for F)
+        if kv_data and w != "F":
+            if "mem_log" in kv_data and kv_data["mem_log"]:
+                kv_val = max([m[1] for m in kv_data["mem_log"]])
+                lbl = 'KVBench' if idx == 0 else None
+                ax3_mem.bar(idx + width, kv_val, width, label=lbl, facecolor='none', edgecolor='black', linewidth=0.5, hatch=TOOL_HATCHES['KVbench'])
+
+    x_ticks = [idx - width/2 if w == "F" else idx for idx, w in enumerate(workloads)]
+    x_tick_labels = workloads
+
+    ax3_mem.set_xticks(x_ticks)
+    ax3_mem.set_xticklabels(x_tick_labels)
+    
+    plot_style.apply_plot_style(ax3_mem, ylabel='memory footprint(MB)')
+    ax3_mem.tick_params(axis='x', which='both', bottom=False, top=False)
+    
+    plot_style.save_legend(ax3_mem, f"{PLOTS_DIR}/fig3_mem")
+    
+    fig3_mem.tight_layout()
+    fig3_mem.savefig(f"{PLOTS_DIR}/fig3_mem.pdf", bbox_inches='tight')
+    plt.close(fig3_mem)
 
 if __name__ == "__main__":
     plot_fig1_fig2()
     plot_fig3_fig4()
+    plot_fig1_mem()
+    plot_fig3_mem()
     print("All comparison figures created successfully.")

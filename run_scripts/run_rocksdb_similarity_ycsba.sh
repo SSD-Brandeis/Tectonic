@@ -6,14 +6,14 @@ set -e
 WORKLOAD_SPEC="/home/cc/Tectonic/rocksdb-benchmark-harness/experiments/workload-similarity/workload-a.spec.json"
 YCSB_WORKLOAD_NAME="workloada"
 OP_COUNT=1000000  # 1M inserts for load, 1M operations for execution (total 2M ops)
-RUNS=1            # Number of benchmark runs
+RUNS=3            # Number of benchmark runs
 # ==========================================================
 
 STATS_DIR="/home/cc/Tectonic/data/rocksdb_similarity_ycsba"
 mkdir -p "$STATS_DIR"
 
 # Clean up previous stats files if any to avoid mixing results
-rm -f "$STATS_DIR"/*
+rm -f "$STATS_DIR"/iostat.*.json "$STATS_DIR"/stats.*.json "$STATS_DIR"/op-latency.*.json "$STATS_DIR"/*-workload.txt
 
 # Clean up previous workload files if any to avoid append issues
 rm -f /tmp/tec-workload-a.txt /tmp/ycsb-workload-a*

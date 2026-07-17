@@ -19,7 +19,7 @@ YCSB_SPEC = ROOT_DIR / "example-specs/ycsb/e.spec.json"
 KV_BENCH = Path(os.environ.get("KV_BENCH_BIN", "/home/cc/KV-WorkloadGenerator/bin/load_gen"))
 YCSB_DIR = Path(os.environ.get("YCSB_DIR", str(HARNESS_DIR / "vendor/YCSB")))
 M2 = Path(os.environ.get("M2_REPO", "/home/cc/.m2/repository"))
-OUT_DIR = ROOT_DIR / "data/CPU-utilization"
+OUT_DIR = Path(os.environ.get("CPU_UTILIZATION_OUT_DIR", str(ROOT_DIR / "data/CPU-utilization")))
 TMP_DIR = Path("/tmp/tectonic_cpu_pidstat_multithread")
 RESULTS_PATH = OUT_DIR / "pidstat_multithread_generation_results.json"
 PLOT_SCRIPT = ROOT_DIR / "plot_scripts/plot_cpu_pidstat_multithread_generation.py"
@@ -487,7 +487,8 @@ def main():
         epilog=(
             "reproduce the CPU-utilization figures on this machine:\n"
             f"  {REPRODUCTION_COMMAND}\n\n"
-            "override external tool locations with TECTONIC_CLI, YCSB_DIR, KV_BENCH_BIN, and M2_REPO."
+            "override output location with CPU_UTILIZATION_OUT_DIR; override external tool locations with "
+            "TECTONIC_CLI, YCSB_DIR, KV_BENCH_BIN, and M2_REPO."
         ),
     )
     parser.add_argument("--threads", help="comma-separated thread counts for the multithread sweep")
@@ -498,7 +499,6 @@ def main():
 
     ensure_file(TECTONIC_CLI, "tectonic-cli")
     ensure_file(YCSB_SPEC, "Tectonic YCSB-E spec")
-    ensure_file(KV_BENCH, "KVBench load_gen")
     ensure_file(YCSB_DIR / "workloads" / YCSB_WORKLOAD_FILE, "YCSB-E workload")
     cpu_count = available_cpu_count()
     thread_counts = parse_threads(args.threads, cpu_count) if args.threads else default_threads(cpu_count)
@@ -517,15 +517,14 @@ def main():
     print(f"  cpu count  : {cpu_count} available logical cpus")
     print(f"  threads    : {thread_counts}")
     print(f"  time series: {time_series_threads} threads")
+    print(f"  output dir : {OUT_DIR}")
     print("  multithread: YCSB and Tectonic")
-    print("  single     : YCSB, Tectonic, and KVBench")
     print("  metric     : summed pidstat process %CPU divided by available logical cpus")
     print(SEP, flush=True)
 
     runs = []
     for threads in thread_counts:
         runs.append(run_for_threads(threads, cpu_count))
-    single_thread = run_single_thread(cpu_count)
     plotted_time_series_threads = choose_plotted_time_series_threads(runs, time_series_threads)
     if plotted_time_series_threads != time_series_threads:
         print(
@@ -536,13 +535,12 @@ def main():
 
     payload = {
         "experiment": "CPU-utilization",
-        "mode": "pidstat_ycsbe_10x_workload_generation",
+        "mode": "pidstat_ycsbe_10x_multithread_workload_generation",
         "workload": WORKLOAD_NAME,
         "workload_file": YCSB_WORKLOAD_FILE,
         "scale_multiplier": SCALE_MULTIPLIER,
         "tectonic_spec_path": str(YCSB_SPEC),
         "multithread_tools": ["YCSB", "Tectonic"],
-        "single_thread_tools": ["YCSB", "Tectonic", "KVBench"],
         "load_count": LOAD_COUNT,
         "operation_count": OPERATION_COUNT,
         "run_range_query_count": RUN_RANGE_QUERY_COUNT,
@@ -569,23 +567,20 @@ def main():
         "common_window_cpu_metric": "wait4 CPU seconds divided by the slowest generator wall time for the same thread count and cpu_count",
         "total_generated_operations_per_tool": TOTAL_GENERATED_OPS,
         "monitor": "pidstat",
+        "output_dir": str(OUT_DIR),
         "reproduction_command": REPRODUCTION_COMMAND,
         "figure_intent": {
             "cpu_utilization_pidstat_multithread_timeseries.pdf": "shows instantaneous average CPU utilization across all available logical CPUs at the largest thread count; a generator drops to 0 after it finishes, so shorter occupancy means less CPU capacity held over time",
             "cpu_utilization_pidstat_multithread_by_threads.pdf": "shows shared-window average CPU utilization across all available logical CPUs for each thread count; the denominator is the slower generator's wall time at that thread count",
             "cpu_utilization_cpu_time_by_threads.pdf": "primary resource-efficiency figure; shows total CPU seconds per million generated operations for the same YCSB-E workload as threads scale",
-            "cpu_utilization_single_thread_cpu_time.pdf": "single-thread CPU seconds per million generated operations, including KVBench as a sequential baseline",
-            "cpu_utilization_single_thread_cpu_utilization.pdf": "single-thread active CPU utilization normalized to one core; this checks saturation rather than resource efficiency",
         },
         "metric_definitions": {
             "pidstat_sample_avg_cpu_percent": "at each sample, sum pidstat %CPU for the generator process and divide by available logical CPUs; 100 means all available logical CPUs are busy",
             "shared_window_avg_cpu_percent": "CPU seconds divided by the slower generator wall time for the same thread count, then divided by available logical CPUs; 100 means all CPUs were occupied for the entire shared window",
             "cpu_seconds_per_million_ops": "wait4 user+system CPU seconds divided by generated operations in millions; lower means fewer CPU cycles consumed per generated operation",
-            "single_thread_one_core_utilization_percent": "wait4 user+system CPU seconds divided by generator wall time; 100 means one fully occupied core while the generator is active",
         },
         "estimated_peak_temp_bytes": estimate_peak_temp_bytes(),
         "runs": runs,
-        "single_thread": single_thread,
     }
     write_results(payload)
     print(f"\n  results saved: {RESULTS_PATH}", flush=True)

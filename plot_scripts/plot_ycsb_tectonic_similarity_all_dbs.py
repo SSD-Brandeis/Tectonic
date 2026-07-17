@@ -42,6 +42,9 @@ OUT_DIR      = "/home/cc/Tectonic/data/ycsb_tectonic_similarity_all_dbs"
 YCSB_COLOR = 'grey'
 TEC_COLOR  = 'tab:red'
 BOX_WIDTH  = 0.35
+FONT_SIZE  = 20
+FIGSIZE    = (17.0, 5.8)
+LEGEND_FIGSIZE = (7.2, 1.1)
 
 # Operations to plot and their display labels (lowercase per AGENTS.md)
 OPS = [
@@ -83,7 +86,7 @@ def plot_database(db, db_results):
     Plot one database: 3 subplots (insert / point query / update).
     Each subplot: grouped box plots per scale.
     """
-    fig, axes = plt.subplots(1, 3, figsize=(8.0, 2.6))
+    fig, axes = plt.subplots(1, 3, figsize=FIGSIZE)
 
     available_scales = sorted(int(k) for k in db_results.keys())
     n_scales = len(SCALES)
@@ -123,11 +126,11 @@ def plot_database(db, db_results):
                 patch.set_facecolor("white")
                 patch.set_edgecolor(YCSB_COLOR)
                 patch.set_hatch("///")
-                patch.set_linewidth(0.8)
+                patch.set_linewidth(1.8)
             for element in ["whiskers","caps","medians"]:
                 for line in bp_y[element]:
                     line.set_color(YCSB_COLOR)
-                    line.set_linewidth(0.8)
+                    line.set_linewidth(1.8)
 
         # Draw Tectonic boxes (solid red)
         if tec_boxes:
@@ -137,45 +140,49 @@ def plot_database(db, db_results):
             for patch in bp_t["boxes"]:
                 patch.set_facecolor(TEC_COLOR)
                 patch.set_edgecolor(TEC_COLOR)
-                patch.set_linewidth(0.8)
+                patch.set_linewidth(1.8)
             for element in ["whiskers","caps","medians"]:
                 for line in bp_t[element]:
                     line.set_color("white" if element == "medians" else TEC_COLOR)
-                    line.set_linewidth(0.8)
+                    line.set_linewidth(1.8)
 
         # X axis: one tick per scale
         ax.set_xticks(x_centers)
-        ax.set_xticklabels([scale_label(s) for s in SCALES], fontsize=7)
+        ax.set_xticklabels([scale_label(s) for s in SCALES], fontsize=FONT_SIZE)
         ax.set_xlim(0.3, n_scales + 0.7)
-        ax.set_xlabel("operation count", fontsize=7)
+        ax.set_xlabel("operation count", fontsize=FONT_SIZE)
         ax.set_ylim(bottom=0)
-        ax.tick_params(axis='y', labelsize=7)
-        ax.set_title(op_label, fontsize=8)
+        ax.tick_params(axis="both", labelsize=FONT_SIZE, colors="black", direction="in")
+        for spine in ax.spines.values():
+            spine.set_visible(True)
+            spine.set_color("black")
+            spine.set_linewidth(0.8)
+        ax.set_title(op_label, fontsize=FONT_SIZE)
 
-    axes[0].set_ylabel(r"latency ($\mu$s)", fontsize=8)
+    axes[0].set_ylabel(r"latency ($\mu$s)", fontsize=FONT_SIZE)
     fig.suptitle(
-        r"YCSB vs Tectonic workload A latency — " + DB_LABELS.get(db, db),
-        fontsize=9, y=1.01
+        r"YCSB vs Tectonic+ workload A latency - " + DB_LABELS.get(db, db),
+        fontsize=FONT_SIZE, y=0.98
     )
-    plt.tight_layout(pad=0.5)
+    fig.tight_layout(pad=1.0, rect=(0, 0, 1, 0.90))
 
     base = f"{OUT_DIR}/{db}_similarity"
-    fig.savefig(f"{base}.pdf", bbox_inches="tight")
+    fig.savefig(f"{base}.pdf", bbox_inches="tight", pad_inches=0.08)
     plt.close(fig)
     print(f"  saved: {base}.pdf")
 
 def plot_legend():
-    fig, ax = plt.subplots(figsize=(2.8, 0.5))
+    fig, ax = plt.subplots(figsize=LEGEND_FIGSIZE)
     ax.axis("off")
     handles = [
         mpatches.Patch(facecolor="white", edgecolor=YCSB_COLOR,
                        hatch="///", label="YCSB"),
         mpatches.Patch(facecolor=TEC_COLOR, edgecolor=TEC_COLOR,
-                       label="Tectonic"),
+                       label="Tectonic+"),
     ]
-    ax.legend(handles=handles, loc="center", ncol=2, fontsize=9, frameon=False)
+    ax.legend(handles=handles, loc="center", ncol=2, fontsize=FONT_SIZE, frameon=False)
     base = f"{OUT_DIR}/similarity_legend"
-    fig.savefig(f"{base}.pdf", bbox_inches="tight")
+    fig.savefig(f"{base}.pdf", bbox_inches="tight", pad_inches=0.08)
     plt.close(fig)
     print(f"  saved: {base}.pdf")
 

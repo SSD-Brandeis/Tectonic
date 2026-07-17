@@ -9,6 +9,7 @@ perf.data*
 *.png
 *.pdf
 *.json
+*.md
 .idea/
 
 # Scratch files

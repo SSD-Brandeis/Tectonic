@@ -26,6 +26,7 @@ def to_small_caps(text):
     s = re.sub(r'\b(\d+)\s*m\b', r'\1 M', s)
     s = re.sub(r'\bmillion\b', 'M', s)
     s = re.sub(r'\bseconds\b', 's', s)
+    s = re.sub(r'\bmb\b', 'MB', s)
     return s
 
 def format_label(text):

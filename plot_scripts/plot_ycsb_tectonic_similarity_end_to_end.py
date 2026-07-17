@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Plot: YCSB vs Tectonic Workload A end-to-end latency.
+Plot: YCSB vs Tectonic Workload A execution time.
 
 Produces PDF line plots from results.json. The plotted metric is
 wall_time_s, which is the elapsed time to execute a full trace against a
@@ -15,7 +15,7 @@ import matplotlib
 
 matplotlib.rcParams["text.usetex"] = True
 import matplotlib.font_manager as fm
-import matplotlib.patches as mpatches
+from matplotlib.lines import Line2D
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -40,6 +40,14 @@ DB_LABELS = {
 
 YCSB_COLOR = "grey"
 TEC_COLOR = "tab:red"
+YCSB_MARKER = "^"
+TEC_MARKER = "s"
+YCSB_LINESTYLE = "-"
+TEC_LINESTYLE = "-."
+FONT_SIZE = 20
+SINGLE_FIGSIZE = (6.4, 4.8)
+ALL_DBS_FIGSIZE = (13.2, 9.6)
+LEGEND_FIGSIZE = (7.0, 1.1)
 
 
 def scale_label(scale):
@@ -63,17 +71,26 @@ def get_series(db_results, workload):
 
 def style_axis(ax):
     ax.set_xticks(np.arange(1, len(SCALES) + 1))
-    ax.set_xticklabels([scale_label(s) for s in SCALES], fontsize=7)
+    ax.set_xticklabels([scale_label(s) for s in SCALES], fontsize=FONT_SIZE)
     ax.set_xlim(0.7, len(SCALES) + 0.3)
-    ax.set_xlabel("operation count", fontsize=7)
-    ax.set_ylabel("end to end latency (s)", fontsize=8)
-    ax.tick_params(axis="y", labelsize=7)
-    for spine in ["top", "right"]:
-        ax.spines[spine].set_visible(False)
+    ax.set_ylim(bottom=0)
+    # Ensure 0 is explicitly ticked/labeled on y-axis
+    yticks = list(ax.get_yticks())
+    if 0.0 not in yticks:
+        yticks = [y for y in yticks if y >= 0]
+        yticks.insert(0, 0.0)
+        ax.set_yticks(yticks)
+    ax.set_xlabel("operation count", fontsize=FONT_SIZE)
+    ax.set_ylabel("execution time (s)", fontsize=FONT_SIZE)
+    ax.tick_params(axis="both", labelsize=FONT_SIZE, colors="black", direction="in")
+    for spine in ax.spines.values():
+        spine.set_visible(True)
+        spine.set_color("black")
+        spine.set_linewidth(0.8)
 
 
 def plot_database(db, db_results):
-    fig, ax = plt.subplots(figsize=(3.1, 2.4))
+    fig, ax = plt.subplots(figsize=SINGLE_FIGSIZE)
     yx, yy = get_series(db_results, "ycsb")
     tx, ty = get_series(db_results, "tectonic")
 
@@ -82,11 +99,12 @@ def plot_database(db, db_results):
             yx,
             yy,
             color=YCSB_COLOR,
-            marker="o",
-            markersize=3.5,
+            linestyle=YCSB_LINESTYLE,
+            marker=YCSB_MARKER,
+            markersize=7.0,
             markerfacecolor="white",
             markeredgecolor=YCSB_COLOR,
-            linewidth=1.0,
+            linewidth=2.0,
             label="YCSB",
         )
     if tx:
@@ -94,26 +112,27 @@ def plot_database(db, db_results):
             tx,
             ty,
             color=TEC_COLOR,
-            marker="s",
-            markersize=3.5,
+            linestyle=TEC_LINESTYLE,
+            marker=TEC_MARKER,
+            markersize=7.0,
             markerfacecolor=TEC_COLOR,
             markeredgecolor=TEC_COLOR,
-            linewidth=1.0,
-            label="Tectonic",
+            linewidth=2.0,
+            label="Tectonic+",
         )
 
     style_axis(ax)
-    ax.set_title(DB_LABELS.get(db, db), fontsize=9)
-    fig.tight_layout(pad=0.5)
+    ax.set_title(DB_LABELS.get(db, db), fontsize=FONT_SIZE)
+    fig.tight_layout(pad=1.0)
 
     base = f"{OUT_DIR}/{db}_end_to_end_wall_time"
-    fig.savefig(f"{base}.pdf", bbox_inches="tight")
+    fig.savefig(f"{base}.pdf", bbox_inches="tight", pad_inches=0.08)
     plt.close(fig)
     print(f"  saved: {base}.pdf")
 
 
 def plot_all_databases(db_results_all):
-    fig, axes = plt.subplots(2, 2, figsize=(6.4, 4.6), sharex=True)
+    fig, axes = plt.subplots(2, 2, figsize=ALL_DBS_FIGSIZE, sharex=True)
     axes = axes.ravel()
 
     for ax, db in zip(axes, DATABASES):
@@ -125,45 +144,69 @@ def plot_all_databases(db_results_all):
                 yx,
                 yy,
                 color=YCSB_COLOR,
-                marker="o",
-                markersize=3.0,
+                linestyle=YCSB_LINESTYLE,
+                marker=YCSB_MARKER,
+                markersize=6.5,
                 markerfacecolor="white",
                 markeredgecolor=YCSB_COLOR,
-                linewidth=0.9,
+                linewidth=1.8,
             )
         if tx:
             ax.plot(
                 tx,
                 ty,
                 color=TEC_COLOR,
-                marker="s",
-                markersize=3.0,
+                linestyle=TEC_LINESTYLE,
+                marker=TEC_MARKER,
+                markersize=6.5,
                 markerfacecolor=TEC_COLOR,
                 markeredgecolor=TEC_COLOR,
-                linewidth=0.9,
+                linewidth=1.8,
             )
         style_axis(ax)
-        ax.set_title(DB_LABELS.get(db, db), fontsize=8)
+        ax.set_title(DB_LABELS.get(db, db), fontsize=FONT_SIZE)
 
-    fig.suptitle("YCSB vs Tectonic workload A end-to-end latency", fontsize=9, y=1.01)
-    fig.tight_layout(pad=0.6)
+    fig.suptitle("YCSB vs Tectonic+ workload A execution time", fontsize=FONT_SIZE, y=0.99)
+    fig.tight_layout(pad=1.0, rect=(0, 0, 1, 0.96))
 
     base = f"{OUT_DIR}/all_dbs_end_to_end_wall_time"
-    fig.savefig(f"{base}.pdf", bbox_inches="tight")
+    fig.savefig(f"{base}.pdf", bbox_inches="tight", pad_inches=0.08)
     plt.close(fig)
     print(f"  saved: {base}.pdf")
 
 
 def plot_legend():
-    fig, ax = plt.subplots(figsize=(2.8, 0.5))
+    fig, ax = plt.subplots(figsize=LEGEND_FIGSIZE)
     ax.axis("off")
     handles = [
-        mpatches.Patch(facecolor="white", edgecolor=YCSB_COLOR, label="YCSB"),
-        mpatches.Patch(facecolor=TEC_COLOR, edgecolor=TEC_COLOR, label="Tectonic"),
+        Line2D(
+            [0],
+            [0],
+            color=YCSB_COLOR,
+            linestyle=YCSB_LINESTYLE,
+            marker=YCSB_MARKER,
+            markersize=7,
+            markerfacecolor="white",
+            markeredgecolor=YCSB_COLOR,
+            linewidth=2.0,
+            label="YCSB",
+        ),
+        Line2D(
+            [0],
+            [0],
+            color=TEC_COLOR,
+            linestyle=TEC_LINESTYLE,
+            marker=TEC_MARKER,
+            markersize=7,
+            markerfacecolor=TEC_COLOR,
+            markeredgecolor=TEC_COLOR,
+            linewidth=2.0,
+            label="Tectonic+",
+        ),
     ]
-    ax.legend(handles=handles, loc="center", ncol=2, fontsize=9, frameon=False)
+    ax.legend(handles=handles, loc="center", ncol=2, fontsize=FONT_SIZE, frameon=False)
     base = f"{OUT_DIR}/end_to_end_wall_time_legend"
-    fig.savefig(f"{base}.pdf", bbox_inches="tight")
+    fig.savefig(f"{base}.pdf", bbox_inches="tight", pad_inches=0.08)
     plt.close(fig)
     print(f"  saved: {base}.pdf")
 
@@ -179,7 +222,7 @@ def main():
         print("No results yet; skipping plot.")
         sys.exit(0)
 
-    print(f"Plotting end-to-end latency from {RESULTS_PATH}")
+    print(f"Plotting execution time from {RESULTS_PATH}")
     for db in DATABASES:
         if db not in db_results_all:
             print(f"  skip {db} (no data)")

@@ -1,27 +1,34 @@
 #!/bin/bash
-# run_rocksdb_similarity_ycsba.sh
+# run_rocksdb_similarity_ycsba_10x.sh
 #
-# Reproduces the RocksDB workload similarity experiment (YCSB-A vs X-Bench)
-# with per-operation individual latency measurements recorded in execution order.
+# 10x-scale version of the RocksDB workload similarity experiment (YCSB-A vs
+# X-Bench) at 10x the base op counts (10M insert / 5M point_query / 5M update
+# = 20M total ops per system), using the same beta-distribution
+# workload-a.spec.json as the 1x sanity check, scaled via tectonic-cli's -s
+# flag.
 #
-# Outputs to: data/rocksdb_similarity_ycsba/
+# Single combined pass per generator: one workload generation, one
+# stats-enabled harness invocation wrapped in iostat, capturing throughput
+# (disk read/write bytes over time), per-op latency, RocksDB internal stats,
+# and the RocksDB LOG file all from the same run.
+#
+# Outputs to: data/rocksdb_similarity_ycsba_10x/
 #
 # Required binaries (built by setup):
-#   rocksdb-benchmark-harness/cmake-build-release/rocksdb-benchmark-harness
 #   rocksdb-benchmark-harness/cmake-build-release-with-stats/rocksdb-benchmark-harness
 #   target/release/tectonic-cli
 #   rocksdb-benchmark-harness/vendor/YCSB  (built with mvn)
 
 set -euo pipefail
 
-RUNS=3
-OP_COUNT=1000000
+OP_COUNT=10000000
+TECTONIC_SCALE=10
 
 # Resolve absolute paths from Tectonic repo root
 REPO_ROOT=$(realpath "$(dirname "$0")/..")
 HARNESS_DIR="${REPO_ROOT}/rocksdb-benchmark-harness"
 EXPERIMENT_PATH="${HARNESS_DIR}/experiments/workload-similarity"
-OUT="${REPO_ROOT}/data/rocksdb_similarity_ycsba"
+OUT="${REPO_ROOT}/data/rocksdb_similarity_ycsba_10x"
 TECTONIC_CLI="${REPO_ROOT}/target/release/tectonic-cli"
 JAVA=/usr/lib/jvm/java-17-openjdk-amd64/bin/java
 
@@ -37,7 +44,6 @@ ${M2}/org/codehaus/jackson/jackson-mapper-asl/1.9.4/jackson-mapper-asl-1.9.4.jar
 ${M2}/org/codehaus/jackson/jackson-core-asl/1.9.4/jackson-core-asl-1.9.4.jar:\
 ${YCSB_CORE}"
 
-HARNESS_RELEASE="${HARNESS_DIR}/cmake-build-release/rocksdb-benchmark-harness"
 HARNESS_STATS="${HARNESS_DIR}/cmake-build-release-with-stats/rocksdb-benchmark-harness"
 ROCKSDB_OPTS="${EXPERIMENT_PATH}/rocksdb-options.ini"
 WORKLOAD_SPEC="${EXPERIMENT_PATH}/workload-a.spec.json"
@@ -45,7 +51,7 @@ WORKLOAD_SPEC="${EXPERIMENT_PATH}/workload-a.spec.json"
 # --------------------------------------------------------------------------
 # Sanity checks
 # --------------------------------------------------------------------------
-for bin in "$TECTONIC_CLI" "$HARNESS_RELEASE" "$HARNESS_STATS"; do
+for bin in "$TECTONIC_CLI" "$HARNESS_STATS"; do
   if [[ ! -x "$bin" ]]; then
     echo "ERROR: binary not found or not executable: $bin" >&2
     echo "       Run the build steps first (see implementation_plan.md)" >&2
@@ -65,9 +71,10 @@ mkdir -p "${OUT}"
 # --------------------------------------------------------------------------
 function generate_tectonic_workload() {
   local out_file="$1"
-  echo "  [tectonic] generating workload -> ${out_file}"
+  echo "  [tectonic] generating workload (scale ${TECTONIC_SCALE}x) -> ${out_file}"
   "${TECTONIC_CLI}" generate \
     -w "${WORKLOAD_SPEC}" \
+    -s "${TECTONIC_SCALE}" \
     -o "${out_file}"
 }
 
@@ -101,94 +108,65 @@ function generate_ycsb_workload() {
 }
 
 # --------------------------------------------------------------------------
-# Phase 1: I/O throughput runs (iostat, no stats overhead)
+# Single combined pass per generator: iostat + stats + latency + LOG
 # --------------------------------------------------------------------------
-echo "===== Phase 1: I/O throughput runs (${RUNS} runs each) ====="
 cd "${HARNESS_DIR}"
 
-for i in $(seq 1 "${RUNS}"); do
-  echo "--- [X-Bench] iostat run ${i}/${RUNS} ---"
-  generate_tectonic_workload /tmp/tec-workload-a.txt
+echo "===== [Tectonic] generate + run (combined) ====="
+generate_tectonic_workload /tmp/tec-workload-a-10x.txt
+cp /tmp/tec-workload-a-10x.txt "${OUT}/tectonic-workload.txt"
 
-  iostat -d -c -y 1 -o JSON > "${OUT}/iostat.tectonic.${i}.json" &
-  IOSTAT_PID=$!
-  sync && sudo sysctl -w vm.drop_caches=3 2>/dev/null || true
+iostat -d -c -y 1 -o JSON > "${OUT}/iostat.tectonic.1.json" &
+IOSTAT_PID=$!
+sync && sudo sysctl -w vm.drop_caches=3 2>/dev/null || true
 
-  "${HARNESS_RELEASE}" "${ROCKSDB_OPTS}" /tmp/tec-workload-a.txt "${OUT}/rocksdb-LOG.iostat.tectonic.${i}.txt"
+"${HARNESS_STATS}" \
+  "${ROCKSDB_OPTS}" \
+  /tmp/tec-workload-a-10x.txt \
+  "${OUT}/stats.tectonic.1.json" \
+  "${OUT}/op-latency.tectonic.1.json" \
+  "${OUT}/op-latency-raw.tectonic.1.csv" \
+  "${OUT}/rocksdb-LOG.tectonic.1.txt"
 
-  kill -INT "${IOSTAT_PID}" 2>/dev/null || true
-  wait "${IOSTAT_PID}" 2>/dev/null || true
+kill -INT "${IOSTAT_PID}" 2>/dev/null || true
+wait "${IOSTAT_PID}" 2>/dev/null || true
+rm -f /tmp/tec-workload-a-10x.txt
 
-  echo "--- [YCSB] iostat run ${i}/${RUNS} ---"
-  generate_ycsb_workload /tmp/ycsb-workload-a.txt
-
-  iostat -d -c -y 1 -o JSON > "${OUT}/iostat.ycsb.${i}.json" &
-  IOSTAT_PID=$!
-  sync && sudo sysctl -w vm.drop_caches=3 2>/dev/null || true
-
-  "${HARNESS_RELEASE}" "${ROCKSDB_OPTS}" /tmp/ycsb-workload-a.txt "${OUT}/rocksdb-LOG.iostat.ycsb.${i}.txt"
-
-  kill -INT "${IOSTAT_PID}" 2>/dev/null || true
-  wait "${IOSTAT_PID}" 2>/dev/null || true
-done
-
-# --------------------------------------------------------------------------
-# Phase 2: Stats-enabled runs (per-op latency collection)
-# --------------------------------------------------------------------------
 echo ""
-echo "===== Phase 2: Stats-enabled runs with per-op latency (${RUNS} runs each) ====="
+echo "===== [YCSB] generate + run (combined) ====="
+generate_ycsb_workload /tmp/ycsb-workload-a-10x.txt
+cp /tmp/ycsb-workload-a-10x.txt "${OUT}/ycsb-workload.txt"
 
-for i in $(seq 1 "${RUNS}"); do
-  echo "--- [X-Bench] stats run ${i}/${RUNS} ---"
-  generate_tectonic_workload /tmp/tec-workload-a.txt
-  # Save workload for reproducibility (last run only)
-  if [[ "${i}" == "${RUNS}" ]]; then
-    cp /tmp/tec-workload-a.txt "${OUT}/tectonic-workload.txt"
-  fi
+iostat -d -c -y 1 -o JSON > "${OUT}/iostat.ycsb.1.json" &
+IOSTAT_PID=$!
+sync && sudo sysctl -w vm.drop_caches=3 2>/dev/null || true
 
-  sync && sudo sysctl -w vm.drop_caches=3 2>/dev/null || true
+"${HARNESS_STATS}" \
+  "${ROCKSDB_OPTS}" \
+  /tmp/ycsb-workload-a-10x.txt \
+  "${OUT}/stats.ycsb.1.json" \
+  "${OUT}/op-latency.ycsb.1.json" \
+  "${OUT}/op-latency-raw.ycsb.1.csv" \
+  "${OUT}/rocksdb-LOG.ycsb.1.txt"
 
-  "${HARNESS_STATS}" \
-    "${ROCKSDB_OPTS}" \
-    /tmp/tec-workload-a.txt \
-    "${OUT}/stats.tectonic.${i}.json" \
-    "${OUT}/op-latency.tectonic.${i}.json" \
-    "${OUT}/op-latency-raw.tectonic.${i}.csv" \
-    "${OUT}/rocksdb-LOG.tectonic.${i}.txt"
-
-  echo "--- [YCSB] stats run ${i}/${RUNS} ---"
-  generate_ycsb_workload /tmp/ycsb-workload-a.txt
-  if [[ "${i}" == "${RUNS}" ]]; then
-    cp /tmp/ycsb-workload-a.txt "${OUT}/ycsb-workload.txt"
-  fi
-
-  sync && sudo sysctl -w vm.drop_caches=3 2>/dev/null || true
-
-  "${HARNESS_STATS}" \
-    "${ROCKSDB_OPTS}" \
-    /tmp/ycsb-workload-a.txt \
-    "${OUT}/stats.ycsb.${i}.json" \
-    "${OUT}/op-latency.ycsb.${i}.json" \
-    "${OUT}/op-latency-raw.ycsb.${i}.csv" \
-    "${OUT}/rocksdb-LOG.ycsb.${i}.txt"
-done
+kill -INT "${IOSTAT_PID}" 2>/dev/null || true
+wait "${IOSTAT_PID}" 2>/dev/null || true
+rm -f /tmp/ycsb-workload-a-10x.txt
 
 # --------------------------------------------------------------------------
 # Verification summary
 # --------------------------------------------------------------------------
 echo ""
 echo "===== Verification ====="
-for i in $(seq 1 "${RUNS}"); do
-  for tag in tectonic ycsb; do
-    csv="${OUT}/op-latency-raw.${tag}.${i}.csv"
-    if [[ -f "${csv}" ]]; then
-      header=$(head -1 "${csv}")
-      rows=$(( $(wc -l < "${csv}") - 1 ))
-      echo "  ${csv##*/}: header='${header}', rows=${rows}"
-    else
-      echo "  MISSING: ${csv}" >&2
-    fi
-  done
+for tag in tectonic ycsb; do
+  csv="${OUT}/op-latency-raw.${tag}.1.csv"
+  if [[ -f "${csv}" ]]; then
+    header=$(head -1 "${csv}")
+    rows=$(( $(wc -l < "${csv}") - 1 ))
+    echo "  ${csv##*/}: header='${header}', rows=${rows}"
+  else
+    echo "  MISSING: ${csv}" >&2
+  fi
 done
 
 echo ""

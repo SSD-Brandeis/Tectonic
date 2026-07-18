@@ -452,21 +452,19 @@ def setup_db(db, image_ref=None):
                 break
             time.sleep(2)
 
-def reset_db(db):
-    if db == "rocksdb":
-        if os.path.exists(ROCKSDB_DIR):
-            shutil.rmtree(ROCKSDB_DIR)
-        os.makedirs(ROCKSDB_DIR, exist_ok=True)
-    elif db == "redis":
-        run(["docker", "exec", "sim-redis", "redis-cli", "flushall"], capture=True)
-    elif db == "cassandra":
-        run(["docker", "exec", "sim-cassandra", "cqlsh",
-             "-e", "DROP KEYSPACE IF EXISTS tectonic;"], capture=True, check=False)
-        time.sleep(1)
-    elif db == "scylla":
-        run(["docker", "exec", "sim-scylla", "cqlsh",
-             "-e", "DROP KEYSPACE IF EXISTS tectonic;"], capture=True, check=False)
-        time.sleep(1)
+def drop_caches():
+    run(["sudo", "sh", "-c", "sync; echo 3 > /proc/sys/vm/drop_caches"],
+        capture=True, check=False)
+    log("  [cache] dropped page cache / dentries / inodes")
+
+def restart_db(db, image_ref=None):
+    """Fully restart the db (fresh container / fresh data dir) so YCSB and
+    Tectonic phases both see identical cold state — avoids one-time startup
+    costs (e.g. Scylla commitlog preallocation) leaking into whichever
+    phase happens to run first."""
+    log(f"  [restart] restarting {db} for a cold, comparable state")
+    setup_db(db, image_ref)
+    drop_caches()
 
 def teardown_db(db):
     if db == "rocksdb":
@@ -610,48 +608,54 @@ def run_tectonic_execute_with_iostat(trace_path, db):
 # =============================================================================
 #  STAGES 4+5 — Run one (db, scale) pair
 # =============================================================================
-def run_one_db(db, scale, ycsb_trace, tec_trace):
+def run_one_db(db, scale, ycsb_trace, tec_trace, image_ref=None, workloads=("ycsb", "tectonic")):
     scale_lbl = f"2^{scale.bit_length()-1}"
     prefix    = f"{OUT_DIR}/{db}_scale{scale}"
     result    = {}
 
     # --- YCSB workload run ---
-    banner("STAGE 4", f"Execute YCSB trace on {db}  [{scale_lbl}]")
-    log(f"  trace  : {ycsb_trace}")
-    reset_db(db)
+    if "ycsb" in workloads:
+        banner("STAGE 4", f"Execute YCSB trace on {db}  [{scale_lbl}]")
+        log(f"  trace  : {ycsb_trace}")
+        restart_db(db, image_ref)
 
-    lat, wt, tp, op_metrics, overall, timeseries, io_totals = run_tectonic_execute_with_iostat(ycsb_trace, db)
-    result["ycsb"] = {
-        "latency_us": lat, "wall_time_s": wt, "throughput_ops_s": tp,
-        "io_bytes_total": io_totals
-    }
-    if op_metrics:
-        result["ycsb"]["operation_metrics"] = op_metrics
-    if overall:
-        result["ycsb"]["overall_metrics"] = overall
+        lat, wt, tp, op_metrics, overall, timeseries, io_totals = run_tectonic_execute_with_iostat(ycsb_trace, db)
+        result["ycsb"] = {
+            "latency_us": lat, "wall_time_s": wt, "throughput_ops_s": tp,
+            "io_bytes_total": io_totals
+        }
+        if op_metrics:
+            result["ycsb"]["operation_metrics"] = op_metrics
+        if overall:
+            result["ycsb"]["overall_metrics"] = overall
 
-    save_iostat_csv(timeseries, f"{prefix}_ycsb_io_bytes.csv")
-    log(f"\n  YCSB:  wall={wt:.2f}s  tput={tp:,.0f} ops/s  read={io_totals['total_read_mb']:.2f}MB  write={io_totals['total_write_mb']:.2f}MB")
-    _print_lat(lat)
+        save_iostat_csv(timeseries, f"{prefix}_ycsb_io_bytes.csv")
+        log(f"\n  YCSB:  wall={wt:.2f}s  tput={tp:,.0f} ops/s  read={io_totals['total_read_mb']:.2f}MB  write={io_totals['total_write_mb']:.2f}MB")
+        _print_lat(lat)
+    else:
+        log("\n  [skip] YCSB execution phase not requested (--workloads)")
 
     # --- Tectonic workload run ---
-    banner("STAGE 5", f"Execute Tectonic trace on {db}  [{scale_lbl}]  (same driver)")
-    log(f"  trace  : {tec_trace}")
-    reset_db(db)
+    if "tectonic" in workloads:
+        banner("STAGE 5", f"Execute Tectonic trace on {db}  [{scale_lbl}]  (same driver)")
+        log(f"  trace  : {tec_trace}")
+        restart_db(db, image_ref)
 
-    lat, wt, tp, op_metrics, overall, timeseries, io_totals = run_tectonic_execute_with_iostat(tec_trace, db)
-    result["tectonic"] = {
-        "latency_us": lat, "wall_time_s": wt, "throughput_ops_s": tp,
-        "io_bytes_total": io_totals
-    }
-    if op_metrics:
-        result["tectonic"]["operation_metrics"] = op_metrics
-    if overall:
-        result["tectonic"]["overall_metrics"] = overall
+        lat, wt, tp, op_metrics, overall, timeseries, io_totals = run_tectonic_execute_with_iostat(tec_trace, db)
+        result["tectonic"] = {
+            "latency_us": lat, "wall_time_s": wt, "throughput_ops_s": tp,
+            "io_bytes_total": io_totals
+        }
+        if op_metrics:
+            result["tectonic"]["operation_metrics"] = op_metrics
+        if overall:
+            result["tectonic"]["overall_metrics"] = overall
 
-    save_iostat_csv(timeseries, f"{prefix}_tectonic_io_bytes.csv")
-    log(f"\n  Tectonic:  wall={wt:.2f}s  tput={tp:,.0f} ops/s  read={io_totals['total_read_mb']:.2f}MB  write={io_totals['total_write_mb']:.2f}MB")
-    _print_lat(lat)
+        save_iostat_csv(timeseries, f"{prefix}_tectonic_io_bytes.csv")
+        log(f"\n  Tectonic:  wall={wt:.2f}s  tput={tp:,.0f} ops/s  read={io_totals['total_read_mb']:.2f}MB  write={io_totals['total_write_mb']:.2f}MB")
+        _print_lat(lat)
+    else:
+        log("\n  [skip] Tectonic execution phase not requested (--workloads)")
 
     return result
 
@@ -686,19 +690,24 @@ def main():
         description="YCSB vs Tectonic similarity with disk bytes tracking")
     parser.add_argument("--db", nargs="+", choices=DATABASES, default=DATABASES)
     parser.add_argument("--scales", nargs="+", type=int, default=SCALES)
+    parser.add_argument("--workloads", nargs="+", choices=["ycsb", "tectonic"],
+                         default=["ycsb", "tectonic"],
+                         help="Which execution phase(s) to run against the target db. "
+                              "Trace generation/comparison always runs regardless.")
     args = parser.parse_args()
 
     os.makedirs(OUT_DIR, exist_ok=True)
     global _log_fh
     _log_fh = open(LOG_PATH, "w")
 
-    scales, dbs = args.scales, args.db
+    scales, dbs, workloads = args.scales, args.db, args.workloads
 
     log(SEP)
     log("  YCSB vs Tectonic Similarity with Disk I/O bytes tracking (iostat)")
     log(f"  output dir   : {OUT_DIR}")
     log(f"  databases    : {dbs}")
     log(f"  scales       : {[f'2^{s.bit_length()-1}={s:,}' for s in scales]}")
+    log(f"  workloads    : {workloads}")
     log(f"  iostat device: {IOSTAT_DEVICE}")
     log(SEP)
 
@@ -764,12 +773,13 @@ def main():
         for db in todo:
             log(f"\n{'='*70}\n  DB={db}  SCALE={slbl}\n{'='*70}")
             check_disk(DB_RUN_MIN_GB, f"before database run {db} {slbl}")
-            setup_db(db, image_lock.get(db))
-            db_res = run_one_db(db, scale, ycsb_trace, tec_trace)
+            db_res = run_one_db(db, scale, ycsb_trace, tec_trace, image_lock.get(db), workloads)
             db_res["trace_comparison"] = comparison
             teardown_db(db)
 
-            results["results"].setdefault(db, {})[skey] = db_res
+            existing = results["results"].setdefault(db, {}).get(skey, {})
+            existing.update(db_res)
+            results["results"][db][skey] = existing
             write_json_atomic(RESULTS_PATH, results)
             log(f"\n  [checkpoint] saved -> {RESULTS_PATH}")
             trigger_plot()

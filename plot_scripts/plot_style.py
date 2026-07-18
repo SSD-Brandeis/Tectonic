@@ -27,6 +27,7 @@ def to_small_caps(text):
     s = re.sub(r'\bmillion\b', 'M', s)
     s = re.sub(r'\bseconds\b', 's', s)
     s = re.sub(r'\bmb\b', 'MB', s)
+    s = re.sub(r'\bgb\b', 'GB', s)
     return s
 
 def format_label(text):
@@ -45,7 +46,7 @@ def format_number_clean(y):
 
 # Unified styles for YCSB, Tectonic, and KVBench
 BAR_STYLES = {
-    "Tectonic": {"facecolor": "tab:red", "edgecolor": "tab:red", "hatch": ""},
+    "Tectonic": {"facecolor": "tab:blue", "edgecolor": "tab:blue", "hatch": ""},
     "Tectonic Unique": {"facecolor": "tab:orange", "edgecolor": "tab:orange", "hatch": ""},
     "YCSB": {"facecolor": "white", "edgecolor": "grey", "hatch": "///"},
     "KVBench": {"facecolor": "white", "edgecolor": "tab:blue", "hatch": "\\\\"},
@@ -53,11 +54,11 @@ BAR_STYLES = {
 }
 
 LINE_STYLES = {
-    "Tectonic": {"color": "tab:red", "linestyle": "-.", "marker": "s", "markersize": 8, "markerfacecolor": "none"},
-    "Tectonic Unique": {"color": "tab:orange", "linestyle": ":", "marker": "o", "markersize": 8, "markerfacecolor": "none"},
-    "YCSB": {"color": "grey", "linestyle": "-", "marker": "^", "markersize": 8, "markerfacecolor": "none"},
-    "KVBench": {"color": "tab:blue", "linestyle": "--", "marker": "v", "markersize": 8, "markerfacecolor": "none"},
-    "KVbench": {"color": "tab:blue", "linestyle": "--", "marker": "v", "markersize": 8, "markerfacecolor": "none"}
+    "Tectonic": {"color": "tab:blue", "linestyle": "-.", "marker": "s", "markersize": 15, "markerfacecolor": "none"},
+    "Tectonic Unique": {"color": "tab:orange", "linestyle": ":", "marker": "o", "markersize": 15, "markerfacecolor": "none"},
+    "YCSB": {"color": "grey", "linestyle": "-", "marker": "^", "markersize": 15, "markerfacecolor": "none"},
+    "KVBench": {"color": "tab:blue", "linestyle": "--", "marker": "v", "markersize": 15, "markerfacecolor": "none"},
+    "KVbench": {"color": "tab:blue", "linestyle": "--", "marker": "v", "markersize": 15, "markerfacecolor": "none"}
 }
 
 def get_seq_par_style(generator, setting):
@@ -97,14 +98,14 @@ def get_seq_par_line_style(generator, setting):
     return base
 
 # Premium aesthetic defaults
-plt.rcParams["font.size"] = 20
-plt.rcParams["axes.titlesize"] = 20
-plt.rcParams["axes.labelsize"] = 20
-plt.rcParams["xtick.labelsize"] = 20
-plt.rcParams["ytick.labelsize"] = 20
-plt.rcParams["legend.fontsize"] = 20
+plt.rcParams["font.size"] = 22
+plt.rcParams["axes.titlesize"] = 22
+plt.rcParams["axes.labelsize"] = 22
+plt.rcParams["xtick.labelsize"] = 22
+plt.rcParams["ytick.labelsize"] = 22
+plt.rcParams["legend.fontsize"] = 22
 plt.rcParams["legend.frameon"] = False
-plt.rcParams["figure.titlesize"] = 20
+plt.rcParams["figure.titlesize"] = 22
 plt.rcParams["savefig.dpi"] = 300
 plt.rcParams["axes.grid"] = False
 
@@ -253,15 +254,13 @@ def save_legend(fig_or_ax, path_without_ext):
     fig_leg.set_size_inches(bbox.width + 0.4, bbox.height + 0.4)
     
     fig_leg.savefig(f"{path_without_ext}_legend.pdf", bbox_inches='tight')
-    fig_leg.savefig(f"{path_without_ext}_legend.png", bbox_inches='tight', dpi=300)
     plt.close(fig_leg)
 
 def save_fig(fig, path_without_ext):
     """
-    Saves the figure in both PDF and PNG formats.
+    Saves the figure in PDF format only.
     """
     plt.tight_layout()
     fig.savefig(f"{path_without_ext}.pdf", bbox_inches="tight")
-    fig.savefig(f"{path_without_ext}.png", bbox_inches="tight", dpi=300)
     plt.close(fig)
 

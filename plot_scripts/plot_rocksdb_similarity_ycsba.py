@@ -1,19 +1,22 @@
 #!/usr/bin/env python3
 import os
+import sys
 import json
 import re
+import csv
+from collections import defaultdict
 from pathlib import Path
 import numpy as np
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.font_manager as font_manager
-
 # Font setup via plot_style
 import plot_style
 
 
-STATS_DIR = Path("/home/cc/Tectonic/data/rocksdb_similarity_ycsba")
+STATS_DIR = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("/home/cc/Tectonic/data/rocksdb_similarity_ycsba")
+OUTPUT_NAME = sys.argv[2] if len(sys.argv) > 2 else "rocksdb_similarity_ycsba_accuracy"
 OUTPUT_DIR = Path("/home/cc/Tectonic/experiment_plots")
 OUTPUT_DIR.mkdir(exist_ok=True)
 
@@ -23,6 +26,14 @@ CONVERT_TO_MILLION = 1_000_000
 COUNT_LINE = re.compile(r"^(rocksdb\.[A-Za-z0-9\.\-_]+)\s+COUNT\s*:\s*([0-9]+)\s*$")
 COUNT_IN_METRIC = re.compile(r"^(rocksdb\.[A-Za-z0-9\.\-_]+)\s+.*?\bCOUNT\s*:\s*([0-9]+)\b")
 
+def select_disk(disks):
+    # Loop devices (snap/squashfs mounts) are always idle; skip them so we
+    # pick the real backing disk regardless of its position/name in the list.
+    candidates = [d for d in disks if not d.get("disk_device", "").startswith("loop")]
+    if candidates:
+        return candidates[0]
+    return disks[0] if disks else {}
+
 def load_iostat(path):
     with open(path) as f:
         data = json.load(f)
@@ -30,11 +41,11 @@ def load_iostat(path):
     # disk stats list
     # kB_read/s to MB/s: divide by 1024.0
     reads = [
-        float(s.get("disk", [{}])[0].get("kB_read/s", 0.0)) / 1024.0
+        float(select_disk(s.get("disk", [])).get("kB_read/s", 0.0)) / 1024.0
         for s in stats
     ]
     writes = [
-        float(s.get("disk", [{}])[0].get("kB_wrtn/s", 0.0)) / 1024.0
+        float(select_disk(s.get("disk", [])).get("kB_wrtn/s", 0.0)) / 1024.0
         for s in stats
     ]
     return np.array(reads), np.array(writes)
@@ -52,45 +63,30 @@ def average_iostat_runs(runs):
     avg_writes = np.mean([w[:min_len] for _, w in runs], axis=0)
     return avg_reads, avg_writes
 
-def parse_latency_file(filepath):
-    data = {}
-    current_op = None
-    with open(filepath, 'r') as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            if ',' not in line:
-                op_name = line.split(' ')[0].lower() # e.g. "insert", "point" -> "pointquery", "update"
-                if op_name == "point":
-                    op_name = "pointquery"
-                current_op = op_name
-                data[current_op] = {}
-            else:
-                parts = line.split(',')
-                if len(parts) == 2 and current_op is not None:
-                    pct = parts[0]
-                    # val is in ns, convert to us (microseconds)
-                    val = float(parts[1]) / 1000.0
-                    data[current_op][pct] = val
-    return data
+RAW_OP_TO_KEY = {"insert": "insert", "update": "update", "point_query": "pointquery"}
+
+def load_raw_latencies(system):
+    # op_type -> list of latency_ns, pooled across all raw CSV runs for this system
+    op_latencies_ns = defaultdict(list)
+    paths = sorted(STATS_DIR.glob(f"op-latency-raw.{system}.*.csv"))
+    for p in paths:
+        with open(p, newline='') as f:
+            reader = csv.reader(f)
+            next(reader, None)  # header: op_type,latency_ns
+            for op_type, latency_ns in reader:
+                op_latencies_ns[op_type].append(latency_ns)
+    return {op: np.array(vals, dtype=np.int64) for op, vals in op_latencies_ns.items()}
 
 def average_latency_percentiles(system):
-    op_stats = {"insert": [], "pointquery": [], "update": []}
-    paths = sorted(STATS_DIR.glob(f"op-latency.{system}.*.json"))
-    for p in paths:
-        run_data = parse_latency_file(p)
-        for op in op_stats:
-            if op in run_data:
-                op_stats[op].append(run_data[op])
-    
+    raw = load_raw_latencies(system)
     avg_data = {}
-    for op in op_stats:
-        if not op_stats[op]:
+    for op_type, key in RAW_OP_TO_KEY.items():
+        samples_ns = raw.get(op_type)
+        if samples_ns is None or samples_ns.size == 0:
             continue
-        avg_data[op] = {}
-        for pct in ["p0", "p25", "p50", "p75", "p99"]:
-            avg_data[op][pct] = np.mean([run[pct] for run in op_stats[op]])
+        samples_us = samples_ns / 1000.0  # ns -> us
+        p0, p25, p50, p75, p99 = np.percentile(samples_us, [0, 25, 50, 75, 99])
+        avg_data[key] = {"p0": p0, "p25": p25, "p50": p50, "p75": p75, "p99": p99}
     return avg_data
 
 def parse_stats_file(path: Path) -> dict:
@@ -124,23 +120,43 @@ def avg_metrics(system: str) -> dict:
         raise RuntimeError(f"No parsable stats for system '{system}'")
     return {k: v / count for k, v in acc.items()}
 
+FIGSIZE = (5, 3.6)
+
+def save_fixed_size(fig, path):
+    # Lock every subplot PDF to exactly FIGSIZE inches, regardless of dataset
+    # content: bbox_inches="tight" crops to the rendered content extent, which
+    # drifts slightly between datasets (different tick-label digit counts,
+    # etc.), so page sizes end up inconsistent across runs. Fixed margins
+    # keep the page size identical while still leaving room for labels.
+    fig.subplots_adjust(left=0.28, right=0.97, bottom=0.24, top=0.97)
+    fig.savefig(path)
+    plt.close(fig)
+
+def nudge_zero_xtick(ax):
+    # Separate the x-axis "0" label from the y-axis "0" label at the origin
+    # corner by left-aligning it (text starts at the tick, extends right)
+    # instead of the default center alignment.
+    for tick_val, label in zip(ax.get_xticks(), ax.get_xticklabels()):
+        if abs(tick_val) < 1e-9:
+            label.set_ha('left')
+
 def main():
     print("Parsing experiment data...")
-    
+
     # 1. IOSTAT throughput over time (Subplot A)
     tec_iostat_runs = collect_iostat_runs("tectonic")
     ycsb_iostat_runs = collect_iostat_runs("ycsb")
     r_tec, w_tec = average_iostat_runs(tec_iostat_runs)
     r_ycsb, w_ycsb = average_iostat_runs(ycsb_iostat_runs)
-    
+
     # 2. Latency boxplots (Subplot B)
     tec_latency = average_latency_percentiles("tectonic")
     ycsb_latency = average_latency_percentiles("ycsb")
-    
+
     # 3. Read/Write Data Movement (Subplot C)
     m_tec = avg_metrics("tectonic")
     m_ycsb = avg_metrics("ycsb")
-    
+
     # Calculate bytes
     bytes_read_y = (m_ycsb.get("rocksdb.bytes.read", 0) + m_ycsb.get("rocksdb.compact.read.bytes", 0)) / BYTE_TO_GB
     bytes_written_y = (
@@ -149,7 +165,7 @@ def main():
         + m_ycsb.get("rocksdb.compact.write.bytes", 0)
     ) / BYTE_TO_GB
     ycsb_bytes_vals = np.array([bytes_read_y, bytes_written_y])
-    
+
     bytes_read_t = (m_tec.get("rocksdb.bytes.read", 0) + m_tec.get("rocksdb.compact.read.bytes", 0)) / BYTE_TO_GB
     bytes_written_t = (
         m_tec.get("rocksdb.wal.bytes", 0)
@@ -157,27 +173,27 @@ def main():
         + m_tec.get("rocksdb.compact.write.bytes", 0)
     ) / BYTE_TO_GB
     tec_bytes_vals = np.array([bytes_read_t, bytes_written_t])
-    
+
     # 4. Cache hit/miss counts (Subplot D)
     ycsb_cache_vals = np.array([
         m_ycsb.get("rocksdb.block.cache.hit", 0),
         m_ycsb.get("rocksdb.block.cache.miss", 0)
     ]) / CONVERT_TO_MILLION
-    
+
     tec_cache_vals = np.array([
         m_tec.get("rocksdb.block.cache.hit", 0),
         m_tec.get("rocksdb.block.cache.miss", 0)
     ]) / CONVERT_TO_MILLION
 
     print("Data parsing complete. Plotting...")
-    fig, axs = plt.subplots(1, 4, figsize=(18, 4.5))
-    
+    saved_paths = []
+
     # ------------------ (A) THROUGHPUT OVER TIME ------------------
-    ax = axs[0]
+    fig, ax = plt.subplots(figsize=FIGSIZE)
     n_tec = len(r_tec)
     n_ycsb = len(r_ycsb)
     n = min(n_tec, n_ycsb)
-    
+
     # Apply rolling average smoothing to reduce compaction noise
     WINDOW = 3  # 3-second rolling average
     def smooth(arr, window=WINDOW):
@@ -186,33 +202,52 @@ def main():
         kernel = np.ones(window) / window
         # 'same' mode keeps the output length equal to input length
         return np.convolve(arr, kernel, mode='same')
-    
+
     sr_ycsb = smooth(r_ycsb[:n])
     sw_ycsb = smooth(w_ycsb[:n])
     sr_tec  = smooth(r_tec[:n])
     sw_tec  = smooth(w_tec[:n])
-    
-    # Decimate marker frequency so they don't overlap, using markevery
-    x = np.arange(n)
-    
-    # Apply standard LINE_STYLES
-    ax.plot(x, sr_ycsb, label="read (YCSB)", markevery=max(1, n//10), **{**plot_style.LINE_STYLES['YCSB'], "linestyle": "-"})
-    ax.plot(x, sw_ycsb, label="write (YCSB)", markevery=max(1, n//10), **{**plot_style.LINE_STYLES['YCSB'], "linestyle": "--"})
-    ax.plot(x, sr_tec, label="read (Tectonic)", markevery=max(1, n//10), **{**plot_style.LINE_STYLES['Tectonic'], "linestyle": "-"})
-    ax.plot(x, sw_tec, label="write (Tectonic)", markevery=max(1, n//10), **{**plot_style.LINE_STYLES['Tectonic'], "linestyle": "--"})
-    
+
+    # Each iostat sample is the average throughput over the 1-second interval
+    # ending at that second, so sample i truthfully belongs at x=i+1. Prepend
+    # a real (0, 0) point at x=0: zero bytes have moved before the run starts.
+    x = np.concatenate([[0], np.arange(1, n + 1)])
+    sr_ycsb = np.concatenate([[0.0], sr_ycsb])
+    sw_ycsb = np.concatenate([[0.0], sw_ycsb])
+    sr_tec  = np.concatenate([[0.0], sr_tec])
+    sw_tec  = np.concatenate([[0.0], sw_tec])
+
+    # Apply standard LINE_STYLES, but without markers and with a thicker line
+    # for this plot specifically (too many samples for markers to read well).
+    no_marker_style = lambda key: {**plot_style.LINE_STYLES[key], "marker": None,
+                                    "linewidth": plt.rcParams["lines.linewidth"] + 1}
+    ax.plot(x, sr_ycsb, label="read (YCSB)", **{**no_marker_style('YCSB'), "linestyle": "-"})
+    ax.plot(x, sw_ycsb, label="write (YCSB)", **{**no_marker_style('YCSB'), "linestyle": "--"})
+    ax.plot(x, sr_tec, label="read (X-Bench)", **{**no_marker_style('Tectonic'), "linestyle": "-"})
+    ax.plot(x, sw_tec, label="write (X-Bench)", **{**no_marker_style('Tectonic'), "linestyle": "--"})
+
     ax.set_xlabel(plot_style.format_label("time (s)"))
-    ax.set_ylabel(plot_style.format_label("MB/s"))
-    ax.set_title(plot_style.format_label("(a) throughput over time"), pad=10)
-    ax.text(-0.15, 1.05, plot_style.format_label("(a)"), transform=ax.transAxes, fontsize=16, fontweight='bold', va='top', ha='right')
+    ax.set_ylabel(plot_style.format_label("bytes transferred (MB/s)"))
+    # This label is long enough that, centered by default, its top overflows
+    # the fixed page's slim top margin and gets clipped. Shift the label's
+    # vertical anchor down so it fits within the page.
+    ax.yaxis.set_label_coords(-0.16, 0.4)
     plot_style.apply_plot_style(ax)
-    
+    # Give the left edge a little breathing room so the line/markers at x=0
+    # aren't drawn flush against the spine (which visually "cuts off" them).
+    ax.set_xlim(left=-0.03 * n)
+    nudge_zero_xtick(ax)
+    throughput_handles, throughput_labels = ax.get_legend_handles_labels()
+    path = OUTPUT_DIR / f"{OUTPUT_NAME}_throughput.pdf"
+    save_fixed_size(fig, path)
+    saved_paths.append(path)
+
     # ------------------ (B) OP LATENCY BOXPLOTS ------------------
-    ax = axs[1]
+    fig, ax = plt.subplots(figsize=FIGSIZE)
     operations = ["insert", "pointquery", "update"]
     positions = np.arange(len(operations))
-    width = 0.35
-    
+    width = 0.25
+
     ycsb_box_stats = []
     tec_box_stats = []
     for op in operations:
@@ -222,7 +257,7 @@ def main():
             "q3": ycsb_latency[op]["p75"],
             "whislo": ycsb_latency[op]["p0"],
             "whishi": ycsb_latency[op]["p99"],
-            "label": "insert" if op == "insert" else ("point\nquery" if op == "pointquery" else "update")
+            "label": "insert" if op == "insert" else ("PQ" if op == "pointquery" else "update")
         })
         tec_box_stats.append({
             "med": tec_latency[op]["p50"],
@@ -230,9 +265,9 @@ def main():
             "q3": tec_latency[op]["p75"],
             "whislo": tec_latency[op]["p0"],
             "whishi": tec_latency[op]["p99"],
-            "label": "insert" if op == "insert" else ("point\nquery" if op == "pointquery" else "update")
+            "label": "insert" if op == "insert" else ("PQ" if op == "pointquery" else "update")
         })
-        
+
     bp_ycsb = ax.bxp(ycsb_box_stats, positions=positions - width/2, widths=0.25, patch_artist=True, showfliers=False)
     for patch in bp_ycsb["boxes"]:
         patch.set_facecolor("white")
@@ -241,80 +276,72 @@ def main():
     for element in ["whiskers", "caps", "medians"]:
         for item in bp_ycsb[element]:
             item.set_color("black")
-            
+
     bp_tec = ax.bxp(tec_box_stats, positions=positions + width/2, widths=0.25, patch_artist=True, showfliers=False)
     for patch in bp_tec["boxes"]:
-        patch.set_facecolor("tab:red")
-        patch.set_edgecolor("tab:red")
+        patch.set_facecolor(plot_style.BAR_STYLES['Tectonic']["facecolor"])
+        patch.set_edgecolor(plot_style.BAR_STYLES['Tectonic']["edgecolor"])
     for element in ["whiskers", "caps", "medians"]:
         for item in bp_tec[element]:
             item.set_color("black")
-            
+
     ax.set_xticks(positions)
-    ax.set_xticklabels(["insert", "point\nquery", "update"])
+    ax.set_xticklabels(["insert", "PQ", "update"])
     ax.set_ylabel(plot_style.format_label("latency (us)"))
-    ax.set_title(plot_style.format_label("(b) latency boxplots"), pad=10)
-    ax.text(-0.15, 1.05, plot_style.format_label("(b)"), transform=ax.transAxes, fontsize=16, fontweight='bold', va='top', ha='right')
     plot_style.apply_plot_style(ax)
- 
+    path = OUTPUT_DIR / f"{OUTPUT_NAME}_latency.pdf"
+    save_fixed_size(fig, path)
+    saved_paths.append(path)
+
     # ------------------ (C) DATA MOVEMENT ------------------
-    ax = axs[2]
+    DATA_MOVEMENT_FIGSIZE = (2, 3.6)  # narrower than the shared FIGSIZE
+    fig, ax = plt.subplots(figsize=DATA_MOVEMENT_FIGSIZE)
     categories = ["read", "write"]
-    x = np.arange(len(categories))
-    
+    category_spacing = 0.55  # tighter gap between the two bar groups
+    x = np.arange(len(categories)) * category_spacing
+
     ax.bar(x - width/2, ycsb_bytes_vals, width, label="YCSB", **plot_style.BAR_STYLES['YCSB'])
-    ax.bar(x + width/2, tec_bytes_vals, width, label="Tectonic", **plot_style.BAR_STYLES['Tectonic'])
-    
+    ax.bar(x + width/2, tec_bytes_vals, width, label="X-Bench", **plot_style.BAR_STYLES['Tectonic'])
+
     ax.set_xticks(x)
     ax.set_xticklabels(categories)
+    edge_pad = 0.12  # snug against the bars to minimize edge whitespace
+    ax.set_xlim(x[0] - width - edge_pad, x[-1] + width + edge_pad)
     ax.set_ylabel(plot_style.format_label("bytes (GB)"))
-    ax.set_title(plot_style.format_label("(c) data movement"), pad=10)
-    ax.text(-0.15, 1.05, plot_style.format_label("(c)"), transform=ax.transAxes, fontsize=16, fontweight='bold', va='top', ha='right')
     plot_style.apply_plot_style(ax)
-    
+    bar_handles, bar_labels = ax.get_legend_handles_labels()
+    path = OUTPUT_DIR / f"{OUTPUT_NAME}_data_movement.pdf"
+    save_fixed_size(fig, path)
+    saved_paths.append(path)
+
     # ------------------ (D) CACHE BEHAVIOR ------------------
-    ax = axs[3]
+    fig, ax = plt.subplots(figsize=FIGSIZE)
     categories = ["cache hit", "cache miss"]
     x = np.arange(len(categories))
-    
-    ax.bar(x - width/2, ycsb_cache_vals, width, **plot_style.BAR_STYLES['YCSB'])
-    ax.bar(x + width/2, tec_cache_vals, width, **plot_style.BAR_STYLES['Tectonic'])
-    
+
+    ax.bar(x - width/2, ycsb_cache_vals, width, label="YCSB", **plot_style.BAR_STYLES['YCSB'])
+    ax.bar(x + width/2, tec_cache_vals, width, label="X-Bench", **plot_style.BAR_STYLES['Tectonic'])
+
     ax.set_xticks(x)
     ax.set_xticklabels(categories)
     ax.set_ylabel(plot_style.format_label("count (millions)"))
-    ax.set_title(plot_style.format_label("(d) cache behavior"), pad=10)
-    ax.text(-0.15, 1.05, plot_style.format_label("(d)"), transform=ax.transAxes, fontsize=16, fontweight='bold', va='top', ha='right')
     plot_style.apply_plot_style(ax)
-    
-    # ------------------ LEGEND ------------------
-    # Generate unified legend
-    # We collect legend handles from ax0 (Throughput) and ax2 (Data Movement)
-    handles0, labels0 = axs[0].get_legend_handles_labels()
-    # Add dummy proxy artists for YCSB / Tectonic bar chart legend
-    import matplotlib.patches as mpatches
-    ycsb_patch = mpatches.Patch(facecolor="white", edgecolor="grey", hatch="///", label="YCSB")
-    tec_patch = mpatches.Patch(facecolor="tab:red", edgecolor="tab:red", label="Tectonic")
-    
-    all_handles = handles0 + [ycsb_patch, tec_patch]
-    all_labels = labels0 + ["YCSB", "Tectonic"]
-    
-    fig.legend(all_handles, all_labels, loc="upper center", ncol=6, bbox_to_anchor=(0.5, 1.02), frameon=False)
-    
-    pdf_path = OUTPUT_DIR / "rocksdb_similarity_ycsba_accuracy.pdf"
-    png_path = OUTPUT_DIR / "rocksdb_similarity_ycsba_accuracy.png"
-    
-    # Save the legend separately
-    plot_style.save_legend(fig, str(OUTPUT_DIR / "rocksdb_similarity_ycsba_accuracy"))
-    
-    plt.tight_layout()
-    # Pull layout down slightly to make room for unified legend if it is present (it is removed now, so we keep layout tight)
-    plt.savefig(pdf_path, bbox_inches="tight")
-    plt.savefig(png_path, bbox_inches="tight")
-    plt.close()
-    
-    print(f"Plot saved to: {pdf_path}")
-    print(f"Plot saved to: {png_path}")
+    path = OUTPUT_DIR / f"{OUTPUT_NAME}_cache.pdf"
+    save_fixed_size(fig, path)
+    saved_paths.append(path)
+
+    # ------------------ LEGEND (separate PDF, shared across subplots) ------------------
+    all_handles = list(throughput_handles) + list(bar_handles)
+    all_labels = list(throughput_labels) + list(bar_labels)
+    legend_fig, legend_ax = plt.subplots()
+    legend_ax.axis("off")
+    legend_ax.legend(all_handles, all_labels, loc="center", ncol=len(all_labels), frameon=False)
+    plot_style.save_legend(legend_ax, str(OUTPUT_DIR / OUTPUT_NAME))
+    plt.close(legend_fig)
+    saved_paths.append(OUTPUT_DIR / f"{OUTPUT_NAME}_legend.pdf")
+
+    for path in saved_paths:
+        print(f"Plot saved to: {path}")
 
 if __name__ == "__main__":
     main()

@@ -179,7 +179,7 @@ def apply_plot_style(ax, title=None, xlabel=None, ylabel=None):
         spine.set_visible(True)
         spine.set_color("black")
         spine.set_linewidth(1.0)
-    ax.tick_params(colors="black", which="both", direction="in")
+    ax.tick_params(colors="black", which="both", direction="out")
 
 def save_legend(fig_or_ax, path_without_ext):
     """

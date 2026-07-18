@@ -752,38 +752,13 @@ fn pregenerate_keys_parallel(
     if count == 0 {
         return Vec::new();
     }
-    let num_threads = std::thread::available_parallelism()
-        .map(|p| p.get())
-        .unwrap_or(4)
-        .min(count);
-    let chunk_size = count / num_threads;
-    let remainder = count % num_threads;
-
-    let mut handles = Vec::new();
-    for t in 0..num_threads {
-        let expr = expr.clone();
-        let char_set = char_set;
-        let thread_count = chunk_size + if t == 0 { remainder } else { 0 };
-        
-        let handle = std::thread::spawn(move || {
-            let mut rng = Xoshiro256Plus::from_os_rng();
-            let mut keys = Vec::with_capacity(thread_count);
-            for _ in 0..thread_count {
-                let key = expr.generate(&mut rng, char_set, thread_id);
-                keys.push(key);
-            }
-            keys
-        });
-        handles.push(handle);
+    let mut rng = Xoshiro256Plus::from_os_rng();
+    let mut keys = Vec::with_capacity(count);
+    for _ in 0..count {
+        let key = expr.generate(&mut rng, char_set, thread_id);
+        keys.push(key);
     }
-
-    let mut all_keys = Vec::with_capacity(count);
-    for h in handles {
-        if let Ok(keys) = h.join() {
-            all_keys.extend(keys);
-        }
-    }
-    all_keys
+    keys
 }
 
 fn pregenerate_range_queries_parallel(
@@ -797,41 +772,15 @@ fn pregenerate_range_queries_parallel(
     if count == 0 {
         return Vec::new();
     }
-    let num_threads = std::thread::available_parallelism()
-        .map(|p| p.get())
-        .unwrap_or(4)
-        .min(count);
-    let chunk_size = count / num_threads;
-    let remainder = count % num_threads;
-
-    let mut handles = Vec::new();
-    for t in 0..num_threads {
-        let brq = brq.clone();
-        let char_set = char_set;
-        let default_key = default_key.cloned();
-        let thread_count = chunk_size + if t == 0 { remainder } else { 0 };
-        
-        let handle = std::thread::spawn(move || {
-            let mut rng = Xoshiro256Plus::from_os_rng();
-            let mut queries = Vec::with_capacity(thread_count);
-            for _ in 0..thread_count {
-                let key_expr = brq.key.as_ref().or(default_key.as_ref()).expect("No key or default key set for blind range queries");
-                let key = key_expr.generate(&mut rng, brq.character_set.or(char_set), thread_id);
-                let range_count = brq.get_range_length(&mut rng, total_entries);
-                queries.push((key, range_count));
-            }
-            queries
-        });
-        handles.push(handle);
+    let mut rng = Xoshiro256Plus::from_os_rng();
+    let mut queries = Vec::with_capacity(count);
+    for _ in 0..count {
+        let key_expr = brq.key.as_ref().or(default_key).expect("No key or default key set for blind range queries");
+        let key = key_expr.generate(&mut rng, brq.character_set.or(char_set), thread_id);
+        let range_count = brq.get_range_length(&mut rng, total_entries);
+        queries.push((key, range_count));
     }
-
-    let mut all_queries = Vec::with_capacity(count);
-    for h in handles {
-        if let Ok(queries) = h.join() {
-            all_queries.extend(queries);
-        }
-    }
-    all_queries
+    queries
 }
 
 pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
@@ -1642,6 +1591,14 @@ fn generate_workload_spec(workload_spec: WorkloadSpec, output_file: &PathBuf, th
                 let end_elapsed = global_start.elapsed().as_secs_f64();
                 println!("[Tectonic Sequential Gen] Section {} ({}) started at {:.4}s, finished at {:.4}s (duration: {:.4}s)", i, section_name, start_elapsed, end_elapsed, end_elapsed - start_elapsed);
             }
+            println!("Tectonic_Op_Timings: {{\"Insert\":{},\"Update\":{},\"Point Query\":{},\"Point Delete\":{},\"Range Query\":{},\"Range Delete\":{}}}",
+                timings.time_insert.as_secs_f64() + timings.time_upsert.as_secs_f64(),
+                timings.time_update.as_secs_f64() + timings.time_merge.as_secs_f64(),
+                timings.time_query_point.as_secs_f64() + timings.time_query_point_empty.as_secs_f64() + timings.time_blind_point_query.as_secs_f64(),
+                timings.time_delete_point.as_secs_f64() + timings.time_delete_point_empty.as_secs_f64() + timings.time_blind_point_delete.as_secs_f64(),
+                timings.time_query_range.as_secs_f64(),
+                timings.time_delete_range.as_secs_f64() + timings.time_blind_range_query.as_secs_f64()
+            );
         }
         final_file.flush()?;
     }

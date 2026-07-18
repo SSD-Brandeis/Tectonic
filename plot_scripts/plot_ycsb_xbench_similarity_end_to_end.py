@@ -127,8 +127,10 @@ def plot_database(db, db_results):
 
     base = f"{OUT_DIR}/{db}_end_to_end_wall_time"
     fig.savefig(f"{base}.pdf", bbox_inches="tight", pad_inches=0.08)
+    fig.savefig(f"{base}.png", bbox_inches="tight", pad_inches=0.08)
     plt.close(fig)
     print(f"  saved: {base}.pdf")
+    print(f"  saved: {base}.png")
 
 
 def plot_all_databases(db_results_all):
@@ -171,8 +173,10 @@ def plot_all_databases(db_results_all):
 
     base = f"{OUT_DIR}/all_dbs_end_to_end_wall_time"
     fig.savefig(f"{base}.pdf", bbox_inches="tight", pad_inches=0.08)
+    fig.savefig(f"{base}.png", bbox_inches="tight", pad_inches=0.08)
     plt.close(fig)
     print(f"  saved: {base}.pdf")
+    print(f"  saved: {base}.png")
 
 
 def plot_legend():
@@ -207,8 +211,10 @@ def plot_legend():
     ax.legend(handles=handles, loc="center", ncol=2, fontsize=FONT_SIZE, frameon=False)
     base = f"{OUT_DIR}/end_to_end_wall_time_legend"
     fig.savefig(f"{base}.pdf", bbox_inches="tight", pad_inches=0.08)
+    fig.savefig(f"{base}.png", bbox_inches="tight", pad_inches=0.08)
     plt.close(fig)
     print(f"  saved: {base}.pdf")
+    print(f"  saved: {base}.png")
 
 
 def main():

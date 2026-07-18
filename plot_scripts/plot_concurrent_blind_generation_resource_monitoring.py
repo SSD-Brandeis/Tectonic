@@ -23,7 +23,7 @@ EXPERIMENT_NAME = "concurrent_blind_generation_resource_monitoring"
 DATA_DIR = ROOT_DIR / "data" / EXPERIMENT_NAME
 RESULTS_PATH = DATA_DIR / f"{EXPERIMENT_NAME}_results.json"
 FONT_PATH = ROOT_DIR / "LinLibertine_Mah.ttf"
-FONT_SIZE = 24
+FONT_SIZE = 26
 
 TOOLS = [
     (
@@ -33,13 +33,13 @@ TOOLS = [
     ),
     (
         "tectonic",
-        "X-Bench",
+        "X-Bench (blind)",
         {"color": "tab:red", "linestyle": "-.", "marker": "s", "markerfacecolor": "none"},
     ),
     (
         "tectonic_unique",
-        "X-Bench unique",
-        {"color": "tab:orange", "linestyle": ":", "marker": "o", "markerfacecolor": "none"},
+        "X-Bench",
+        {"color": "tab:blue", "linestyle": ":", "marker": "o", "markerfacecolor": "none"},
     ),
 ]
 
@@ -120,7 +120,7 @@ def style_axes(ax, ylabel: str, max_y: float, log_scale: bool = False) -> None:
         spine.set_visible(True)
         spine.set_color("black")
         spine.set_linewidth(0.8)
-    ax.tick_params(colors="black", which="both", direction="in")
+    ax.tick_params(colors="black", which="both", direction="out")
     ax.grid(False)
 
 
@@ -147,10 +147,10 @@ def plot_metric(data: dict, metric_key: str, ylabel: str, output_name: str, scal
             color=style["color"],
             linestyle=style["linestyle"],
             marker=style["marker"],
-            markersize=20,
+            markersize=15,
             markerfacecolor=style["markerfacecolor"],
             markeredgecolor=style["color"],
-            linewidth=2.0,
+            linewidth=4.0,
         )
     style_axes(ax, ylabel, max_y, log_scale)
     fig.subplots_adjust(left=0.21, right=0.96, bottom=0.19, top=0.88)
@@ -168,10 +168,10 @@ def save_legend(data: dict) -> None:
             color=style["color"],
             linestyle=style["linestyle"],
             marker=style["marker"],
-            markersize=20,
+            markersize=15,
             markerfacecolor=style["markerfacecolor"],
             markeredgecolor=style["color"],
-            linewidth=2.0,
+            linewidth=4.0,
             label=label,
         )
         for _tool, label, style in TOOLS
@@ -200,7 +200,7 @@ def main() -> None:
     plot_metric(
         data,
         "peak_vmhwm_mib",
-        "peak memory footprint (MB)",
+        "memory footprint (MB)",
         f"{EXPERIMENT_NAME}_peak_memory",
         log_scale=True,
     )

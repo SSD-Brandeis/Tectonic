@@ -49,80 +49,74 @@ def trace_generator(cmd, out_filepath, target_inserts_x=None, poll_interval=0.01
         except OSError:
             pass
 
+    import threading
+    import sys
+
     print(f"Executing: {' '.join(cmd)}")
     start_time = time.time()
-    proc = subprocess.Popen(cmd, cwd=cwd)
-
-    # Wait for the output file to appear or process to terminate
-    while not os.path.exists(out_filepath) and proc.poll() is None:
-        time.sleep(0.005)
-
-    f = None
-    if os.path.exists(out_filepath):
-        f = open(out_filepath, "r")
-
-    op_durations = {}
-    mem_log = []
     
-    last_op_time = 0.0
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, cwd=cwd)
+    
+    stdout_lines = []
+    def read_stdout(stream):
+        while True:
+            line = stream.readline()
+            if not line:
+                break
+            stdout_lines.append(line)
+            sys.stdout.write(line)
+            sys.stdout.flush()
+
+    t = threading.Thread(target=read_stdout, args=(proc.stdout,))
+    t.daemon = True
+    t.start()
+
+    mem_log = []
     last_poll_time = 0.0
-    insert_count = 0
-    loading_phase_end_time = None
 
-    while True:
-        current_time = time.time()
-        elapsed = current_time - start_time
-
-        # Read available lines
-        if f:
-            while True:
-                line = f.readline()
-                if not line:
-                    break
-                
-                # We have a valid line (operation)
-                op_type = line[0] if len(line) > 0 else 'Unknown'
-                duration = elapsed - last_op_time
-                op_durations[op_type] = op_durations.get(op_type, 0.0) + duration
-                last_op_time = elapsed
-
-                if op_type == 'I':
-                    insert_count += 1
-                    if target_inserts_x is not None and insert_count == target_inserts_x:
-                        loading_phase_end_time = elapsed
-
-        # Poll memory footprint
+    while proc.poll() is None:
+        elapsed = time.time() - start_time
         if elapsed - last_poll_time >= poll_interval:
             rss = get_process_rss(proc.pid)
             if rss > 0.0:
                 mem_log.append((elapsed, rss))
             last_poll_time = elapsed
+        time.sleep(0.005)
 
-        # Check exit
-        if proc.poll() is not None:
-            break
-
-        time.sleep(0.002)
-
-    # Finish reading any remaining lines
-    if f:
-        while True:
-            line = f.readline()
-            if not line:
-                break
-            op_type = line[0] if len(line) > 0 else 'Unknown'
-            duration = (time.time() - start_time) - last_op_time
-            op_durations[op_type] = op_durations.get(op_type, 0.0) + duration
-            last_op_time = (time.time() - start_time)
-
-            if op_type == 'I':
-                insert_count += 1
-                if target_inserts_x is not None and insert_count == target_inserts_x:
-                    loading_phase_end_time = last_op_time
-        f.close()
+    t.join(timeout=2.0)
 
     total_duration = time.time() - start_time
     print(f"Finished. Duration: {total_duration:.2f}s, Max RSS: {max([m[1] for m in mem_log], default=0.0):.2f} MB")
+
+    empirical_op_durations = None
+    loading_phase_end_time = None
+
+    for line in stdout_lines:
+        line_strip = line.strip()
+        if "Tectonic_Op_Timings:" in line_strip:
+            try:
+                payload = line_strip.split("Tectonic_Op_Timings:")[1].strip()
+                empirical_op_durations = json.loads(payload)
+            except Exception as e:
+                print(f"Error parsing Tectonic timings: {e}")
+        elif "KVbench_Op_Timings:" in line_strip:
+            try:
+                payload = line_strip.split("KVbench_Op_Timings:")[1].strip()
+                empirical_op_durations = json.loads(payload)
+            except Exception as e:
+                print(f"Error parsing KVbench timings: {e}")
+        elif "KVbench_LoadPhase_End:" in line_strip:
+            try:
+                loading_phase_end_time = float(line_strip.split("KVbench_LoadPhase_End:")[1].strip())
+            except Exception as e:
+                print(f"Error parsing KVbench load end: {e}")
+        elif "[Tectonic Sequential Gen] Section 0" in line_strip and "finished at" in line_strip:
+            try:
+                parts = line_strip.split("finished at")
+                val = parts[1].strip().split("s")[0].strip()
+                loading_phase_end_time = float(val)
+            except Exception as e:
+                print(f"Error parsing Tectonic load end: {e}")
 
     if os.path.exists(out_filepath):
         try:
@@ -132,7 +126,8 @@ def trace_generator(cmd, out_filepath, target_inserts_x=None, poll_interval=0.01
 
     return {
         "total_duration": total_duration,
-        "op_durations": op_durations,
+        "op_durations": empirical_op_durations if empirical_op_durations else {},
+        "empirical_op_durations": empirical_op_durations,
         "loading_phase_end_time": loading_phase_end_time,
         "mem_log": mem_log
     }

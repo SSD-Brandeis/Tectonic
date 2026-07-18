@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import os
 import json
+import csv
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 import numpy as np
@@ -130,34 +131,35 @@ def plot_fig1_fig2():
     x = np.arange(len(workloads))
     width = 0.35
     
+    op_breakdown = []
+    with open(f"{STATS_DIR}/generator_op_breakdown.csv", "r") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            op_breakdown.append(row)
+            
     tec_ops_data = []
     kv_ops_data = []
     max_duration = 0.0
     
     for w in workloads:
-        w_lower = w.lower()
-        tec_data = load_json(f"{STATS_DIR}/tectonic_{w_lower}_trace.json")
-        kv_data = load_json(f"{STATS_DIR}/kvbench_{w_lower}_trace.json")
+        t_row = next((r for r in op_breakdown if r["Workload"] == w and r["Tool"] == "Tectonic+"), None)
+        k_row = next((r for r in op_breakdown if r["Workload"] == w and r["Tool"] == "KVbench"), None)
         
-        op_counts = WORKLOAD_OP_COUNTS[w]
-        
-        # Tectonic
-        if tec_data:
-            total_duration = tec_data["total_duration"]
-            tec_ops = calculate_durations(total_duration, op_counts, TECTONIC_COEFFICIENTS)
-            tec_ops_data.append(tec_ops)
-            max_duration = max(max_duration, total_duration)
-        else:
-            tec_ops_data.append({op: 0.0 for op in ALL_OPS})
+        tec_ops = {}
+        for op in ALL_OPS:
+            col = op.replace(" ", "_") + "_Latency_s"
+            tec_ops[op] = float(t_row[col]) if t_row and col in t_row else 0.0
+        tec_ops_data.append(tec_ops)
+        if t_row:
+            max_duration = max(max_duration, float(t_row["Total_Latency_s"]))
             
-        # KVbench
-        if kv_data:
-            total_duration = kv_data["total_duration"]
-            kv_ops = calculate_durations(total_duration, op_counts, KVBENCH_COEFFICIENTS)
-            kv_ops_data.append(kv_ops)
-            max_duration = max(max_duration, total_duration)
-        else:
-            kv_ops_data.append({op: 0.0 for op in ALL_OPS})
+        kv_ops = {}
+        for op in ALL_OPS:
+            col = op.replace(" ", "_") + "_Latency_s"
+            kv_ops[op] = float(k_row[col]) if k_row and col in k_row else 0.0
+        kv_ops_data.append(kv_ops)
+        if k_row:
+            max_duration = max(max_duration, float(k_row["Total_Latency_s"]))
 
     # Plot absolute latency bars
     bottom_tec = np.zeros(len(workloads))
@@ -167,17 +169,17 @@ def plot_fig1_fig2():
         tec_vals = [tec_ops_data[i][op] for i in range(len(workloads))]
         kv_vals = [kv_ops_data[i][op] for i in range(len(workloads))]
         
-        # Draw Tectonic segment (solid)
-        ax1.bar(x - width/2, tec_vals, width, bottom=bottom_tec, color=OP_COLORS[op], edgecolor='black', linewidth=0.5, hatch=TOOL_HATCHES['Tectonic'])
-        bottom_tec += tec_vals
-        
         # Draw KVbench segment (striped)
-        ax1.bar(x + width/2, kv_vals, width, bottom=bottom_kv, color=OP_COLORS[op], edgecolor='black', linewidth=0.5, hatch=TOOL_HATCHES['KVbench'])
+        ax1.bar(x - width/2, kv_vals, width, bottom=bottom_kv, color=OP_COLORS[op], edgecolor='black', linewidth=0.5, hatch=TOOL_HATCHES['KVbench'])
         bottom_kv += kv_vals
-
+ 
+        # Draw Tectonic segment (solid)
+        ax1.bar(x + width/2, tec_vals, width, bottom=bottom_tec, color=OP_COLORS[op], edgecolor='black', linewidth=0.5, hatch=TOOL_HATCHES['Tectonic'])
+        bottom_tec += tec_vals
+ 
     x_ticks = x
     x_tick_labels = workloads
-
+ 
     ax1.set_ylabel(plot_style.format_label('End-to-End Latency (s)'))
     ax1.set_xticks(x_ticks)
     ax1.set_xticklabels(x_tick_labels)
@@ -186,8 +188,8 @@ def plot_fig1_fig2():
     present_ops = [op for op in ALL_OPS if any(WORKLOAD_OP_COUNTS[w].get(op, 0) > 0 for w in workloads)]
     color_patches = [Patch(facecolor=OP_COLORS[op], label=op.lower()) for op in present_ops]
     tool_patches = [
-        Patch(facecolor='#d3d3d3', edgecolor='black', hatch=TOOL_HATCHES['Tectonic'], label='X-Bench'),
-        Patch(facecolor='#d3d3d3', edgecolor='black', hatch=TOOL_HATCHES['KVbench'], label='KVBench')
+        Patch(facecolor='#d3d3d3', edgecolor='black', hatch=TOOL_HATCHES['KVbench'], label='KVbench'),
+        Patch(facecolor='#d3d3d3', edgecolor='black', hatch=TOOL_HATCHES['Tectonic'], label='Tectonic+')
     ]
     ax1.legend(handles=color_patches + tool_patches, loc='upper left', bbox_to_anchor=(1, 1))
     
@@ -245,8 +247,8 @@ def plot_fig1_fig2():
         format_subplot_y_axis(ax, max_mem_subplot)
  
     legend_elements = [
-        plt.Line2D([0], [0], label='X-Bench', **plot_style.LINE_STYLES['Tectonic']),
-        plt.Line2D([0], [0], label='KVBench', **plot_style.LINE_STYLES['KVBench'])
+        plt.Line2D([0], [0], label='KVBench', **plot_style.LINE_STYLES['KVBench']),
+        plt.Line2D([0], [0], label='X-Bench', **plot_style.LINE_STYLES['Tectonic'])
     ]
     axs2[1, 2].legend(handles=legend_elements, loc='center', fontsize=14, frameon=False)
     
@@ -270,48 +272,48 @@ def plot_fig3_fig4():
     
     max_latency = 0.0
     
+    phase_data = []
+    with open(f"{STATS_DIR}/generator_phase_breakdown.csv", "r") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            phase_data.append(row)
+            
     for idx, w in enumerate(workloads):
-        w_lower = w.lower()
+        t_row = next((r for r in phase_data if r["Workload"] == w and r["Tool"] == "Tectonic+"), None)
+        y_row = next((r for r in phase_data if r["Workload"] == w and r["Tool"] == "YCSB"), None)
+        k_row = next((r for r in phase_data if r["Workload"] == w and r["Tool"] == "KVbench"), None)
         
-        ycsb_data = load_json(f"{STATS_DIR}/ycsb_{w_lower}_trace.json")
-        tec_data = load_json(f"{STATS_DIR}/tectonic_{w_lower}_trace.json")
-        kv_data = load_json(f"{STATS_DIR}/kvbench_{w_lower}_trace.json")
-        
-        # 1. Tectonic phase times
-        if tec_data:
-            total_tec = tec_data["total_duration"]
-            load_tec = tec_data["loading_phase_end_time"]
-            if load_tec is None:
-                load_tec = total_tec
-            exec_tec = total_tec - load_tec
+        # 1. YCSB phase times
+        if y_row:
+            load_ycsb = float(y_row["LoadPhase_Latency_s"])
+            exec_ycsb = float(y_row["ExecutionPhase_Latency_s"])
+            total_ycsb = float(y_row["Total_Latency_s"])
             
-            ax3.bar(idx - width, load_tec, width, color=load_phase_color, edgecolor='black', linewidth=0.5, hatch=TOOL_HATCHES['Tectonic'])
-            ax3.bar(idx - width, exec_tec, width, bottom=load_tec, color=exec_phase_color, edgecolor='black', linewidth=0.5, hatch=TOOL_HATCHES['Tectonic'])
-            max_latency = max(max_latency, total_tec)
-            
-        # 2. YCSB phase times
-        if ycsb_data:
-            load_ycsb = ycsb_data["load"]["total_duration"]
-            exec_ycsb = ycsb_data["run"]["total_duration"]
-            total_ycsb = load_ycsb + exec_ycsb
-            
-            ax3.bar(idx, load_ycsb, width, color=load_phase_color, edgecolor='black', linewidth=0.5, hatch=TOOL_HATCHES['YCSB'])
-            ax3.bar(idx, exec_ycsb, width, bottom=load_ycsb, color=exec_phase_color, edgecolor='black', linewidth=0.5, hatch=TOOL_HATCHES['YCSB'])
+            ax3.bar(idx - width, load_ycsb, width, color=load_phase_color, edgecolor='black', linewidth=0.5, hatch=TOOL_HATCHES['YCSB'])
+            ax3.bar(idx - width, exec_ycsb, width, bottom=load_ycsb, color=exec_phase_color, edgecolor='black', linewidth=0.5, hatch=TOOL_HATCHES['YCSB'])
             max_latency = max(max_latency, total_ycsb)
             
-        # 3. KVbench phase times (missing for F)
-        if kv_data and w != "F":
-            total_kv = kv_data["total_duration"]
-            load_kv = kv_data["loading_phase_end_time"]
-            if load_kv is None:
-                load_kv = total_kv
-            exec_kv = total_kv - load_kv
+        # 2. KVbench phase times (missing for F)
+        if k_row and w != "F":
+            load_kv = float(k_row["LoadPhase_Latency_s"])
+            exec_kv = float(k_row["ExecutionPhase_Latency_s"])
+            total_kv = float(k_row["Total_Latency_s"])
             
-            ax3.bar(idx + width, load_kv, width, color=load_phase_color, edgecolor='black', linewidth=0.5, hatch=TOOL_HATCHES['KVbench'])
-            ax3.bar(idx + width, exec_kv, width, bottom=load_kv, color=exec_phase_color, edgecolor='black', linewidth=0.5, hatch=TOOL_HATCHES['KVbench'])
+            ax3.bar(idx, load_kv, width, color=load_phase_color, edgecolor='black', linewidth=0.5, hatch=TOOL_HATCHES['KVbench'])
+            ax3.bar(idx, exec_kv, width, bottom=load_kv, color=exec_phase_color, edgecolor='black', linewidth=0.5, hatch=TOOL_HATCHES['KVbench'])
             max_latency = max(max_latency, total_kv)
 
-    x_ticks = [idx - width/2 if w == "F" else idx for idx, w in enumerate(workloads)]
+        # 3. Tectonic phase times
+        if t_row:
+            load_tec = float(t_row["LoadPhase_Latency_s"])
+            exec_tec = float(t_row["ExecutionPhase_Latency_s"])
+            total_tec = float(t_row["Total_Latency_s"])
+            
+            ax3.bar(idx + width, load_tec, width, color=load_phase_color, edgecolor='black', linewidth=0.5, hatch=TOOL_HATCHES['Tectonic'])
+            ax3.bar(idx + width, exec_tec, width, bottom=load_tec, color=exec_phase_color, edgecolor='black', linewidth=0.5, hatch=TOOL_HATCHES['Tectonic'])
+            max_latency = max(max_latency, total_tec)
+
+    x_ticks = [idx for idx, w in enumerate(workloads)]
     x_tick_labels = workloads
 
     phase_patches = [
@@ -319,9 +321,9 @@ def plot_fig3_fig4():
         Patch(facecolor=exec_phase_color, label='execution phase')
     ]
     tool_patches = [
-        Patch(facecolor='none', edgecolor='black', hatch=TOOL_HATCHES['Tectonic'], label='X-Bench'),
         Patch(facecolor='none', edgecolor='black', hatch=TOOL_HATCHES['YCSB'], label='YCSB'),
-        Patch(facecolor='none', edgecolor='black', hatch=TOOL_HATCHES['KVbench'], label='KVBench')
+        Patch(facecolor='none', edgecolor='black', hatch=TOOL_HATCHES['KVbench'], label='KVbench'),
+        Patch(facecolor='none', edgecolor='black', hatch=TOOL_HATCHES['Tectonic'], label='Tectonic+')
     ]
     ax3.legend(handles=phase_patches + tool_patches, loc='upper right')
     
@@ -405,9 +407,9 @@ def plot_fig3_fig4():
         format_subplot_y_axis(ax, max_mem_subplot)
  
     legend_elements = [
-        plt.Line2D([0], [0], label='X-Bench', **plot_style.LINE_STYLES['Tectonic']),
         plt.Line2D([0], [0], label='YCSB', **plot_style.LINE_STYLES['YCSB']),
-        plt.Line2D([0], [0], label='KVBench', **plot_style.LINE_STYLES['KVBench'])
+        plt.Line2D([0], [0], label='KVBench', **plot_style.LINE_STYLES['KVBench']),
+        plt.Line2D([0], [0], label='X-Bench', **plot_style.LINE_STYLES['Tectonic'])
     ]
     fig4.legend(handles=legend_elements, loc='upper center', ncol=3, bbox_to_anchor=(0.5, 0.98), fontsize=12)
     
@@ -424,26 +426,26 @@ def plot_fig1_mem():
     x = np.arange(len(workloads))
     width = 0.35
     
+    raw_data = []
+    with open(f"{STATS_DIR}/generator_raw_metrics.csv", "r") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            raw_data.append(row)
+            
     tec_mem = []
     kv_mem = []
     
     for w in workloads:
-        w_lower = w.lower()
-        tec_data = load_json(f"{STATS_DIR}/tectonic_{w_lower}_trace.json")
-        kv_data = load_json(f"{STATS_DIR}/kvbench_{w_lower}_trace.json")
-        
-        if tec_data and "mem_log" in tec_data and tec_data["mem_log"]:
-            tec_mem.append(max([m[1] for m in tec_data["mem_log"]]))
+        row = next((r for r in raw_data if r["Workload"] == w and r["WorkloadSet"] == "KVbench"), None)
+        if row:
+            tec_mem.append(float(row["Tectonic+_PeakMem_MB"]) if row["Tectonic+_PeakMem_MB"] else 0.0)
+            kv_mem.append(float(row["KVbench_PeakMem_MB"]) if row["KVbench_PeakMem_MB"] else 0.0)
         else:
             tec_mem.append(0.0)
-            
-        if kv_data and "mem_log" in kv_data and kv_data["mem_log"]:
-            kv_mem.append(max([m[1] for m in kv_data["mem_log"]]))
-        else:
             kv_mem.append(0.0)
             
-    ax1_mem.bar(x - width/2, tec_mem, width, label='X-Bench', facecolor='none', edgecolor='black', linewidth=0.5, hatch=TOOL_HATCHES['Tectonic'])
-    ax1_mem.bar(x + width/2, kv_mem, width, label='KVBench', facecolor='none', edgecolor='black', linewidth=0.5, hatch=TOOL_HATCHES['KVbench'])
+    ax1_mem.bar(x - width/2, kv_mem, width, label='KVbench', facecolor='none', edgecolor='black', linewidth=0.5, hatch=TOOL_HATCHES['KVbench'])
+    ax1_mem.bar(x + width/2, tec_mem, width, label='Tectonic+', facecolor='none', edgecolor='black', linewidth=0.5, hatch=TOOL_HATCHES['Tectonic'])
     
     ax1_mem.set_xticks(x)
     ax1_mem.set_xticklabels(workloads)
@@ -463,37 +465,34 @@ def plot_fig3_mem():
     x = np.arange(len(workloads))
     width = 0.25  # three bars side-by-side
     
-    for idx, w in enumerate(workloads):
-        w_lower = w.lower()
-        
-        ycsb_data = load_json(f"{STATS_DIR}/ycsb_{w_lower}_trace.json")
-        tec_data = load_json(f"{STATS_DIR}/tectonic_{w_lower}_trace.json")
-        kv_data = load_json(f"{STATS_DIR}/kvbench_{w_lower}_trace.json")
-        
-        # 1. Tectonic peak memory
-        if tec_data and "mem_log" in tec_data and tec_data["mem_log"]:
-            tec_val = max([m[1] for m in tec_data["mem_log"]])
-            lbl = 'X-Bench' if idx == 0 else None
-            ax3_mem.bar(idx - width, tec_val, width, label=lbl, facecolor='none', edgecolor='black', linewidth=0.5, hatch=TOOL_HATCHES['Tectonic'])
+    raw_data = []
+    with open(f"{STATS_DIR}/generator_raw_metrics.csv", "r") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            raw_data.append(row)
             
-        # 2. YCSB peak memory
-        if ycsb_data:
-            load_mem = ycsb_data["load"].get("mem_log", [])
-            run_mem = ycsb_data["run"].get("mem_log", [])
-            combined_rss = [m[1] for m in load_mem] + [m[1] for m in run_mem]
-            if combined_rss:
-                ycsb_val = max(combined_rss)
-                lbl = 'YCSB' if idx == 0 else None
-                ax3_mem.bar(idx, ycsb_val, width, label=lbl, facecolor='none', edgecolor='black', linewidth=0.5, hatch=TOOL_HATCHES['YCSB'])
-                
-        # 3. KVbench peak memory (missing for F)
-        if kv_data and w != "F":
-            if "mem_log" in kv_data and kv_data["mem_log"]:
-                kv_val = max([m[1] for m in kv_data["mem_log"]])
-                lbl = 'KVBench' if idx == 0 else None
-                ax3_mem.bar(idx + width, kv_val, width, label=lbl, facecolor='none', edgecolor='black', linewidth=0.5, hatch=TOOL_HATCHES['KVbench'])
+    for idx, w in enumerate(workloads):
+        row = next((r for r in raw_data if r["Workload"] == w and r["WorkloadSet"] == "YCSB"), None)
+        if row:
+            # YCSB peak memory is the maximum VmRSS across load and run phase
+            ycsb_load_mem = float(row["YCSB_LoadPeakMem_MB"]) if row["YCSB_LoadPeakMem_MB"] else 0.0
+            ycsb_run_mem = float(row["YCSB_RunPeakMem_MB"]) if row["YCSB_RunPeakMem_MB"] else 0.0
+            ycsb_val = max(ycsb_load_mem, ycsb_run_mem)
+            lbl = 'YCSB' if idx == 0 else None
+            ax3_mem.bar(idx - width, ycsb_val, width, label=lbl, facecolor='none', edgecolor='black', linewidth=0.5, hatch=TOOL_HATCHES['YCSB'])
+            
+            # KVbench peak memory (missing for F)
+            if w != "F" and row["KVbench_PeakMem_MB"]:
+                kv_val = float(row["KVbench_PeakMem_MB"])
+                lbl = 'KVbench' if idx == 0 else None
+                ax3_mem.bar(idx, kv_val, width, label=lbl, facecolor='none', edgecolor='black', linewidth=0.5, hatch=TOOL_HATCHES['KVbench'])
 
-    x_ticks = [idx - width/2 if w == "F" else idx for idx, w in enumerate(workloads)]
+            # Tectonic+ peak memory
+            tec_val = float(row["Tectonic+_PeakMem_MB"]) if row["Tectonic+_PeakMem_MB"] else 0.0
+            lbl = 'Tectonic+' if idx == 0 else None
+            ax3_mem.bar(idx + width, tec_val, width, label=lbl, facecolor='none', edgecolor='black', linewidth=0.5, hatch=TOOL_HATCHES['Tectonic'])
+
+    x_ticks = [idx for idx, w in enumerate(workloads)]
     x_tick_labels = workloads
 
     ax3_mem.set_xticks(x_ticks)

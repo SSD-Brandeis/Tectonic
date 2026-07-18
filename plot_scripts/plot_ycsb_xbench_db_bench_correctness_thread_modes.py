@@ -20,7 +20,7 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 RESULTS_PATH = ROOT_DIR / "data" / "ycsb_tectonic_correctness_thread_modes" / "results.json"
 PLOTS_DIR = ROOT_DIR / "ycsb_tectonic_correctness_plots" / "thread_modes"
 FONT_PATH = ROOT_DIR / "LinLibertine_Mah.ttf"
-FONT_SIZE = 20
+FONT_SIZE = 26
 
 def font(size: int) -> font_manager.FontProperties:
     return font_manager.FontProperties(fname=str(FONT_PATH), size=size)
@@ -81,15 +81,14 @@ def style_axis_broken(ax1, ax2) -> None:
             spine.set_visible(True)
             spine.set_color("black")
             spine.set_linewidth(0.8)
-        ax.tick_params(colors="black", which="both", direction="in")
+        ax.tick_params(colors="black", which="both", direction="out")
 
 def save_custom_legend(base: Path) -> None:
     handles = [
-        mlines.Line2D([], [], label="ground truth (100 percent)", color="tab:orange", linestyle="--"),
-        mlines.Line2D([], [], label="Tectonic+", color="tab:red", linestyle="-.", marker="s", markersize=9, markeredgewidth=1.2, markerfacecolor="tab:red", markeredgecolor="tab:red"),
-        mlines.Line2D([], [], label="YCSB - inserts", color="grey", linestyle="-", marker="^", markersize=9, markeredgewidth=1.2, markerfacecolor="grey", markeredgecolor="grey"),
-        mlines.Line2D([], [], label="YCSB - point queries", color="grey", linestyle="--", marker="o", markersize=9, markeredgewidth=1.2, markerfacecolor="grey", markeredgecolor="grey"),
-        mlines.Line2D([], [], label="YCSB - updates", color="grey", linestyle=":", marker="d", markersize=9, markeredgewidth=1.2, markerfacecolor="grey", markeredgecolor="grey"),
+        mlines.Line2D([], [], label="X-Bench", color="tab:blue", linestyle="-.", marker="s", markersize=15, markeredgewidth=1.2, markerfacecolor="none", markeredgecolor="tab:blue", linewidth=4.0),
+        mlines.Line2D([], [], label="YCSB-inserts", color="grey", linestyle="-", marker="^", markersize=15, markeredgewidth=1.2, markerfacecolor="none", markeredgecolor="grey", linewidth=4.0),
+        mlines.Line2D([], [], label="YCSB-PQ", color="grey", linestyle="--", marker="o", markersize=15, markeredgewidth=1.2, markerfacecolor="none", markeredgecolor="grey", linewidth=4.0),
+        mlines.Line2D([], [], label="YCSB-updates", color="grey", linestyle=":", marker="d", markersize=15, markeredgewidth=1.2, markerfacecolor="none", markeredgecolor="grey", linewidth=4.0),
     ]
     fig = plt.figure(figsize=(7.2, 1.2))
     fig.legend(handles=handles, loc="center", ncol=2, frameon=False, prop=font(FONT_SIZE))
@@ -107,36 +106,29 @@ def plot_setting(data: dict, setting: str, title: str, reps: int) -> None:
     ycsb_queries_acc = np.array([run["tools"]["ycsb"]["accuracy_by_operation"]["P"] for run in runs])
     ycsb_updates_acc = np.array([run["tools"]["ycsb"]["accuracy_by_operation"]["U"] for run in runs])
     
-    # Ground truth expected accuracy line is always 100%
-    expected_acc = np.ones_like(x_values) * 100.0
-    
     fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True, figsize=(6.0, 3.8), 
                                    gridspec_kw={'height_ratios': [5, 1]})
     
-    # Plot Ground Truth
-    ax1.plot(x_values, expected_acc, label="ground truth (100 percent)", color="tab:orange", linestyle="--")
-    ax2.plot(x_values, expected_acc, color="tab:orange", linestyle="--")
-    
     # Plot Tectonic+
-    ax1.plot(x_values, tectonic_inserts_acc, label="Tectonic+", color="tab:red", linestyle="-.", marker="s", markersize=9, markeredgewidth=1.2, markerfacecolor="tab:red", markeredgecolor="tab:red")
-    ax2.plot(x_values, tectonic_inserts_acc, color="tab:red", linestyle="-.", marker="s", markersize=9, markeredgewidth=1.2, markerfacecolor="tab:red", markeredgecolor="tab:red")
+    ax1.plot(x_values, tectonic_inserts_acc, label="X-Bench", color="tab:blue", linestyle="-.", marker="s", markersize=15, markeredgewidth=1.2, markerfacecolor="none", markeredgecolor="tab:blue", linewidth=4.0)
+    ax2.plot(x_values, tectonic_inserts_acc, color="tab:blue", linestyle="-.", marker="s", markersize=15, markeredgewidth=1.2, markerfacecolor="none", markeredgecolor="tab:blue", linewidth=4.0)
     
     # Plot YCSB - inserts
-    ax1.plot(x_values, ycsb_inserts_acc, label="YCSB - inserts", color="grey", linestyle="-", marker="^", markersize=9, markeredgewidth=1.2, markerfacecolor="grey", markeredgecolor="grey")
-    ax2.plot(x_values, ycsb_inserts_acc, color="grey", linestyle="-", marker="^", markersize=9, markeredgewidth=1.2, markerfacecolor="grey", markeredgecolor="grey")
+    ax1.plot(x_values, ycsb_inserts_acc, label="YCSB-inserts", color="grey", linestyle="-", marker="^", markersize=15, markeredgewidth=1.2, markerfacecolor="none", markeredgecolor="grey", linewidth=4.0)
+    ax2.plot(x_values, ycsb_inserts_acc, color="grey", linestyle="-", marker="^", markersize=15, markeredgewidth=1.2, markerfacecolor="none", markeredgecolor="grey", linewidth=4.0)
     
     # Plot YCSB - point queries
-    ax1.plot(x_values, ycsb_queries_acc, label="YCSB - point queries", color="grey", linestyle="--", marker="o", markersize=9, markeredgewidth=1.2, markerfacecolor="grey", markeredgecolor="grey")
-    ax2.plot(x_values, ycsb_queries_acc, color="grey", linestyle="--", marker="o", markersize=9, markeredgewidth=1.2, markerfacecolor="grey", markeredgecolor="grey")
+    ax1.plot(x_values, ycsb_queries_acc, label="YCSB-PQ", color="grey", linestyle="--", marker="o", markersize=15, markeredgewidth=1.2, markerfacecolor="none", markeredgecolor="grey", linewidth=4.0)
+    ax2.plot(x_values, ycsb_queries_acc, color="grey", linestyle="--", marker="o", markersize=15, markeredgewidth=1.2, markerfacecolor="none", markeredgecolor="grey", linewidth=4.0)
     
     # Plot YCSB - updates
-    ax1.plot(x_values, ycsb_updates_acc, label="YCSB - updates", color="grey", linestyle=":", marker="d", markersize=9, markeredgewidth=1.2, markerfacecolor="grey", markeredgecolor="grey")
-    ax2.plot(x_values, ycsb_updates_acc, color="grey", linestyle=":", marker="d", markersize=9, markeredgewidth=1.2, markerfacecolor="grey", markeredgecolor="grey")
+    ax1.plot(x_values, ycsb_updates_acc, label="YCSB-updates", color="grey", linestyle=":", marker="d", markersize=15, markeredgewidth=1.2, markerfacecolor="none", markeredgecolor="grey", linewidth=4.0)
+    ax2.plot(x_values, ycsb_updates_acc, color="grey", linestyle=":", marker="d", markersize=15, markeredgewidth=1.2, markerfacecolor="none", markeredgecolor="grey", linewidth=4.0)
     
     top_bottom_lim = 60.0
     top_ticks = [70, 80, 90, 100]
         
-    ax1.set_ylim(top_bottom_lim, 102.0)
+    ax1.set_ylim(top_bottom_lim, 105.0)
     ax2.set_ylim(0.0, 10.0)
     
     # Apply standard styles
@@ -147,12 +139,10 @@ def plot_setting(data: dict, setting: str, title: str, reps: int) -> None:
     ax2.spines['top'].set_visible(False)
     
     # Only show x-ticks at the bottom subplot
-    ax1.xaxis.tick_top()
-    ax1.tick_params(labeltop=False)
-    ax2.xaxis.tick_bottom()
+    ax1.tick_params(top=False, bottom=False, right=False, labelbottom=False)
+    ax2.tick_params(top=False, bottom=True, right=False, direction="out")
     
-    # Set limits and ticks again to prevent potential overrides
-    ax1.set_ylim(top_bottom_lim, 102.0)
+    ax1.set_ylim(top_bottom_lim, 105.0)
     ax2.set_ylim(0.0, 10.0)
     ax1.set_yticks(top_ticks)
     ax2.set_yticks([0])
@@ -172,9 +162,9 @@ def plot_setting(data: dict, setting: str, title: str, reps: int) -> None:
     ax2.plot((1 - d, 1 + d), (1 - d, 1 + d), **kwargs)
     
     # Center y-axis label vertically on the figure
-    fig.text(0.05, 0.5, r"workload accuracy (\%)", va='center', ha='center', rotation='vertical', fontproperties=font(FONT_SIZE))
+    fig.text(0.02, 0.5, r"accuracy (\%)", va='center', ha='center', rotation='vertical', fontproperties=font(FONT_SIZE))
     
-    fig.subplots_adjust(left=0.17, right=0.98, bottom=0.20, top=0.96, hspace=0.04)
+    fig.subplots_adjust(left=0.20, right=0.98, bottom=0.20, top=0.92, hspace=0.04)
     
     base = PLOTS_DIR / f"workload_accuracy_{setting}_{reps}runs"
     save_custom_legend(base)

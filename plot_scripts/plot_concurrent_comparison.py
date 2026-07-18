@@ -121,14 +121,14 @@ def main():
                      edgecolor=seq_style['edgecolor'],
                      hatch=seq_style['hatch'],
                      linewidth=0.5,
-                     label='Tectonic+ (seq)')
+                     label='X-Bench (seq)')
                      
     bar_par = ax1.bar(categories[1], par_total, width=0.5,
                      facecolor=par_style['facecolor'],
                      edgecolor=par_style['edgecolor'],
                      hatch=par_style['hatch'],
                      linewidth=0.5,
-                     label='Tectonic+ (par)')
+                     label='X-Bench (par)')
     
     ax1.set_xlim(-0.5, 1.5)
     
@@ -164,29 +164,31 @@ def main():
     wl_colors = {wl: colors[i] for i, wl in enumerate(workloads)}
     
     # 1. Plot Sequential Timeline
-    fig2_seq, ax_seq = plt.subplots(figsize=(10, 4.5))
+    fig2_seq, ax_seq = plt.subplots(figsize=(5, 3.6))
     for i, wl in enumerate(workloads):
         start = seq_timeline[wl]["start"]
         duration = seq_timeline[wl]["duration"]
         ax_seq.barh(i, duration, left=start, color=wl_colors[wl], edgecolor='black', height=0.5)
         
-    apply_plot_style(ax_seq, ylabel="sections", xlabel="latency (s)")
+    apply_plot_style(ax_seq, ylabel="workload", xlabel="latency (s)")
     ax_seq.set_yticks(y_pos)
     ax_seq.set_yticklabels([wl.split('-')[-1] for wl in workloads], fontweight='bold')
+    ax_seq.set_ylim(-0.5, len(workloads) - 0.5)
     ax_seq.grid(axis='y', visible=False)
     ax_seq.set_xlim(0, seq_total * 1.05)
     save_fig(fig2_seq, os.path.join(PLOTS_DIR, "fig2_sequential"))
     
     # 2. Plot Parallel Timeline
-    fig2_par, ax_par = plt.subplots(figsize=(10, 4.5))
+    fig2_par, ax_par = plt.subplots(figsize=(5, 3.6))
     for i, wl in enumerate(workloads):
         start = par_timeline[wl]["start"]
         duration = par_timeline[wl]["duration"]
         ax_par.barh(i, duration, left=start, color=wl_colors[wl], edgecolor='black', height=0.5)
         
-    apply_plot_style(ax_par, ylabel="sections", xlabel="latency (s)")
+    apply_plot_style(ax_par, ylabel="workload", xlabel="latency (s)")
     ax_par.set_yticks(y_pos)
     ax_par.set_yticklabels([wl.split('-')[-1] for wl in workloads], fontweight='bold')
+    ax_par.set_ylim(-0.5, len(workloads) - 0.5)
     ax_par.grid(axis='y', visible=False)
     ax_par.set_xlim(0, 30.0)
     save_fig(fig2_par, os.path.join(PLOTS_DIR, "fig2_parallel"))

@@ -39,7 +39,7 @@
           },
           "range_deletes": {
             "op_count": 500000,
-            "selectivity": 0.0000001,
+            "selectivity": 1e-06,
             "range_format": "StartEnd"
           }
         }

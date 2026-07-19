@@ -22,11 +22,12 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 OUT_DIR = Path(os.environ.get("CPU_UTILIZATION_OUT_DIR", str(ROOT_DIR / "data/CPU-utilization")))
 RESULTS_PATH = OUT_DIR / "pidstat_multithread_generation_results.json"
 FONT_PATH = ROOT_DIR / "LinLibertine_Mah.ttf"
+FONT_SIZE = 26
 
 MULTI_TOOL_ORDER = ["YCSB", "Tectonic"]
 SINGLE_TOOL_ORDER = ["YCSB", "Tectonic", "KVBench"]
 TOOL_KEYS = {"YCSB": "ycsb", "Tectonic": "tectonic", "KVBench": "kvbench"}
-TOOL_LABELS = {"YCSB": "YCSB", "Tectonic": "X-Bench", "KVBench": "KVBench"}
+TOOL_LABELS = {"YCSB": "YCSB", "Tectonic": "X-Bench (blind)", "KVBench": "KVBench"}
 STYLE = {
     "YCSB": {"color": "grey", "linestyle": "-", "marker": "^", "hatch": "///"},
     "Tectonic": {"color": "tab:red", "linestyle": "-.", "marker": "s", "hatch": "\\\\"},
@@ -42,7 +43,7 @@ def configure_font():
     if not FONT_PATH.exists():
         raise FileNotFoundError(f"strict font file not found: {FONT_PATH}")
     font_manager.fontManager.addfont(str(FONT_PATH))
-    prop = font(20)
+    prop = font(FONT_SIZE)
     font_name = prop.get_name()
     plt.rcParams["font.family"] = font_name
     plt.rcParams["font.sans-serif"] = [font_name]
@@ -58,10 +59,10 @@ def configure_font():
     plt.rcParams["ps.fonttype"] = 42
     plt.rcParams["pdf.compression"] = 0
     plt.rcParams["axes.unicode_minus"] = False
-    plt.rcParams["font.size"] = 20
-    plt.rcParams["axes.labelsize"] = 20
-    plt.rcParams["xtick.labelsize"] = 20
-    plt.rcParams["ytick.labelsize"] = 20
+    plt.rcParams["font.size"] = FONT_SIZE
+    plt.rcParams["axes.labelsize"] = FONT_SIZE
+    plt.rcParams["xtick.labelsize"] = FONT_SIZE
+    plt.rcParams["ytick.labelsize"] = FONT_SIZE
 
 
 def load_results():
@@ -77,7 +78,7 @@ def finite(value):
 
 
 def apply_tick_font(ax):
-    tick_font = font(20)
+    tick_font = font(FONT_SIZE)
     for label in ax.get_xticklabels() + ax.get_yticklabels():
         label.set_fontproperties(tick_font)
 
@@ -87,13 +88,12 @@ def style_spines(ax):
         spine.set_visible(True)
         spine.set_color("black")
         spine.set_linewidth(0.8)
-    ax.tick_params(colors="black", which="both", direction="in")
+    ax.tick_params(colors="black", which="both", direction="out")
     apply_tick_font(ax)
 
 
 def pad_samples(samples, duration_s, common_end_s):
     duration_s = float(duration_s or 0.0)
-    common_end_s = max(float(common_end_s or 0.0), duration_s)
     padded = [{"elapsed_s": 0.0, "avg_cpu_percent": 0.0}]
     for sample in samples:
         elapsed = float(sample.get("elapsed_s", 0.0))
@@ -105,8 +105,6 @@ def pad_samples(samples, duration_s, common_end_s):
     if padded[-1]["elapsed_s"] < duration_s:
         padded.append({"elapsed_s": duration_s, "avg_cpu_percent": padded[-1]["avg_cpu_percent"]})
     padded.append({"elapsed_s": duration_s, "avg_cpu_percent": 0.0})
-    if common_end_s > duration_s:
-        padded.append({"elapsed_s": common_end_s, "avg_cpu_percent": 0.0})
     return padded
 
 
@@ -115,10 +113,10 @@ def line_style(tool, count):
     color = STYLE[tool]["color"]
     # For parallel settings, markers are filled matching the line color.
     base.update({
-        "markersize": 8,
-        "markerfacecolor": color,
+        "markersize": 15,
+        "markerfacecolor": "none",
         "markeredgecolor": color,
-        "linewidth": 1.4,
+        "linewidth": 4.0,
     })
     if count > 24:
         base["markevery"] = max(1, count // 18)
@@ -134,8 +132,8 @@ def plot_series(ax, samples, tool):
 def set_numeric_axes(ax, xlabel, ylabel, x_right, y_top=None, force_y_100=False):
     xlabel_formatted = plot_style.format_label(xlabel)
     ylabel_formatted = plot_style.format_label(ylabel)
-    ax.set_xlabel(xlabel_formatted, fontproperties=font(20))
-    ax.set_ylabel(ylabel_formatted, fontproperties=font(20), labelpad=16)
+    ax.set_xlabel(xlabel_formatted, fontproperties=font(FONT_SIZE))
+    ax.set_ylabel(ylabel_formatted, fontproperties=font(FONT_SIZE), labelpad=16)
     ax.set_xlim(left=0.0, right=max(float(x_right or 0.0), 1.0))
     if y_top is None:
         y_top = ax.get_ylim()[1]
@@ -159,7 +157,7 @@ def set_numeric_axes(ax, xlabel, ylabel, x_right, y_top=None, force_y_100=False)
 
 def save_legend(handles, labels, base):
     fig = plt.figure(figsize=(6.5, 1.1))
-    fig.legend(handles, labels, loc="center", ncol=len(handles), frameon=False, prop=font(20))
+    fig.legend(handles, labels, loc="center", ncol=len(handles), frameon=False, prop=font(FONT_SIZE))
     fig.savefig(f"{base}_legend.pdf", bbox_inches="tight", pad_inches=0.05)
     plt.close(fig)
 
@@ -198,7 +196,7 @@ def plot_time_series(data, requested_threads=None, base_name="cpu_utilization_pi
         for tool in MULTI_TOOL_ORDER
     }
 
-    fig, ax = plt.subplots(1, 1, figsize=(7.4, 5.0))
+    fig, ax = plt.subplots(1, 1, figsize=(8.0, 5.4))
     handles = [plot_series(ax, samples_by_tool[tool], tool) for tool in MULTI_TOOL_ORDER]
     set_numeric_axes(
         ax,
@@ -233,7 +231,7 @@ def plot_thread_categories(data, metric_key, ylabel, base_name, y_top=None, forc
             values.append(value)
         values_by_tool[tool] = values
 
-    fig, ax = plt.subplots(1, 1, figsize=(7.4, 5.0))
+    fig, ax = plt.subplots(1, 1, figsize=(8.0, 5.4))
     handles = []
     for tool in MULTI_TOOL_ORDER:
         handle = ax.plot(
@@ -245,12 +243,12 @@ def plot_thread_categories(data, metric_key, ylabel, base_name, y_top=None, forc
         handles.append(handle)
     if y_top is None:
         y_top = max_value * 1.15 if max_value > 0 else 1.0
-    ax.set_xlabel(plot_style.format_label(r"\# threads"), fontproperties=font(20))
-    ax.set_ylabel(plot_style.format_label(ylabel), fontproperties=font(20), labelpad=16)
+    ax.set_xlabel(plot_style.format_label(r"\# threads"), fontproperties=font(FONT_SIZE))
+    ax.set_ylabel(plot_style.format_label(ylabel), fontproperties=font(FONT_SIZE), labelpad=16)
     ax.set_xlim(left=-0.20, right=max(0.20, len(thread_counts) - 0.80))
     ax.set_ylim(bottom=0.0, top=max(float(y_top), 1.0))
     ax.set_xticks(positions)
-    ax.set_xticklabels(labels, fontproperties=font(20))
+    ax.set_xticklabels(labels, fontproperties=font(FONT_SIZE))
     ax.yaxis.set_major_locator(ticker.MaxNLocator(nbins=5))
     yticks = [tick for tick in ax.get_yticks() if 0.0 <= tick <= ax.get_ylim()[1]]
     if not any(abs(tick) < 1e-9 for tick in yticks):
@@ -274,7 +272,7 @@ def plot_single_thread_cpu_time(data):
     labels = [TOOL_LABELS[tool] for tool in SINGLE_TOOL_ORDER]
     y_top = max(values) * 1.15 if values else 1.0
 
-    fig, ax = plt.subplots(1, 1, figsize=(6.6, 4.8))
+    fig, ax = plt.subplots(1, 1, figsize=(8.0, 5.4))
     for pos, tool, value in zip(positions, SINGLE_TOOL_ORDER, values):
         style = STYLE[tool]
         ax.bar(
@@ -286,12 +284,12 @@ def plot_single_thread_cpu_time(data):
             hatch=style["hatch"],
             linewidth=1.0,
         )
-    ax.set_xlabel(plot_style.format_label("generator"), fontproperties=font(20))
-    ax.set_ylabel(plot_style.format_label(r"cpu time (s / M ops)"), fontproperties=font(20), labelpad=16)
+    ax.set_xlabel(plot_style.format_label("generator"), fontproperties=font(FONT_SIZE))
+    ax.set_ylabel(plot_style.format_label(r"cpu time (s / M ops)"), fontproperties=font(FONT_SIZE), labelpad=16)
     ax.set_xlim(left=-0.55, right=len(positions) - 0.45)
     ax.set_ylim(bottom=0.0, top=max(y_top, 1.0))
     ax.set_xticks(positions)
-    ax.set_xticklabels(labels, fontproperties=font(20))
+    ax.set_xticklabels(labels, fontproperties=font(FONT_SIZE))
     ax.yaxis.set_major_locator(ticker.MaxNLocator(nbins=5))
     yticks = [tick for tick in ax.get_yticks() if 0.0 <= tick <= ax.get_ylim()[1]]
     if not any(abs(tick) < 1e-9 for tick in yticks):
@@ -315,7 +313,7 @@ def plot_single_thread_cpu_utilization(data):
     labels = [TOOL_LABELS[tool] for tool in SINGLE_TOOL_ORDER]
     y_top = max(values) * 1.15 if values else 1.0
 
-    fig, ax = plt.subplots(1, 1, figsize=(6.6, 4.8))
+    fig, ax = plt.subplots(1, 1, figsize=(8.0, 5.4))
     for pos, tool, value in zip(positions, SINGLE_TOOL_ORDER, values):
         style = STYLE[tool]
         ax.bar(
@@ -327,12 +325,12 @@ def plot_single_thread_cpu_utilization(data):
             hatch=style["hatch"],
             linewidth=1.0,
         )
-    ax.set_xlabel(plot_style.format_label("generator"), fontproperties=font(20))
-    ax.set_ylabel(plot_style.format_label(r"one-core cpu utilization (\%)"), fontproperties=font(20), labelpad=16)
+    ax.set_xlabel(plot_style.format_label("generator"), fontproperties=font(FONT_SIZE))
+    ax.set_ylabel(plot_style.format_label(r"one-core cpu utilization (\%)"), fontproperties=font(FONT_SIZE), labelpad=16)
     ax.set_xlim(left=-0.55, right=len(positions) - 0.45)
     ax.set_ylim(bottom=0.0, top=max(y_top, 1.0))
     ax.set_xticks(positions)
-    ax.set_xticklabels(labels, fontproperties=font(20))
+    ax.set_xticklabels(labels, fontproperties=font(FONT_SIZE))
     ax.yaxis.set_major_locator(ticker.MaxNLocator(nbins=5))
     yticks = [tick for tick in ax.get_yticks() if 0.0 <= tick <= ax.get_ylim()[1]]
     if not any(abs(tick) < 1e-9 for tick in yticks):

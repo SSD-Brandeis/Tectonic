@@ -24,7 +24,7 @@
             },
             "val": {
               "uniform": {
-                "len": 1024
+                "len": 1090
               }
             }
           }
@@ -45,7 +45,7 @@
             "op_count": 500000,
             "val": {
               "uniform": {
-                "len": 128
+                "len": 109
               }
             },
             "selection": {

@@ -146,7 +146,7 @@ impl DBTranslationLayer for Scylla {
             .runtime
             .block_on(
                 self.session
-                    .execute_unpaged(&self.update_statement, (key, value)),
+                    .execute_unpaged(&self.update_statement, (value, key)),
             )
             .map_err(|e| anyhow!("Scylla Error: {:#?}", e))?;
         return Ok(());

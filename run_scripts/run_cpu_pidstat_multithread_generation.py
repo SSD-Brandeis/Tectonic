@@ -15,7 +15,7 @@ import time
 ROOT_DIR = Path(__file__).resolve().parents[1]
 HARNESS_DIR = ROOT_DIR / "rocksdb-benchmark-harness"
 TECTONIC_CLI = Path(os.environ.get("TECTONIC_CLI", str(ROOT_DIR / "target/release/tectonic-cli")))
-YCSB_SPEC = ROOT_DIR / "example-specs/ycsb/e.spec.json"
+YCSB_SPEC = ROOT_DIR / "example-specs/ycsb_blind/e.spec.json"
 KV_BENCH = Path(os.environ.get("KV_BENCH_BIN", "/home/cc/KV-WorkloadGenerator/bin/load_gen"))
 YCSB_DIR = Path(os.environ.get("YCSB_DIR", str(HARNESS_DIR / "vendor/YCSB")))
 M2 = Path(os.environ.get("M2_REPO", "/home/cc/.m2/repository"))
@@ -449,12 +449,15 @@ def add_common_window_metric(results, cpu_count):
     return results
 
 
-def run_for_threads(threads, cpu_count):
+def run_for_threads(threads, cpu_count, existing_run=None):
     banner(f"{WORKLOAD_NAME} 10x workload generation with {threads} threads")
-    results = {
-        "ycsb": add_cpu_work_metric(generate_ycsb(threads, cpu_count)),
-        "tectonic": add_cpu_work_metric(generate_tectonic(threads, cpu_count)),
-    }
+    results = {}
+    if existing_run and "ycsb" in existing_run:
+        print(f"  Reusing existing YCSB results for {threads} threads")
+        results["ycsb"] = existing_run["ycsb"]
+    else:
+        results["ycsb"] = add_cpu_work_metric(generate_ycsb(threads, cpu_count))
+    results["tectonic"] = add_cpu_work_metric(generate_tectonic(threads, cpu_count))
     add_common_window_metric(results, cpu_count)
     return {"threads": threads, **results}
 
@@ -522,9 +525,21 @@ def main():
     print("  metric     : summed pidstat process %CPU divided by available logical cpus")
     print(SEP, flush=True)
 
+    existing_runs_by_threads = {}
+    if RESULTS_PATH.exists():
+        try:
+            with open(RESULTS_PATH) as f:
+                old_data = json.load(f)
+                if "runs" in old_data:
+                    for r in old_data["runs"]:
+                        existing_runs_by_threads[int(r["threads"])] = r
+            print(f"Loaded existing runs for threads: {list(existing_runs_by_threads.keys())}")
+        except Exception as e:
+            print(f"Warning: could not load existing results: {e}")
+
     runs = []
     for threads in thread_counts:
-        runs.append(run_for_threads(threads, cpu_count))
+        runs.append(run_for_threads(threads, cpu_count, existing_runs_by_threads.get(threads)))
     plotted_time_series_threads = choose_plotted_time_series_threads(runs, time_series_threads)
     if plotted_time_series_threads != time_series_threads:
         print(

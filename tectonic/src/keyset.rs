@@ -425,10 +425,25 @@ impl KeySet for VecOptionKeySet {
     fn remove_range(&mut self, idx_range: Range<usize>) -> (Key, Key) {
         let mut key1 = None;
         let mut key2 = None;
-        for idx in idx_range {
+        let start = idx_range.start;
+        let end = idx_range.end;
+
+        for idx in start..end {
             if let Some(key) = self.maybe_remove(idx) {
                 key1 = key1.or(Some(key.clone()));
                 key2 = Some(key);
+            }
+        }
+
+        if key1.is_none() && !self.keys.is_empty() {
+            let mut idx = start % self.keys.len();
+            for _ in 0..self.keys.len() {
+                if let Some(key) = self.maybe_remove(idx) {
+                    key1 = Some(key.clone());
+                    key2 = Some(key);
+                    break;
+                }
+                idx = (idx + 1) % self.keys.len();
             }
         }
 

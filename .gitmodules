@@ -2,3 +2,4 @@
 	path = rocksdb-benchmark-harness
 	url = https://github.com/SSD-Brandeis/rocksdb-benchmark-harness.git
 	branch = Tectonic-Plus
+	ignore = dirty

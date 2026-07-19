@@ -10,12 +10,12 @@
             "op_count": 100000,
             "key": {
               "uniform": {
-                "len": 32
+                "len": 512
               }
             },
             "val": {
               "uniform": {
-                "len": 32
+                "len": 512
               }
             }
           }
@@ -27,12 +27,12 @@
             "op_count": 400000,
             "key": {
               "uniform": {
-                "len": 32
+                "len": 512
               }
             },
             "val": {
               "uniform": {
-                "len": 32
+                "len": 512
               }
             }
           },

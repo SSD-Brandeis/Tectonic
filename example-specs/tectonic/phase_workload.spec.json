@@ -1,0 +1,65 @@
+{
+  "$schema": "../workload_schema.json",
+  "character_set": "alphanumeric",
+  "sections": [
+    {
+      "groups": [
+        {
+          "inserts": {
+            "op_count": 900000,
+            "key": { "uniform": { "len": 128 } },
+            "val": { "uniform": { "len": 128 } }
+          },
+          "point_queries": {
+            "op_count": 100000,
+            "selection": {
+              "zipf": { "n": 100000, "s": 1.2 }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "groups": [
+        {
+          "inserts": {
+            "op_count": 100000,
+            "key": { "uniform": { "len": 128 } },
+            "val": { "uniform": { "len": 128 } }
+          },
+          "point_queries": {
+            "op_count": 900000
+          }
+        }
+      ]
+    },
+    {
+      "groups": [
+        {
+          "inserts": {
+            "op_count": 100000,
+            "key": { "uniform": { "len": 128 } },
+            "val": { "uniform": { "len": 128 } }
+          },
+          "range_queries": {
+            "op_count": 500000,
+            "selectivity": 0.1,
+            "selection": {
+              "log_normal": { "mean": 10, "std_dev": 2 }
+            }
+          },
+          "point_queries": {
+            "op_count": 300000
+          },
+          "updates": {
+            "op_count": 100000,
+            "selection": {
+              "beta": { "alpha": 2, "beta": 5 }
+            },
+            "val": { "uniform": { "len": 128 } }
+          }
+        }
+      ]
+    }
+  ]
+}

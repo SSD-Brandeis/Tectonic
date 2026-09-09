@@ -1,0 +1,29 @@
+{
+  "$schema": "../workload_schema.json",
+  "character_set": "numeric",
+  "sections": [
+    {
+      "groups": [
+        {
+          "sorted": {
+            "k": 5000,
+            "l": 100
+          },
+          "inserts": {
+            "op_count": 10000000,
+            "key": {
+              "uniform": {
+                "len": 128
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 128
+              }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

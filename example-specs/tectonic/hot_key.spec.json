@@ -1,0 +1,38 @@
+{
+  "$schema": "../workload_schema.json",
+  "character_set": "numeric",
+  "sections": [
+    {
+      "groups": [
+        {
+          "inserts": {
+            "op_count": 5000000,
+            "key": {
+              "hot_range": {
+                "amount": 100000,
+                "len": 16,
+                "probability": 0.1
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 128,
+                "character_set": "numeric"
+              }
+            }
+          },
+          "point_queries": {
+            "op_count": 5000000,
+            "key": {
+              "hot_range": {
+                "amount": 100000,
+                "len": 16,
+                "probability": 0.9
+              }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

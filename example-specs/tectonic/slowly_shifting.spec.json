@@ -1,0 +1,90 @@
+{
+  "$schema": "../workload_schema.json",
+  "character_set": "alphanumeric",
+  "sections": [
+    {
+      "groups": [
+        {
+          "inserts": {
+            "op_count": 70000,
+            "key": {
+              "uniform": {
+                "len": 128,
+                "character_set": "alphanumeric"
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 128,
+                "character_set": "alphanumeric"
+              }
+            }
+          },
+          "point_queries": {
+            "op_count": 20000
+          },
+          "range_queries": {
+            "op_count": 10000,
+            "selectivity": 0.1
+          }
+        }
+      ]
+    },
+    {
+      "groups": [
+        {
+          "inserts": {
+            "op_count": 50000,
+            "key": {
+              "uniform": {
+                "len": 128,
+                "character_set": "alphanumeric"
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 128,
+                "character_set": "alphanumeric"
+              }
+            }
+          },
+          "point_queries": {
+            "op_count": 30000
+          },
+          "range_queries": {
+            "op_count": 20000,
+            "selectivity": 0.15
+          }
+        }
+      ]
+    },
+    {
+      "groups": [
+        {
+          "inserts": {
+            "op_count": 30000,
+            "key": {
+              "uniform": {
+                "len": 128,
+                "character_set": "alphanumeric"
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 128,
+                "character_set": "alphanumeric"
+              }
+            }
+          },
+          "point_queries": {
+            "op_count": 40000
+          },
+          "range_queries": {
+            "op_count": 30000,
+            "selectivity": 0.2
+          }
+        }
+      ]
+    }
+  ]
+}

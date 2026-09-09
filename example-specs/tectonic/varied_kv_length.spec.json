@@ -1,0 +1,74 @@
+{
+  "$schema": "../workload_schema.json",
+  "character_set": "alphanumeric",
+  "sections": [
+    {
+      "groups": [
+        {
+          "inserts": {
+            "op_count": 5000000,
+            "key": {
+              "weighted": [
+                {
+                  "value": {
+                    "uniform": { "len": 32, "character_set": "alphanumeric" }
+                  },
+                  "weight": 1.0
+                },
+                {
+                  "value": {
+                    "uniform": { "len": 64, "character_set": "alphanumeric" }
+                  },
+                  "weight": 1.0
+                },
+                {
+                  "value": {
+                    "uniform": { "len": 128, "character_set": "alphanumeric" }
+                  },
+                  "weight": 1.0
+                },
+                {
+                  "value": {
+                    "uniform": { "len": 256, "character_set": "alphanumeric" }
+                  },
+                  "weight": 1.0
+                }
+              ]
+            },
+            "val": {
+              "weighted": [
+                {
+                  "value": {
+                    "uniform": { "len": 32, "character_set": "alphanumeric" }
+                  },
+                  "weight": 1.0
+                },
+                {
+                  "value": {
+                    "uniform": { "len": 64, "character_set": "alphanumeric" }
+                  },
+                  "weight": 1.0
+                },
+                {
+                  "value": {
+                    "uniform": { "len": 128, "character_set": "alphanumeric" }
+                  },
+                  "weight": 1.0
+                },
+                {
+                  "value": {
+                    "uniform": { "len": 256, "character_set": "alphanumeric" }
+                  },
+                  "weight": 1.0
+                }
+              ]
+            }
+          },
+          "point_queries": {
+            "op_count": 5000000
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "$schema": "../workload_schema.json",
+  "character_set": "alphanumeric",
+  "sections": [
+    {
+      "groups": [
+        {
+          "inserts": {
+            "op_count": 1e6,
+            "key": { "uniform": { "len": 128 } },
+            "val": { "uniform": { "len": 128 } }
+          }
+        }
+      ]
+    }
+  ]
+}

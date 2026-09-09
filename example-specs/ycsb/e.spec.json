@@ -31,8 +31,8 @@
           "range_queries": {
             "op_count": 950000,
             "selectivity": {
-              "beta": {
-                "min": 0,
+              "uniform": {
+                "min": 0.0,
                 "max": 0.001
               }
             },

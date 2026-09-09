@@ -1,0 +1,96 @@
+{
+  "$schema": "../workload_schema.json",
+  "character_set": "alphanumeric",
+  "sections": [
+    {
+      "groups": [
+        {
+          "inserts": {
+            "op_count": 1e1,
+            "key": { "uniform": { "len": 20 } },
+            "val": { "uniform": { "len": 20 } }
+          }
+        },
+        {
+          "inserts": {
+            "op_count": 1e1,
+            "key": {
+              "weighted": [
+                {
+                  "weight": 0.1,
+                  "value": {
+                    "segmented": {
+                      "separator": ":",
+                      "segments": [
+                        "obj",
+                        { "uniform": { "len": 20 } },
+                        "key",
+                        {
+                          "hot_range": {
+                            "len": 2,
+                            "amount": 40,
+                            "probability": 0.6
+                          }
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "weight": 0.9,
+                  "value": {
+                    "segmented": {
+                      "separator": ":",
+                      "segments": ["obj", { "uniform": { "len": 20 } }]
+                    }
+                  }
+                }
+              ]
+            },
+            "val": { "uniform": { "len": 1024 } }
+          }
+        },
+        {
+          "inserts": {
+            "op_count": 1e1,
+            "key": { "uniform": { "len": 8 } },
+            "val": { "uniform": { "len": 8 } }
+          },
+          "updates": {
+            "op_count": 1e1,
+            "key": { "uniform": { "len": 8 } },
+            "val": { "uniform": { "len": 8 } }
+          },
+          "merges": {
+            "op_count": 1e1,
+            "key": { "uniform": { "len": 8 } },
+            "val": {
+              "weighted": [
+                { "weight": 0.5, "value": "+1" },
+                { "weight": 0.5, "value": "-1" }
+              ]
+            }
+          },
+          "point_queries": { "op_count": 1e1 },
+          "empty_point_queries": {
+            "op_count": 1e1,
+            "key": { "uniform": { "len": 8 } }
+          },
+          "range_queries": {
+            "op_count": 1e1,
+            "selectivity": { "uniform": { "min": 0.01, "max": 0.1 } }
+          },
+          "point_deletes": { "op_count": 1e1 },
+          "empty_point_deletes": {
+            "op_count": 1e1,
+            "key": { "uniform": { "len": 8 } }
+          },
+          "range_deletes": {
+            "op_count": 1e1,
+            "selectivity": { "normal": { "mean": 0.005, "std_dev": 0.001 } }
+          }
+        }
+      ]
+    }
+  ]
+}

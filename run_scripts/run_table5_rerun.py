@@ -488,9 +488,9 @@ def update_table_and_summary(results_dict):
 
             io_diff_pct = abs(t_tot - y_tot) / y_tot * 100.0 if y_tot > 0 else 0.0
 
-            summary[db][lbl]["ycsb"] = {"wall_time_s": y_wt, "total_read_mb": y_r, "total_write_mb": y_w, "total_io_mb": y_tot}
-            summary[db][lbl]["tectonic"] = {"wall_time_s": t_wt, "total_read_mb": t_r, "total_write_mb": t_w, "total_io_mb": t_tot}
-            summary[db][lbl]["diff_percent"] = {"wall_time": round(wt_diff_pct, 2), "total_io": round(io_diff_pct, 2)}
+            summary[db][lbl]["ycsb"] = {"wall_time_s": y_wt, "total_read_mb": y_r, "total_write_mb": y_w, "bytes_transferred_mb": y_tot}
+            summary[db][lbl]["tectonic"] = {"wall_time_s": t_wt, "total_read_mb": t_r, "total_write_mb": t_w, "bytes_transferred_mb": t_tot}
+            summary[db][lbl]["diff_percent"] = {"wall_time": round(wt_diff_pct, 2), "bytes_transferred": round(io_diff_pct, 2)}
 
             table_rows.append(
                 f"| **{db}** | {lbl} | YCSB | {y_wt:.2f} | {y_r:.2f} | {y_w:.2f} | {y_tot:.2f} | — | — |"

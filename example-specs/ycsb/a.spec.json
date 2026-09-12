@@ -1,57 +1,44 @@
 {
-  "$schema": "../../workload_schema.json",
+  "$schema": "../../vendor/tectonic/workload_schema.json",
   "sections": [
     {
       "groups": [
         {
-          "name": "Load Phase",
-          "enable_granular_stats": true,
           "inserts": {
             "op_count": 1000000,
             "key": {
               "segmented": {
                 "segments": [
                   "usertable:user",
-                  {
-                    "uniform": {
-                      "len": 19,
-                      "character_set": "numeric"
-                    }
-                  }
+                  { "uniform": { "len": 19, "character_set": "numeric" } }
                 ],
                 "separator": ""
               }
             },
             "val": {
-              "uniform": {
-                "len": 1090
-              }
+              "uniform": { "len": 1090 }
             }
           }
         },
         {
-          "name": "Execution Phase",
-          "enable_granular_stats": true,
           "point_queries": {
             "op_count": 500000,
             "selection": {
-              "zipf": {
-                "s": 0.99,
-                "n": 1000000
+              "beta": {
+                "alpha": 0.15,
+                "beta": 0.55
               }
             }
           },
           "updates": {
             "op_count": 500000,
             "val": {
-              "uniform": {
-                "len": 109
-              }
+              "uniform": { "len": 109 }
             },
             "selection": {
-              "zipf": {
-                "s": 0.99,
-                "n": 1000000
+              "beta": {
+                "alpha": 0.15,
+                "beta": 0.55
               }
             }
           }

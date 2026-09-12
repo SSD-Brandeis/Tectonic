@@ -23,3 +23,10 @@ Sleep.java
 
 # Python compiled bytecode
 __pycache__/
+
+# Experiment data and artifacts
+data/
+*.zip
+*.jsonl
+*.bak
+

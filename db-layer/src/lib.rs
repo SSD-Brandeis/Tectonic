@@ -240,6 +240,7 @@ pub fn execute_and_benchmark_db(
 
     // Print out statistics
     merged_benchmarker.print_summary();
+    merged_benchmarker.cleanup()?;
 
     Ok(())
 }
@@ -588,6 +589,10 @@ impl<'a> Benchmarker<'a> {
     pub fn print_summary(&mut self) {
         println!("[[***Overall Stats***]]");
         self.overall.print_stats();
+    }
+
+    pub fn cleanup(self) -> Result<()> {
+        self.db_layer.cleanup()
     }
 
     pub fn handle_insert(&mut self, key: &Key, value: &Value) -> Result<()> {

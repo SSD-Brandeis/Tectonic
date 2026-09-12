@@ -1,7 +1,7 @@
 use crate::Key;
 use crate::{DBTranslationLayer, Value};
 use anyhow::{Context, Result};
-use rocksdb::{Options, ReadOptions, WriteOptions};
+use rocksdb::{FlushOptions, Options, ReadOptions, WriteOptions};
 use std::env::temp_dir;
 use std::fs::DirBuilder;
 use std::path::PathBuf;
@@ -30,22 +30,13 @@ impl RocksDB {
         // This error means the directory already exists, which is what we want
         let _ = dir_builder.create(&dir);
 
-        let opts = {
-            if let Some(config_file_path) = config_file_path {
-                let (opts, _) = Options::load_latest(
-                    config_file_path,
-                    rocksdb::Env::new()?,
-                    false,
-                    rocksdb::Cache::new_lru_cache(8 * 1024 * 1024),
-                )
-                .context("Failed to load RocksDB options file")?;
-                opts
-            } else {
-                let mut opts = rocksdb::Options::default();
-                opts.create_if_missing(true);
-                opts
-            }
-        };
+        let mut opts = rocksdb::Options::default();
+        opts.create_if_missing(true);
+        opts.set_allow_concurrent_memtable_write(false);
+        opts.set_write_buffer_size(64 * 1024 * 1024);
+        opts.set_max_write_buffer_number(4);
+        opts.set_target_file_size_base(64 * 1024 * 1024);
+        opts.set_level_zero_file_num_compaction_trigger(4);
 
         // let merge_fn = |_key: &[u8],
         //                 existing_value: Option<&[u8]>,
@@ -117,8 +108,19 @@ impl RocksDB {
     }
 }
 
+impl Drop for RocksDB {
+    fn drop(&mut self) {
+        let mut flush_opts = FlushOptions::default();
+        flush_opts.set_wait(true);
+        let _ = self.db.flush_opt(&flush_opts);
+    }
+}
+
 impl DBTranslationLayer for RocksDB {
     fn cleanup(self) -> Result<()> {
+        let mut flush_opts = FlushOptions::default();
+        flush_opts.set_wait(true);
+        let _ = self.db.flush_opt(&flush_opts);
         if let Ok(Some(stats)) = self.db.property_value("rocksdb.stats") {
             println!("=== RocksDB Internal Stats ===\n{}", stats);
         }

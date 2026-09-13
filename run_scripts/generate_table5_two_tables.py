@@ -8,6 +8,8 @@ OUT_DIR = f"{ROOT_DIR}/data/table5_rerun"
 RESULTS_PATH = f"{OUT_DIR}/results_io_bytes.json"
 CLI_TABLE_OUT = f"{OUT_DIR}/table_5_cli_execution_time.md"
 SERVER_TABLE_OUT = f"{OUT_DIR}/table_5_server_execution_time.md"
+CLIENT_DRIVER_OUT = f"{OUT_DIR}/table_5_client_driver.md"
+DB_SERVER_LOG_OUT = f"{OUT_DIR}/table_5_db_server_log.md"
 
 def format_aligned_markdown_table(headers, alignments, rows):
     all_rows = [headers] + rows
@@ -250,11 +252,15 @@ def main():
 
     with open(CLI_TABLE_OUT, "w") as f:
         f.writelines(cli_lines)
-    print(f"Generated CLI Table: {CLI_TABLE_OUT}")
+    with open(CLIENT_DRIVER_OUT, "w") as f:
+        f.writelines(cli_lines)
+    print(f"Generated CLI Table: {CLI_TABLE_OUT} and {CLIENT_DRIVER_OUT}")
 
     with open(SERVER_TABLE_OUT, "w") as f:
         f.writelines(srv_lines)
-    print(f"Generated Server Table: {SERVER_TABLE_OUT}")
+    with open(DB_SERVER_LOG_OUT, "w") as f:
+        f.writelines(srv_lines)
+    print(f"Generated Server Table: {SERVER_TABLE_OUT} and {DB_SERVER_LOG_OUT}")
 
 if __name__ == "__main__":
     main()

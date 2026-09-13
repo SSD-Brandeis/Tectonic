@@ -46,7 +46,7 @@ IOSTAT_DEVICE = "sda"
 ROCKSDB_DIR   = "/tmp/table5_rerun_rocksdb"
 
 # Default scales: 2^18 to 2^21 first
-DEFAULT_SCALES    = [2**18, 2**19, 2**20, 2**21]
+DEFAULT_SCALES    = [2**18, 2**19, 2**20, 2**21, 2**22]
 DEFAULT_DATABASES = ["rocksdb", "redis", "cassandra", "scylla"]
 EXEC_THREADS = 1
 
@@ -283,14 +283,26 @@ def drop_caches():
         capture=True, check=False)
     log("  [cache] dropped kernel page cache / dentries / inodes on disk")
 
+def check_disk_health(min_free_gb=20):
+    total, used, free = shutil.disk_usage("/")
+    free_gb = free / (1024 ** 3)
+    log(f"  [disk-health] / partition has {free_gb:.1f} GB free space available")
+    if free_gb < min_free_gb:
+        run(["docker", "volume", "prune", "-f"], check=False, capture=True)
+        total, used, free = shutil.disk_usage("/")
+        free_gb = free / (1024 ** 3)
+        if free_gb < min_free_gb:
+            fail(f"CRITICAL DISK SPACE SHORTAGE: only {free_gb:.1f} GB free, required >= {min_free_gb} GB")
+
 def setup_db(db, image_ref=None):
+    check_disk_health()
     if db == "rocksdb":
         if os.path.exists(ROCKSDB_DIR):
             shutil.rmtree(ROCKSDB_DIR)
         os.makedirs(ROCKSDB_DIR, exist_ok=True)
     elif db == "redis":
         ref = image_ref or DEFAULT_DB_IMAGES["redis"]
-        run(["docker", "rm", "-f", "sim-redis"], check=False, capture=True)
+        run(["docker", "rm", "-fv", "sim-redis"], check=False, capture=True)
         run(["docker", "run", "--name", "sim-redis", "-p", "6379:6379", "-d",
              ref, "redis-server", "--appendonly", "no", "--save", ""])
         for _ in range(30):
@@ -301,7 +313,8 @@ def setup_db(db, image_ref=None):
             time.sleep(1)
     elif db == "cassandra":
         ref = image_ref or DEFAULT_DB_IMAGES["cassandra"]
-        run(["docker", "rm", "-f", "sim-cassandra"], check=False, capture=True)
+        run(["docker", "rm", "-fv", "sim-cassandra"], check=False, capture=True)
+        run(["docker", "volume", "prune", "-f"], check=False, capture=True)
         time.sleep(2)
         run(["docker", "run", "--name", "sim-cassandra", "-p", "9042:9042",
              "-d", ref])
@@ -309,18 +322,23 @@ def setup_db(db, image_ref=None):
             r = run(["docker", "exec", "sim-cassandra", "cqlsh",
                      "-e", "DESCRIBE KEYSPACES"], capture=True, check=False)
             if "system" in (r.stdout or ""):
+                time.sleep(5)
                 break
             time.sleep(2)
     elif db == "scylla":
         ref = image_ref or DEFAULT_DB_IMAGES["scylla"]
         run(["docker", "stop", "sim-cassandra"], check=False, capture=True)
-        run(["docker", "rm", "-f", "sim-scylla"], check=False, capture=True)
+        run(["docker", "rm", "-fv", "sim-cassandra"], check=False, capture=True)
+        run(["docker", "rm", "-fv", "sim-scylla"], check=False, capture=True)
+        run(["docker", "volume", "prune", "-f"], check=False, capture=True)
+        time.sleep(2)
         run(["docker", "run", "--name", "sim-scylla", "-p", "9042:9042", "-p", "9180:9180", "-d",
              ref, "--developer-mode", "1"])
         for _ in range(60):
             r = run(["docker", "exec", "sim-scylla", "cqlsh",
                      "-e", "DESCRIBE KEYSPACES"], capture=True, check=False)
             if "system" in (r.stdout or ""):
+                time.sleep(5)
                 break
             time.sleep(2)
 
@@ -334,10 +352,13 @@ def teardown_db(db):
         if os.path.exists(ROCKSDB_DIR):
             shutil.rmtree(ROCKSDB_DIR)
     elif db == "redis":
-        run(["docker", "rm", "-f", "sim-redis"], check=False, capture=True)
+        run(["docker", "rm", "-fv", "sim-redis"], check=False, capture=True)
+    elif db == "cassandra":
+        run(["docker", "rm", "-fv", "sim-cassandra"], check=False, capture=True)
+        run(["docker", "volume", "prune", "-f"], check=False, capture=True)
     elif db == "scylla":
-        run(["docker", "rm", "-f", "sim-scylla"], check=False, capture=True)
-        run(["docker", "start", "sim-cassandra"], check=False, capture=True)
+        run(["docker", "rm", "-fv", "sim-scylla"], check=False, capture=True)
+        run(["docker", "volume", "prune", "-f"], check=False, capture=True)
 
 # =============================================================================
 #  BENCHMARK EXECUTION WITH DUAL I/O ACCOUNTING
@@ -609,7 +630,7 @@ def execute_with_dual_io(trace_path, db, scale=None, workload=None):
     # 2. Hardware sectors before
     sec_r0, sec_w0 = get_disk_hardware_sectors(IOSTAT_DEVICE)
 
-    # 3. Execute
+    # 3. Execute with connection retry resilience
     t0 = time.perf_counter()
     exec_cmd = [TECTONIC_CLI, "execute",
                 "-i", trace_path,
@@ -618,7 +639,23 @@ def execute_with_dual_io(trace_path, db, scale=None, workload=None):
     if DB_CLI_CONFIG.get(db):
         exec_cmd.extend(["-c", DB_CLI_CONFIG[db]])
     exec_cmd.extend(["-t", str(EXEC_THREADS)])
-    r = run(exec_cmd, capture=True)
+
+    r = None
+    for attempt in range(1, 4):
+        r = run(exec_cmd, capture=True, check=False)
+        if r.returncode == 0:
+            break
+        log(f"  [WARN] tectonic-cli execute failed on attempt {attempt}/3 (exit={r.returncode})")
+        err_msg = (r.stderr or "") + " " + (r.stdout or "")
+        if "Control connection pool error" in err_msg or "Connection refused" in err_msg or "Failed to perform a connection" in err_msg:
+            time.sleep(6)
+            continue
+        break
+    if r.returncode != 0:
+        log(f"  [ERROR] exit={r.returncode}")
+        if r.stderr:
+            log(r.stderr[:1500])
+        sys.exit(1)
     elapsed = time.perf_counter() - t0
 
     # Save raw stdout to text file for complete provenance

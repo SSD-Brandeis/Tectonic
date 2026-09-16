@@ -24,8 +24,7 @@ impl Redis {
 }
 
 impl DBTranslationLayer for Redis {
-    fn cleanup(self) -> Result<()> {
-        drop(self);
+    fn cleanup(&mut self) -> Result<()> {
         Ok(())
     }
 

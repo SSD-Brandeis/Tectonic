@@ -157,9 +157,10 @@ pub fn execute_and_benchmark_db(
             } else {
                 db_path_clone.clone()
             };
+            let connect_start = time::Instant::now();
             let db = Db::new(&db_name_clone, thread_db_path.as_deref(), config_clone.as_deref())?;
             let mut benchmarker = Benchmarker::new(db);
-            benchmarker.start();
+            benchmarker.start_at(connect_start);
 
             let file = File::open(&final_path)?;
             let file_size = file.metadata()?.len();
@@ -204,6 +205,7 @@ pub fn execute_and_benchmark_db(
                 }
             }
 
+            benchmarker.cleanup()?;
             benchmarker.end();
             if let Some(pb) = progress_bar {
                 pb.finish_and_clear();
@@ -240,7 +242,6 @@ pub fn execute_and_benchmark_db(
 
     // Print out statistics
     merged_benchmarker.print_summary();
-    merged_benchmarker.cleanup()?;
 
     Ok(())
 }
@@ -582,6 +583,10 @@ impl<'a> Benchmarker<'a> {
         self.overall.start();
     }
 
+    pub fn start_at(&mut self, time: time::Instant) {
+        self.overall.start_time = Some(time);
+    }
+
     pub fn end(&mut self) {
         self.overall.end();
     }
@@ -591,7 +596,7 @@ impl<'a> Benchmarker<'a> {
         self.overall.print_stats();
     }
 
-    pub fn cleanup(self) -> Result<()> {
+    pub fn cleanup(&mut self) -> Result<()> {
         self.db_layer.cleanup()
     }
 
@@ -706,7 +711,7 @@ impl<'a> Benchmarker<'a> {
 #[enum_dispatch]
 pub trait DBTranslationLayer {
     // Setup
-    fn cleanup(self) -> Result<()>;
+    fn cleanup(&mut self) -> Result<()>;
 
     // Operations
     fn insert(&self, key: &Key, value: &Value) -> Result<()>;

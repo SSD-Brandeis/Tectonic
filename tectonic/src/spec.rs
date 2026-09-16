@@ -138,9 +138,6 @@ impl Scalable for Distribution {
             }
             _ => (),
         }
-        if let Self::Zipf { n, .. } = self {
-            *n *= factor
-        }
     }
 }
 
@@ -318,12 +315,9 @@ impl Distribution {
                     len,
                 )
             }
-            Self::Zipf { distr, n, .. } => {
-                let x = (distr.sample(rng) - 1.0) / (n - 1.0);
-                unbiased_index(
-                    (x.clamp(0.0, 1.0 - f64::EPSILON) * len as f64) as usize,
-                    len,
-                )
+            Self::Zipf { distr, .. } => {
+                let raw_rank = distr.sample(rng) - 1.0;
+                unbiased_index(raw_rank as usize, len)
             }
             Self::Latest { distr, n, .. } => {
                 let x = (n - distr.sample(rng)) / *n;

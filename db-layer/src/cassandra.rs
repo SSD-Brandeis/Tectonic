@@ -126,8 +126,7 @@ impl Cassandra {
 }
 
 impl DBTranslationLayer for Cassandra {
-    fn cleanup(self) -> Result<()> {
-        std::mem::drop(self);
+    fn cleanup(&mut self) -> Result<()> {
         Ok(())
     }
 

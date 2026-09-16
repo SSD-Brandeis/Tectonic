@@ -117,14 +117,13 @@ impl Drop for RocksDB {
 }
 
 impl DBTranslationLayer for RocksDB {
-    fn cleanup(self) -> Result<()> {
+    fn cleanup(&mut self) -> Result<()> {
         let mut flush_opts = FlushOptions::default();
         flush_opts.set_wait(true);
         let _ = self.db.flush_opt(&flush_opts);
         if let Ok(Some(stats)) = self.db.property_value("rocksdb.stats") {
             println!("=== RocksDB Internal Stats ===\n{}", stats);
         }
-        std::mem::drop(self);
         return Ok(());
     }
 

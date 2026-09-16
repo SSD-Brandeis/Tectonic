@@ -1716,10 +1716,12 @@ pub fn scale_and_benchmark_workload(
             let mut spec_clone: WorkloadSpec =
                 serde_json::from_str(&spec_string_clone).context("Parsing spec file")?;
             scale_spec(&mut spec_clone, scale / (threads as f64));
+            let connect_start = Instant::now();
             let mut benchmarker = Benchmarker::new(Db::new(&db_name_clone, db_path_clone.as_deref(), config_clone.as_deref())?);
-            benchmarker.start();
+            benchmarker.start_at(connect_start);
             let mut handler = DBHandler::new(&mut benchmarker, prefix, target_rate.map(|r| r / (threads as u64).max(1)), Some(global_ops_clone), Some(global_read_latency_sum_clone), Some(global_read_count_clone));
             generate_operations(handler, &spec_clone)?;
+            benchmarker.cleanup()?;
             benchmarker.end();
             if threads > 1 {
                 println!("--- Thread {} Summary ---", t);
@@ -1733,7 +1735,7 @@ pub fn scale_and_benchmark_workload(
     for handle in handles {
         handle.join().unwrap()?;
     }
-    
+
     stop_signal.store(true, Ordering::Relaxed);
 
     Ok(())
@@ -1910,10 +1912,12 @@ pub fn benchmark_workload(
             let mut spec_clone: WorkloadSpec =
                 serde_json::from_str(&spec_string_clone).context("Parsing spec file")?;
             scale_spec(&mut spec_clone, 1.0 / (threads as f64));
+            let connect_start = Instant::now();
             let mut benchmarker = Benchmarker::new(Db::new(&db_name_clone, db_path_clone.as_deref(), config_clone.as_deref())?);
-            benchmarker.start();
+            benchmarker.start_at(connect_start);
             let mut handler = DBHandler::new(&mut benchmarker, prefix, target_rate.map(|r| r / (threads as u64).max(1)), Some(global_ops_clone), Some(global_read_latency_sum_clone), Some(global_read_count_clone));
             generate_operations(handler, &spec_clone)?;
+            benchmarker.cleanup()?;
             benchmarker.end();
             if threads > 1 {
                 println!("--- Thread {} Summary ---", t);
@@ -1927,7 +1931,7 @@ pub fn benchmark_workload(
     for handle in handles {
         handle.join().unwrap()?;
     }
-    
+
     stop_signal.store(true, Ordering::Relaxed);
 
     Ok(())

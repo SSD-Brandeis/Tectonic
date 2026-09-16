@@ -20,7 +20,7 @@ impl HashMapDB {
 }
 
 impl DBTranslationLayer for HashMapDB {
-    fn cleanup(self) -> Result<()> {
+    fn cleanup(&mut self) -> Result<()> {
         Ok(())
     }
 

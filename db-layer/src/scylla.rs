@@ -118,8 +118,7 @@ impl Scylla {
 }
 
 impl DBTranslationLayer for Scylla {
-    fn cleanup(self) -> Result<()> {
-        std::mem::drop(self);
+    fn cleanup(&mut self) -> Result<()> {
         Ok(())
     }
 

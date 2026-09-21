@@ -1,4 +1,15 @@
 #!/usr/bin/env python3
+"""
+run_table5_post_fix_validation.py
+==================================
+Fork of run_table5_discrepancy_investigation.py used to re-validate Table 5
+after the Zipf double-scaling fix in tectonic/src/spec.rs (see
+/home/cc/Tectonic/debug_difference.md).
+
+Writes to a separate data/post-fix-validation/ directory so it never
+overwrites the original data/table5_rerun/ or data/discrepancy-investigation/
+experiment results.
+"""
 
 
 import os
@@ -34,19 +45,19 @@ YCSB_CP  = ":".join([
     f"{YCSB_DIR}/core/target/core-0.18.0-SNAPSHOT.jar",
 ])
 
-OUT_DIR      = f"{ROOT_DIR}/data/table5_rerun"
+OUT_DIR      = f"{ROOT_DIR}/data/post-fix-validation"
 RESULTS_PATH = f"{OUT_DIR}/results_io_bytes.json"
 TABLE_OUT    = f"{OUT_DIR}/table_5_plotting_data"
 SUMMARY_OUT  = f"{OUT_DIR}/plotting_data_summary.json"
 IMAGE_LOCK_PATH = f"{OUT_DIR}/db_images.json"
 ORIGINAL_IMAGE_LOCK = f"{ROOT_DIR}/data/ycsb_tectonic_similarity_io_bytes/db_images.json"
-LOG_PATH     = f"{OUT_DIR}/run_table5_rerun.log"
+LOG_PATH     = f"{OUT_DIR}/run_post_fix_validation.log"
 
 IOSTAT_DEVICE = "sda"
-ROCKSDB_DIR   = "/tmp/table5_rerun_rocksdb"
+ROCKSDB_DIR   = "/tmp/post_fix_validation_rocksdb"
 
-# Default scales: 2^18 to 2^21 first
-DEFAULT_SCALES    = [2**18, 2**19, 2**20, 2**21, 2**22]
+# Post-fix validation only needs 2^18 to 2^20 (per the requested rerun scope)
+DEFAULT_SCALES    = [2**18, 2**19, 2**20]
 DEFAULT_DATABASES = ["rocksdb", "redis", "cassandra", "scylla"]
 EXEC_THREADS = 1
 
@@ -303,8 +314,14 @@ def setup_db(db, image_ref=None):
     elif db == "redis":
         ref = image_ref or DEFAULT_DB_IMAGES["redis"]
         run(["docker", "rm", "-fv", "sim-redis"], check=False, capture=True)
-        run(["docker", "run", "--name", "sim-redis", "-p", "6379:6379", "-d",
-             ref, "redis-server", "--appendonly", "no", "--save", ""])
+        run(["docker", "run", "--name", "sim-redis", "--cpuset-cpus=2", "-p", "6379:6379", "-d",
+             "--entrypoint", "/usr/local/bin/redis-server",
+             ref, "--appendonly", "no", "--save", "",
+             "--activedefrag", "no",
+             "--slowlog-log-slower-than", "-1",
+             "--latency-monitor-threshold", "0",
+             "--dynamic-hz", "no",
+             "--server_cpulist", "2"])
         for _ in range(30):
             r = run(["docker", "exec", "sim-redis", "redis-cli", "ping"],
                     capture=True, check=False)
@@ -405,7 +422,6 @@ def capture_and_save_db_internal_logs(db, scale, workload, trace_fname, cli_stdo
     prefix = f"{db_out_dir}/{db}_scale{scale}_{workload}"
 
     if db == "rocksdb":
-        # 1. Copy RocksDB LOG file(s)
         if os.path.exists(ROCKSDB_DIR):
             for lf in os.listdir(ROCKSDB_DIR):
                 if lf.startswith("LOG"):
@@ -414,7 +430,6 @@ def capture_and_save_db_internal_logs(db, scale, workload, trace_fname, cli_stdo
                     shutil.copy2(src, dst)
                     saved_files.append(dst)
 
-        # 2. Extract stats from stdout
         stats_match = re.search(r'=== RocksDB Internal Stats ===\s*(.*)', cli_stdout, re.DOTALL)
         if stats_match:
             stats_text = stats_match.group(1)
@@ -622,15 +637,12 @@ def capture_and_save_db_internal_logs(db, scale, workload, trace_fname, cli_stdo
     return metrics, saved_files
 
 def execute_with_dual_io(trace_path, db, scale=None, workload=None):
-    # 1. Start iostat sampler
     sampler = IoStatSampler(device=IOSTAT_DEVICE)
     sampler.start()
     time.sleep(0.8) # skip boot block
 
-    # 2. Hardware sectors before
     sec_r0, sec_w0 = get_disk_hardware_sectors(IOSTAT_DEVICE)
 
-    # 3. Execute with connection retry resilience
     t0 = time.perf_counter()
     exec_cmd = [TECTONIC_CLI, "execute",
                 "-i", trace_path,
@@ -639,6 +651,8 @@ def execute_with_dual_io(trace_path, db, scale=None, workload=None):
     if DB_CLI_CONFIG.get(db):
         exec_cmd.extend(["-c", DB_CLI_CONFIG[db]])
     exec_cmd.extend(["-t", str(EXEC_THREADS)])
+    if db == "redis":
+        exec_cmd = ["taskset", "-c", "4"] + exec_cmd
 
     r = None
     for attempt in range(1, 4):
@@ -658,7 +672,6 @@ def execute_with_dual_io(trace_path, db, scale=None, workload=None):
         sys.exit(1)
     elapsed = time.perf_counter() - t0
 
-    # Save raw stdout to text file for complete provenance
     trace_fname = os.path.basename(trace_path).replace(".txt", "")
     wl_folder = "X-Bench" if workload == "tectonic" else ("YCSB" if workload == "ycsb" else "")
     db_out_dir = os.path.join(OUT_DIR, db, wl_folder) if wl_folder else os.path.join(OUT_DIR, db)
@@ -672,19 +685,16 @@ def execute_with_dual_io(trace_path, db, scale=None, workload=None):
     if scale is not None and workload is not None:
         db_metrics, saved_logs = capture_and_save_db_internal_logs(db, scale, workload, trace_fname, r.stdout)
 
-    # 4. Hardware sectors after (flush kernel page cache dirty writeback first)
+    # sync flushes dirty writeback before reading sectors, so the after-count is accurate
     run(["sync"])
     sec_r1, sec_w1 = get_disk_hardware_sectors(IOSTAT_DEVICE)
 
-    # 5. Stop iostat sampler
     sampler.stop()
     sampler.join(timeout=4)
 
-    # Compute hardware MB
     hw_read_mb  = round(((sec_r1 - sec_r0) * 512) / (1024 * 1024), 2)
     hw_write_mb = round(((sec_w1 - sec_w0) * 512) / (1024 * 1024), 2)
 
-    # Parse stdout latencies and overall metrics with units
     pat = re.compile(r'\[([^\]]+)\]\s+([^:]+):\s+([\d\.]+)\s*(us|ops/sec|secs)?')
     parsed = {}
     raw_overall = {}
@@ -710,7 +720,6 @@ def execute_with_dual_io(trace_path, db, scale=None, workload=None):
             op_metrics[op_key] = normalized
             lat[op_key] = {k: normalized[k] for k in ("p0", "p25", "p50", "p75", "p95", "p99") if k in normalized}
 
-    # Normalize overall metrics with explicit units
     overall = {}
     for raw_k, out_k in EXECUTE_OVERALL_METRIC_MAP.items():
         if raw_k in raw_overall:
@@ -736,11 +745,9 @@ def format_aligned_markdown_table(headers, alignments, rows):
     col_widths = [max(w, len(alignments[i])) for i, w in enumerate(col_widths)]
 
     lines = []
-    # Header row
     h_cells = [headers[i].ljust(col_widths[i]) for i in range(len(headers))]
     lines.append("| " + " | ".join(h_cells) + " |")
 
-    # Separator row
     sep_cells = []
     for i, a in enumerate(alignments):
         w = col_widths[i]
@@ -752,7 +759,6 @@ def format_aligned_markdown_table(headers, alignments, rows):
             sep_cells.append(":" + "-" * (w - 1))
     lines.append("| " + " | ".join(sep_cells) + " |")
 
-    # Data rows
     for r in rows:
         r_cells = []
         for i, val in enumerate(r):
@@ -864,31 +870,9 @@ def update_table_and_summary(results_dict):
     with open(SUMMARY_OUT, "w") as f:
         json.dump(summary, f, indent=2)
 
-    # Also generate a markdown comparison table for database internal metrics
-    internal_rows = []
-    internal_headers = ["Database", "Scale", "Internal Metric", "YCSB", "X-Bench", "Diff (%)"]
-    internal_align = [":---", ":---:", ":---", "---:", "---:", ":---:"]
-    for db in dbs:
-        scales = sorted([int(s) for s in results_dict[db].keys()])
-        for scale in scales:
-            lbl = f"2^{scale.bit_length() - 1}"
-            sdata = results_dict[db][str(scale)]
-            y_im = sdata.get("ycsb", {}).get("db_internal_metrics", {})
-            t_im = sdata.get("tectonic", {}).get("db_internal_metrics", {})
-            all_keys = sorted(set(list(y_im.keys()) + list(t_im.keys())))
-            for k in all_keys:
-                y_v = y_im.get(k)
-                t_v = t_im.get(k)
-                if isinstance(y_v, (int, float)) and isinstance(t_v, (int, float)):
-                    d_pct = f"{abs(t_v - y_v) / y_v * 100.0:.2f}%" if y_v > 0 else "0.00%"
-                    internal_rows.append([f"**{db}**", lbl, k, f"{y_v}", f"{t_v}", f"**{d_pct}**"])
-    if internal_rows:
-        int_table = format_aligned_markdown_table(internal_headers, internal_align, internal_rows)
-        with open(f"{OUT_DIR}/table_5_db_internal_comparison.md", "w") as f_int:
-            f_int.write(int_table)
     try:
         import subprocess
-        subprocess.run(["python3", f"{ROOT_DIR}/run_scripts/generate_table5_two_tables.py"], check=False)
+        subprocess.run(["python3", f"{ROOT_DIR}/run_scripts/generate_table5_post_fix_validation.py"], check=False)
     except Exception:
         pass
 
@@ -917,12 +901,11 @@ def main():
     log(f"  Target dir   : {OUT_DIR}")
     log(f"  Databases    : {dbs}")
     log(f"  Scales       : {[f'2^{s.bit_length()-1}={s:,}' for s in scales]}")
-    log(f"  Trace Path   : /dev/shm/table5_rerun_sim_*.txt (RAM tmpfs)")
+    log(f"  Trace Path   : /dev/shm/post_fix_validation_sim_*.txt (RAM tmpfs)")
     log(f"  Hardware I/O : /sys/block/{IOSTAT_DEVICE}/stat + iostat")
 
-    # Load existing checkpoint if any
     results = {"config": {
-        "experiment": "table5_rerun",
+        "experiment": "post_fix_validation",
         "scales": scales,
         "databases": dbs,
         "exec_threads": EXEC_THREADS,
@@ -952,8 +935,8 @@ def main():
 
         banner("SCALE", f"Starting Scale {slbl} ({scale:,} operations)")
 
-        ycsb_trace = f"/dev/shm/table5_rerun_sim_ycsb_{scale}.txt"
-        tec_trace  = f"/dev/shm/table5_rerun_sim_tectonic_{scale}.txt"
+        ycsb_trace = f"/dev/shm/post_fix_validation_sim_ycsb_{scale}.txt"
+        tec_trace  = f"/dev/shm/post_fix_validation_sim_tectonic_{scale}.txt"
 
         if "ycsb" in args.workloads and not validate_trace(ycsb_trace, scale):
             generate_ycsb(scale, ycsb_trace)
@@ -968,7 +951,6 @@ def main():
             os.makedirs(db_out_dir, exist_ok=True)
             prefix = f"{db_out_dir}/{db}_scale{scale}"
 
-            # YCSB run
             if "ycsb" in args.workloads and (args.force or "ycsb" not in db_res):
                 log(f"\n  [run] YCSB workload on {db}...")
                 restart_db(db)
@@ -980,7 +962,6 @@ def main():
                 }
                 log(f"  YCSB result: wall={wt:.2f}s  tput={tp:,.0f} ops/s  read={io_tot['total_read_mb']}MB  write={io_tot['total_write_mb']}MB")
 
-            # X-Bench run
             if "tectonic" in args.workloads and (args.force or "tectonic" not in db_res):
                 log(f"\n  [run] X-Bench workload on {db}...")
                 restart_db(db)
@@ -992,7 +973,6 @@ def main():
                 }
                 log(f"  X-Bench result: wall={wt:.2f}s  tput={tp:,.0f} ops/s  read={io_tot['total_read_mb']}MB  write={io_tot['total_write_mb']}MB")
 
-            # Compute and print similarity
             if "ycsb" in db_res and "tectonic" in db_res:
                 y_res = db_res["ycsb"]
                 t_res = db_res["tectonic"]
@@ -1013,7 +993,6 @@ def main():
             update_table_and_summary(results["results"])
             log(f"  [checkpoint] updated results and table_5_plotting_data")
 
-        # Cleanup traces in RAM for this scale
         for p in [ycsb_trace, tec_trace]:
             if os.path.exists(p):
                 os.remove(p)

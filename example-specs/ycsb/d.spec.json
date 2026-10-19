@@ -35,6 +35,7 @@
           "point_queries": {
             "op_count": 950000,
             "selection": {
+              "scramble": true,
               "latest": {
                 "s": 0.99,
                 "n": 1050000

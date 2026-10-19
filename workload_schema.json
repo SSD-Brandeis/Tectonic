@@ -132,27 +132,27 @@
       "properties": {
         "merges_selection": {
           "description": "Default distribution for merges",
-          "$ref": "#/$defs/Distribution"
+          "$ref": "#/$defs/KeySelection"
         },
         "point_deletes_selection": {
           "description": "Default distribution for point deletes",
-          "$ref": "#/$defs/Distribution"
+          "$ref": "#/$defs/KeySelection"
         },
         "point_queries_selection": {
           "description": "Default distribution for point queries",
-          "$ref": "#/$defs/Distribution"
+          "$ref": "#/$defs/KeySelection"
         },
         "range_deletes_selection": {
           "description": "Default distribution for range deletes",
-          "$ref": "#/$defs/Distribution"
+          "$ref": "#/$defs/KeySelection"
         },
         "range_queries_selection": {
           "description": "Default distribution for range queries",
-          "$ref": "#/$defs/Distribution"
+          "$ref": "#/$defs/KeySelection"
         },
         "updates_selection": {
           "description": "Default distribution for updates",
-          "$ref": "#/$defs/Distribution"
+          "$ref": "#/$defs/KeySelection"
         }
       }
     },
@@ -163,7 +163,7 @@
           "description": "Default distribution for merges",
           "anyOf": [
             {
-              "$ref": "#/$defs/Distribution"
+              "$ref": "#/$defs/KeySelection"
             },
             {
               "type": "null"
@@ -174,7 +174,7 @@
           "description": "Default distribution for point deletes",
           "anyOf": [
             {
-              "$ref": "#/$defs/Distribution"
+              "$ref": "#/$defs/KeySelection"
             },
             {
               "type": "null"
@@ -185,7 +185,7 @@
           "description": "Default distribution for point queries",
           "anyOf": [
             {
-              "$ref": "#/$defs/Distribution"
+              "$ref": "#/$defs/KeySelection"
             },
             {
               "type": "null"
@@ -196,7 +196,7 @@
           "description": "Default distribution for range deletes",
           "anyOf": [
             {
-              "$ref": "#/$defs/Distribution"
+              "$ref": "#/$defs/KeySelection"
             },
             {
               "type": "null"
@@ -207,7 +207,7 @@
           "description": "Default distribution for range queries",
           "anyOf": [
             {
-              "$ref": "#/$defs/Distribution"
+              "$ref": "#/$defs/KeySelection"
             },
             {
               "type": "null"
@@ -218,7 +218,7 @@
           "description": "Default distribution for updates",
           "anyOf": [
             {
-              "$ref": "#/$defs/Distribution"
+              "$ref": "#/$defs/KeySelection"
             },
             {
               "type": "null"
@@ -632,6 +632,265 @@
         "op_count"
       ]
     },
+    "KeySelection": {
+      "description": "Selects existing keys by laying a distribution over the sorted key domain (see\n[`Distribution::key_position`]), shifted by `offset` keys.\n\n```json\n{ \"zipf\": { \"n\": 1000000, \"s\": 0.99 }, \"offset\": 1000 }\n```",
+      "type": "object",
+      "properties": {
+        "offset": {
+          "description": "Shifts the selected position by this many keys in sorted key order, wrapping around at the\nend of the key domain (negative values shift towards smaller keys). For example, with\n`offset: 1000` the key a `zipf` selection picks most often is the 1001st smallest key\n(position 1000) instead of the smallest key (position 0).",
+          "type": "integer",
+          "format": "int64",
+          "default": 0
+        },
+        "scramble": {
+          "description": "Scatters the selected keys over the key domain with FNV hashing (see\n[`Distribution::scrambled_index`]) instead of laying the distribution over the sorted key\ndomain. Use it to reproduce YCSB's scrambled zipfian distribution.",
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "uniform": {
+              "type": "object",
+              "properties": {
+                "max": {
+                  "type": "number",
+                  "format": "double"
+                },
+                "min": {
+                  "type": "number",
+                  "format": "double"
+                }
+              },
+              "required": [
+                "min",
+                "max"
+              ]
+            }
+          },
+          "required": [
+            "uniform"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "normal": {
+              "type": "object",
+              "properties": {
+                "mean": {
+                  "type": "number",
+                  "format": "double"
+                },
+                "std_dev": {
+                  "type": "number",
+                  "format": "double"
+                }
+              },
+              "required": [
+                "mean",
+                "std_dev"
+              ]
+            }
+          },
+          "required": [
+            "normal"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "beta": {
+              "type": "object",
+              "properties": {
+                "alpha": {
+                  "type": "number",
+                  "format": "double"
+                },
+                "beta": {
+                  "type": "number",
+                  "format": "double"
+                }
+              },
+              "required": [
+                "alpha",
+                "beta"
+              ]
+            }
+          },
+          "required": [
+            "beta"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "zipf": {
+              "type": "object",
+              "properties": {
+                "n": {
+                  "type": "number",
+                  "format": "double"
+                },
+                "s": {
+                  "type": "number",
+                  "format": "double"
+                }
+              },
+              "required": [
+                "n",
+                "s"
+              ]
+            }
+          },
+          "required": [
+            "zipf"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "latest": {
+              "type": "object",
+              "properties": {
+                "n": {
+                  "type": "number",
+                  "format": "double"
+                },
+                "s": {
+                  "type": "number",
+                  "format": "double"
+                }
+              },
+              "required": [
+                "n",
+                "s"
+              ]
+            }
+          },
+          "required": [
+            "latest"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "exponential": {
+              "type": "object",
+              "properties": {
+                "lambda": {
+                  "type": "number",
+                  "format": "double"
+                }
+              },
+              "required": [
+                "lambda"
+              ]
+            }
+          },
+          "required": [
+            "exponential"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "log_normal": {
+              "type": "object",
+              "properties": {
+                "mean": {
+                  "type": "number",
+                  "format": "double"
+                },
+                "std_dev": {
+                  "type": "number",
+                  "format": "double"
+                }
+              },
+              "required": [
+                "mean",
+                "std_dev"
+              ]
+            }
+          },
+          "required": [
+            "log_normal"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "poisson": {
+              "type": "object",
+              "properties": {
+                "lambda": {
+                  "type": "number",
+                  "format": "double"
+                }
+              },
+              "required": [
+                "lambda"
+              ]
+            }
+          },
+          "required": [
+            "poisson"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "weibull": {
+              "type": "object",
+              "properties": {
+                "scale": {
+                  "type": "number",
+                  "format": "double"
+                },
+                "shape": {
+                  "type": "number",
+                  "format": "double"
+                }
+              },
+              "required": [
+                "scale",
+                "shape"
+              ]
+            }
+          },
+          "required": [
+            "weibull"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "pareto": {
+              "type": "object",
+              "properties": {
+                "scale": {
+                  "type": "number",
+                  "format": "double"
+                },
+                "shape": {
+                  "type": "number",
+                  "format": "double"
+                }
+              },
+              "required": [
+                "scale",
+                "shape"
+              ]
+            }
+          },
+          "required": [
+            "pareto"
+          ]
+        }
+      ]
+    },
     "Merges": {
       "description": "Merges (read-modify-write) specification.",
       "type": "object",
@@ -654,7 +913,7 @@
           "description": "Key selection strategy",
           "anyOf": [
             {
-              "$ref": "#/$defs/Distribution"
+              "$ref": "#/$defs/KeySelection"
             },
             {
               "type": "null"
@@ -700,7 +959,7 @@
           "description": "Key selection strategy",
           "anyOf": [
             {
-              "$ref": "#/$defs/Distribution"
+              "$ref": "#/$defs/KeySelection"
             },
             {
               "type": "null"
@@ -724,7 +983,7 @@
           "description": "Key selection strategy of the start key",
           "anyOf": [
             {
-              "$ref": "#/$defs/Distribution"
+              "$ref": "#/$defs/KeySelection"
             },
             {
               "type": "null"
@@ -773,7 +1032,7 @@
           "description": "Key selection strategy of the start key",
           "anyOf": [
             {
-              "$ref": "#/$defs/Distribution"
+              "$ref": "#/$defs/KeySelection"
             },
             {
               "type": "null"
@@ -847,7 +1106,7 @@
           "description": "Key selection strategy of the start key",
           "anyOf": [
             {
-              "$ref": "#/$defs/Distribution"
+              "$ref": "#/$defs/KeySelection"
             },
             {
               "type": "null"
@@ -1031,7 +1290,7 @@
           "description": "Key selection strategy",
           "anyOf": [
             {
-              "$ref": "#/$defs/Distribution"
+              "$ref": "#/$defs/KeySelection"
             },
             {
               "type": "null"

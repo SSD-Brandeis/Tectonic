@@ -219,36 +219,68 @@ impl JsonSchema for Distribution {
     }
 }
 
+/// How many times an out-of-range sample is redrawn before it is clamped into the key domain.
+const MAX_REDRAWS: usize = 1000;
+
+/// Draws samples until one falls inside `[low, high)` and returns where it falls in that window as
+/// a fraction in `[0, 1)`. Redrawing (instead of clamping) truncates the distribution to the key
+/// domain without piling the out-of-range probability mass onto the first or last key.
+fn sample_in_window<R: Rng>(
+    rng: &mut R,
+    mut sample: impl FnMut(&mut R) -> f64,
+    low: f64,
+    high: f64,
+) -> f64 {
+    let mut x = 0.0;
+    for _ in 0..MAX_REDRAWS {
+        x = (sample(rng) - low) / (high - low);
+        if (0.0..1.0).contains(&x) {
+            return x;
+        }
+    }
+    x.clamp(0.0, 1.0 - f64::EPSILON)
+}
+
+#[inline]
+fn fraction_to_position(fraction: f64, len: usize) -> usize {
+    ((fraction * len as f64) as usize).min(len - 1)
+}
+
+/// Samples a 0-based Zipf rank over the first `min(n, len)` positions of the key domain.
+fn zipf_rank<R: Rng>(
+    rng: &mut R,
+    n: f64,
+    s: f64,
+    distr: &rand_distr::Zipf<f64>,
+    len: usize,
+) -> usize {
+    let rank = if (len as f64) < n {
+        // Fewer keys exist than the distribution has ranks: truncate it to the existing keys.
+        rand_distr::Zipf::new(len as f64, s)
+            .expect("to be able to construct a truncated zipf distribution")
+            .sample(rng)
+    } else {
+        distr.sample(rng)
+    };
+    (rank as usize).saturating_sub(1).min(len - 1)
+}
+
 // Modified from https://github.com/servo/rust-fnv/blob/main/lib.rs#L146-L157 (MIT)
 const INITIAL_STATE: u64 = 0xcbf2_9ce4_8422_2325;
 const PRIME: u64 = 0x0100_0000_01b3;
 #[inline]
 #[must_use]
+/// YCSB's `Utils.fnvhash64`: FNV-1 over the 8 bytes of `bytes`, as a non-negative `long`.
 pub const fn fnv_hash(mut bytes: u64) -> u64 {
     let mut hash = INITIAL_STATE;
     let mut i = 0;
-    while i < u64::BITS {
+    while i < 8 {
         hash ^= bytes & 0xFF;
         hash = hash.wrapping_mul(PRIME);
         bytes >>= 8;
         i += 1;
     }
-    hash
-}
-
-fn unbiased_index_(mut idx: usize, len: usize) -> usize {
-    let range = usize::MAX - usize::MAX % len;
-    loop {
-        idx ^= idx >> 33;
-        idx = idx.wrapping_mul(0xff51afd7ed558ccd);
-        idx ^= idx >> 33;
-        idx = idx.wrapping_mul(0xc4ceb9fe1a85ec53);
-        idx ^= idx >> 33;
-
-        if idx < range {
-            return idx % len;
-        }
-    }
+    (hash as i64).unsigned_abs()
 }
 
 // TODO: How does this hold up when there are interleaved inserts? Are the same keys targed or does
@@ -265,22 +297,11 @@ fn unbiased_index(idx: usize, len: usize) -> usize {
 }
 
 impl Distribution {
-    pub fn evaluate(&self, rng: &mut impl Rng) -> f64 {
-        return match self {
-            Self::Uniform { distr, .. } => distr.sample(rng),
-            Self::Normal { distr, .. } => distr.sample(rng),
-            Self::Exponential { distr, .. } => distr.sample(rng),
-            Self::Beta { distr, .. } => distr.sample(rng),
-            Self::Zipf { distr, .. } => distr.sample(rng),
-            Self::Latest { distr, n, .. } => *n - distr.sample(rng),
-            Self::LogNormal { distr, .. } => distr.sample(rng),
-            Self::Poisson { distr, .. } => distr.sample(rng),
-            Self::Weibull { distr, .. } => distr.sample(rng),
-            Self::Pareto { distr, .. } => distr.sample(rng),
-        };
-    }
-
-    pub fn evaluate_index(&self, rng: &mut impl Rng, len: usize) -> usize {
+    /// The key selection used before selections were laid over the sorted key domain: a sample is
+    /// mapped to an index and, for every distribution except `uniform`, scattered over the key
+    /// domain with FNV hashing. With `zipf` and a large `n` (e.g. 10^10), this is YCSB's scrambled
+    /// zipfian distribution.
+    pub fn scrambled_index(&self, rng: &mut impl Rng, len: usize) -> usize {
         match self {
             Self::Uniform { min, max, distr } => {
                 let x = (distr.sample(rng) - min) / (max - min);
@@ -375,6 +396,74 @@ impl Distribution {
             }
         }
     }
+}
+
+impl Distribution {
+    pub fn evaluate(&self, rng: &mut impl Rng) -> f64 {
+        return match self {
+            Self::Uniform { distr, .. } => distr.sample(rng),
+            Self::Normal { distr, .. } => distr.sample(rng),
+            Self::Exponential { distr, .. } => distr.sample(rng),
+            Self::Beta { distr, .. } => distr.sample(rng),
+            Self::Zipf { distr, .. } => distr.sample(rng),
+            Self::Latest { distr, n, .. } => *n - distr.sample(rng),
+            Self::LogNormal { distr, .. } => distr.sample(rng),
+            Self::Poisson { distr, .. } => distr.sample(rng),
+            Self::Weibull { distr, .. } => distr.sample(rng),
+            Self::Pareto { distr, .. } => distr.sample(rng),
+        };
+    }
+
+    /// Maps a sample to a position in `[0, len)` of the *sorted* key domain (0 = smallest key).
+    ///
+    /// - `zipf`: rank `r` selects position `r - 1`, so the most frequent key is position 0, the
+    ///   second most frequent is position 1, and so on. Only the first `n` keys can be selected; if
+    ///   fewer than `n` keys exist, the distribution is truncated to the existing keys.
+    /// - `latest`: like `zipf`, but anchored at the largest key.
+    /// - `uniform`, `normal`, `beta`: samples are fractions of the key domain (0.0 = smallest key,
+    ///   1.0 = largest key).
+    /// - `exponential`, `log_normal`, `poisson`, `weibull`, `pareto`: the distribution is stretched
+    ///   over the key domain (see [`Self::key_domain_window`]).
+    ///
+    /// Samples outside the key domain are redrawn.
+    pub fn key_position<R: Rng>(&self, rng: &mut R, len: usize) -> usize {
+        assert!(len > 0, "Cannot select a key from an empty key domain");
+        let (low, high) = self.key_domain_window();
+        match self {
+            Self::Zipf { n, s, distr } => zipf_rank(rng, *n, *s, distr, len),
+            Self::Latest { n, s, distr } => len - 1 - zipf_rank(rng, *n, *s, distr, len),
+            Self::Poisson { distr, .. } => {
+                // Spread each integer outcome uniformly over its slice of the key domain, instead
+                // of always landing on the first key of the slice.
+                let x = sample_in_window(
+                    rng,
+                    |rng| distr.sample(rng) + rng.random::<f64>(),
+                    low,
+                    high,
+                );
+                fraction_to_position(x, len)
+            }
+            _ => fraction_to_position(
+                sample_in_window(rng, |rng| self.evaluate(rng), low, high),
+                len,
+            ),
+        }
+    }
+
+    /// The range of sample values that is mapped onto the whole key domain.
+    pub fn key_domain_window(&self) -> (f64, f64) {
+        match self {
+            Self::Uniform { .. } | Self::Normal { .. } | Self::Beta { .. } => (0.0, 1.0),
+            Self::Zipf { n, .. } | Self::Latest { n, .. } => (1.0, n + 1.0),
+            Self::Exponential { lambda, .. } => (0.0, 5.0 / lambda),
+            Self::LogNormal { mean, std_dev, .. } => (0.0, (mean + 3.0 * std_dev).exp()),
+            Self::Poisson { lambda, .. } => (0.0, (lambda + 5.0 * lambda.sqrt()).ceil() + 1.0),
+            // 99th percentile
+            Self::Weibull { scale, shape, .. } => (0.0, scale * (-0.01f64.ln()).powf(1.0 / shape)),
+            // 99th percentile
+            Self::Pareto { scale, shape, .. } => (*scale, scale * 100f64.powf(1.0 / shape)),
+        }
+    }
 
     pub fn expected_value(&self) -> f64 {
         return match self {
@@ -420,6 +509,70 @@ impl Distribution {
 impl Default for Distribution {
     fn default() -> Self {
         Self::default_key_selection()
+    }
+}
+
+/// Selects existing keys by laying a distribution over the sorted key domain (see
+/// [`Distribution::key_position`]), shifted by `offset` keys.
+///
+/// ```json
+/// { "zipf": { "n": 1000000, "s": 0.99 }, "offset": 1000 }
+/// ```
+#[derive(serde::Deserialize, JsonSchema, Clone, Debug)]
+pub struct KeySelection {
+    #[serde(flatten)]
+    pub distribution: Distribution,
+    /// Shifts the selected position by this many keys in sorted key order, wrapping around at the
+    /// end of the key domain (negative values shift towards smaller keys). For example, with
+    /// `offset: 1000` the key a `zipf` selection picks most often is the 1001st smallest key
+    /// (position 1000) instead of the smallest key (position 0).
+    #[serde(default)]
+    pub offset: i64,
+    /// Scatters the selected keys over the key domain with FNV hashing (see
+    /// [`Distribution::scrambled_index`]) instead of laying the distribution over the sorted key
+    /// domain. Use it to reproduce YCSB's scrambled zipfian distribution.
+    #[serde(default)]
+    pub scramble: bool,
+}
+
+impl KeySelection {
+    /// Returns a position in `[0, len)` of the sorted key domain.
+    pub fn select<R: Rng>(&self, rng: &mut R, len: usize) -> usize {
+        let position = match self.scramble {
+            true => self.distribution.scrambled_index(rng, len),
+            false => self.distribution.key_position(rng, len),
+        };
+        let position = position as i64 + self.offset;
+        return position.rem_euclid(len as i64) as usize;
+    }
+}
+
+impl Default for KeySelection {
+    fn default() -> Self {
+        Self {
+            distribution: Distribution::default_key_selection(),
+            offset: 0,
+            scramble: false,
+        }
+    }
+}
+
+impl Scalable for KeySelection {
+    /// Only quantities measured in keys are scaled. Fractions of the key domain and distribution
+    /// shapes that are stretched over it are independent of the number of keys. Scrambled
+    /// selections keep their `n`, like YCSB's scrambled zipfian, which always draws from 10^10
+    /// items regardless of the number of records.
+    fn scale(&mut self, factor: f64) {
+        self.offset = (self.offset as f64 * factor).round() as i64;
+        if self.scramble {
+            return;
+        }
+        if let Distribution::Zipf { n, s, distr } | Distribution::Latest { n, s, distr } =
+            &mut self.distribution
+        {
+            *n = (*n * factor).max(1.0);
+            *distr = rand_distr::Zipf::new(*n, *s).expect("Failed to scale Zipf Distribution");
+        }
     }
 }
 
@@ -760,7 +913,7 @@ pub struct Updates {
     /// Value
     pub val: Option<StringExpr>,
     /// Key selection strategy
-    pub selection: Option<Distribution>,
+    pub selection: Option<KeySelection>,
     ///// Key sort order
     //pub sort_by: SortBy,
     #[serde(default)]
@@ -775,7 +928,7 @@ pub struct Merges {
     /// Value
     pub val: Option<StringExpr>,
     /// Key selection strategy
-    pub selection: Option<Distribution>,
+    pub selection: Option<KeySelection>,
     ///// Key sort order
     //pub sort_by: SortBy,
     #[serde(default)]
@@ -788,7 +941,7 @@ pub struct PointDeletes {
     /// Number of non-empty point deletes
     pub op_count: NumberExpr,
     /// Key selection strategy
-    pub selection: Option<Distribution>,
+    pub selection: Option<KeySelection>,
     ///// Key sort order
     //pub sort_by: SortBy,
 }
@@ -814,7 +967,7 @@ pub struct RangeDeletes {
     /// Specifies an exact scan length for range queries. Mutally exclusive with selectivity.
     pub scan_length: Option<NumberExpr>,
     /// Key selection strategy of the start key
-    pub selection: Option<Distribution>,
+    pub selection: Option<KeySelection>,
     /// The format for the range
     #[serde(default)]
     pub range_format: RangeFormat,
@@ -830,7 +983,7 @@ pub struct PointQueries {
     /// Number of point queries
     pub op_count: NumberExpr,
     /// Key selection strategy of the start key
-    pub selection: Option<Distribution>,
+    pub selection: Option<KeySelection>,
     ///// Key sort order
     //pub sort_by: SortBy,
 }
@@ -846,7 +999,7 @@ pub struct RangeQueries {
     /// Specifies an exact scan length for range queries. Mutally exclusive with selectivity.
     pub scan_length: Option<NumberExpr>,
     /// Key selection strategy of the start key
-    pub selection: Option<Distribution>,
+    pub selection: Option<KeySelection>,
     /// The format for the range
     #[serde(default)]
     pub range_format: RangeFormat,
@@ -1195,38 +1348,38 @@ pub struct Defaults {
 pub struct DefaultDistributions {
     /// Default distribution for updates
     #[serde(default)]
-    pub updates_selection: Distribution,
+    pub updates_selection: KeySelection,
     /// Default distribution for merges
     #[serde(default)]
-    pub merges_selection: Distribution,
+    pub merges_selection: KeySelection,
     /// Default distribution for point deletes
     #[serde(default)]
-    pub point_deletes_selection: Distribution,
+    pub point_deletes_selection: KeySelection,
     /// Default distribution for range queries
     #[serde(default)]
-    pub range_queries_selection: Distribution,
+    pub range_queries_selection: KeySelection,
     /// Default distribution for range deletes
     #[serde(default)]
-    pub range_deletes_selection: Distribution,
+    pub range_deletes_selection: KeySelection,
     /// Default distribution for point queries
     #[serde(default)]
-    pub point_queries_selection: Distribution,
+    pub point_queries_selection: KeySelection,
 }
 
 #[derive(serde::Deserialize, JsonSchema, Debug, Clone, Default)]
 pub struct DefaultDistributionsOptional {
     /// Default distribution for updates
-    pub updates_selection: Option<Distribution>,
+    pub updates_selection: Option<KeySelection>,
     /// Default distribution for merges
-    pub merges_selection: Option<Distribution>,
+    pub merges_selection: Option<KeySelection>,
     /// Default distribution for point deletes
-    pub point_deletes_selection: Option<Distribution>,
+    pub point_deletes_selection: Option<KeySelection>,
     /// Default distribution for range queries
-    pub range_queries_selection: Option<Distribution>,
+    pub range_queries_selection: Option<KeySelection>,
     /// Default distribution for range deletes
-    pub range_deletes_selection: Option<Distribution>,
+    pub range_deletes_selection: Option<KeySelection>,
     /// Default distribution for point queries
-    pub point_queries_selection: Option<Distribution>,
+    pub point_queries_selection: Option<KeySelection>,
 }
 
 impl WorkloadSpec {
@@ -1319,5 +1472,360 @@ fn enforce_thread_uniqueness(key: &mut [u8], thread_id: usize) {
         } else if c >= b'a' && c <= b'z' {
             key[pos] = b'a' + letters_upper[3 - i];
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use statrs::distribution::{
+        Beta, ContinuousCDF, Exp, LogNormal, Normal, Pareto, Uniform, Weibull,
+    };
+
+    fn selection(json: &str) -> KeySelection {
+        serde_json::from_str(json).expect("valid key selection")
+    }
+
+    fn rng() -> Xoshiro256Plus {
+        Xoshiro256Plus::seed_from_u64(0xdead_beef)
+    }
+
+    fn histogram(sel: &KeySelection, len: usize, samples: usize) -> Vec<usize> {
+        let mut rng = rng();
+        let mut counts = vec![0; len];
+        for _ in 0..samples {
+            counts[sel.select(&mut rng, len)] += 1;
+        }
+        counts
+    }
+
+    fn zipf_pmf(n: usize, s: f64) -> Vec<f64> {
+        let weights: Vec<f64> = (1..=n).map(|r| (r as f64).powf(-s)).collect();
+        let total: f64 = weights.iter().sum();
+        weights.into_iter().map(|w| w / total).collect()
+    }
+
+    /// Pearson's chi-square test of `counts` against `pmf`, failing far beyond the 99.9th percentile
+    /// (df + 5 * sqrt(2 df)) so the test is not flaky, but still catches any systematic deviation.
+    fn assert_chi_square(counts: &[usize], pmf: &[f64]) {
+        let total: usize = counts.iter().sum();
+        let (mut chi2, mut df) = (0.0, 0usize);
+        let (mut obs_tail, mut exp_tail) = (0.0, 0.0);
+        for (&c, &p) in counts.iter().zip(pmf) {
+            let e = p * total as f64;
+            if e >= 5.0 {
+                chi2 += (c as f64 - e).powi(2) / e;
+                df += 1;
+            } else {
+                obs_tail += c as f64;
+                exp_tail += e;
+            }
+        }
+        if exp_tail >= 5.0 {
+            chi2 += (obs_tail - exp_tail).powi(2) / exp_tail;
+            df += 1;
+        }
+        let df = (df - 1) as f64;
+        let limit = df + 5.0 * (2.0 * df).sqrt();
+        assert!(
+            chi2 < limit,
+            "chi2 = {chi2:.1} exceeds {limit:.1} (df = {df})"
+        );
+    }
+
+    /// One-sample Kolmogorov-Smirnov test of the selected positions against the distribution's CDF
+    /// truncated to its key domain window. Fails at alpha = 0.001.
+    fn assert_ks(json: &str, cdf: impl Fn(f64) -> f64) {
+        let sel = selection(json);
+        let len = 1_000_000;
+        let samples = 100_000;
+        let (low, high) = sel.distribution.key_domain_window();
+        let (cdf_low, cdf_high) = (cdf(low), cdf(high));
+        let truncated_cdf =
+            |fraction: f64| (cdf(low + fraction * (high - low)) - cdf_low) / (cdf_high - cdf_low);
+
+        let mut rng = rng();
+        let mut fractions: Vec<f64> = (0..samples)
+            .map(|_| (sel.select(&mut rng, len) as f64 + 0.5) / len as f64)
+            .collect();
+        fractions.sort_by(f64::total_cmp);
+        let d = fractions
+            .iter()
+            .enumerate()
+            .map(|(i, &x)| {
+                let f = truncated_cdf(x);
+                (f - i as f64 / samples as f64)
+                    .abs()
+                    .max(((i + 1) as f64 / samples as f64 - f).abs())
+            })
+            .fold(0.0, f64::max);
+        let critical = 1.95 / (samples as f64).sqrt();
+        assert!(d < critical, "{json}: KS statistic {d:.5} >= {critical:.5}");
+    }
+
+    #[test]
+    fn continuous_distributions_follow_their_cdf_over_the_key_domain() {
+        let normal = Normal::new(0.3, 0.1).unwrap();
+        assert_ks(r#"{"normal": {"mean": 0.3, "std_dev": 0.1}}"#, |x| {
+            normal.cdf(x)
+        });
+        // Wide normal, heavily truncated at both ends of the key domain.
+        let normal = Normal::new(0.5, 0.5).unwrap();
+        assert_ks(r#"{"normal": {"mean": 0.5, "std_dev": 0.5}}"#, |x| {
+            normal.cdf(x)
+        });
+        let uniform = Uniform::new(0.2, 0.4).unwrap();
+        assert_ks(r#"{"uniform": {"min": 0.2, "max": 0.4}}"#, |x| {
+            uniform.cdf(x)
+        });
+        let beta = Beta::new(2.0, 5.0).unwrap();
+        assert_ks(r#"{"beta": {"alpha": 2, "beta": 5}}"#, |x| beta.cdf(x));
+        let exp = Exp::new(2.0).unwrap();
+        assert_ks(r#"{"exponential": {"lambda": 2}}"#, |x| exp.cdf(x));
+        let log_normal = LogNormal::new(10.0, 2.0).unwrap();
+        assert_ks(r#"{"log_normal": {"mean": 10, "std_dev": 2}}"#, |x| {
+            log_normal.cdf(x)
+        });
+        let weibull = Weibull::new(1.5, 3.0).unwrap();
+        assert_ks(r#"{"weibull": {"scale": 3, "shape": 1.5}}"#, |x| {
+            weibull.cdf(x)
+        });
+        let pareto = Pareto::new(1.0, 2.0).unwrap();
+        assert_ks(r#"{"pareto": {"scale": 1, "shape": 2}}"#, |x| pareto.cdf(x));
+    }
+
+    #[test]
+    fn poisson_outcomes_cover_their_slice_of_the_key_domain() {
+        let sel = selection(r#"{"poisson": {"lambda": 4}}"#);
+        let (_, high) = sel.distribution.key_domain_window();
+        let len = 100_000;
+        let counts = histogram(&sel, len, 400_000);
+        let pmf: Vec<f64> = (0..len)
+            .map(|pos| {
+                // Each outcome k is spread uniformly over [k, k + 1) of the window.
+                let k = (pos as f64 / len as f64 * high).floor() as u64;
+                let p = (-4.0f64).exp() * 4f64.powi(k as i32)
+                    / (1..=k).map(|i| i as f64).product::<f64>();
+                p / (len as f64 / high)
+            })
+            .collect();
+        let total: f64 = pmf.iter().sum();
+        let pmf: Vec<f64> = pmf.iter().map(|p| p / total).collect();
+        // Compare per slice of 1000 keys.
+        let bucket = |v: &[f64]| v.chunks(1000).map(|c| c.iter().sum()).collect::<Vec<f64>>();
+        let counts_b: Vec<usize> = counts.chunks(1000).map(|c| c.iter().sum()).collect();
+        assert_chi_square(&counts_b, &bucket(&pmf));
+    }
+
+    #[test]
+    fn zipf_ranks_map_to_consecutive_keys_starting_at_offset() {
+        let len = 10_000;
+        let pmf = zipf_pmf(1000, 1.1);
+        for offset in [0usize, 1, 1000, 5000] {
+            let sel = selection(&format!(
+                r#"{{"zipf": {{"n": 1000, "s": 1.1}}, "offset": {offset}}}"#
+            ));
+            let counts = histogram(&sel, len, 500_000);
+            let hottest = (0..len).max_by_key(|&i| counts[i]).unwrap();
+            assert_eq!(
+                hottest, offset,
+                "the most frequent key must be at the offset"
+            );
+            // Only the n keys starting at the offset are selected.
+            assert!(counts[..offset].iter().all(|&c| c == 0));
+            assert!(counts[offset + 1000..].iter().all(|&c| c == 0));
+            assert_chi_square(&counts[offset..offset + 1000], &pmf);
+        }
+    }
+
+    #[test]
+    fn zipf_is_truncated_when_there_are_fewer_keys_than_ranks() {
+        let sel = selection(r#"{"zipf": {"n": 1000000, "s": 0.99}}"#);
+        let counts = histogram(&sel, 500, 500_000);
+        assert_chi_square(&counts, &zipf_pmf(500, 0.99));
+    }
+
+    #[test]
+    fn latest_is_anchored_at_the_largest_key() {
+        let len = 10_000;
+        let pmf = zipf_pmf(1000, 1.1);
+        let sel = selection(r#"{"latest": {"n": 1000, "s": 1.1}}"#);
+        let counts = histogram(&sel, len, 500_000);
+        let reversed: Vec<usize> = counts[len - 1000..].iter().rev().copied().collect();
+        assert!(counts[..len - 1000].iter().all(|&c| c == 0));
+        assert_chi_square(&reversed, &pmf);
+    }
+
+    #[test]
+    fn offset_shifts_every_distribution_and_wraps_around() {
+        let distributions = [
+            r#""uniform": {"min": 0.0, "max": 1.0}"#,
+            r#""uniform": {"min": 0.2, "max": 0.4}"#,
+            r#""normal": {"mean": 0.5, "std_dev": 0.1}"#,
+            r#""beta": {"alpha": 2, "beta": 5}"#,
+            r#""zipf": {"n": 10000, "s": 1.2}"#,
+            r#""latest": {"n": 10000, "s": 1.2}"#,
+            r#""exponential": {"lambda": 1}"#,
+            r#""log_normal": {"mean": 0.4, "std_dev": 0.2}"#,
+            r#""poisson": {"lambda": 10}"#,
+            r#""weibull": {"scale": 1, "shape": 2}"#,
+            r#""pareto": {"scale": 1, "shape": 2}"#,
+        ];
+        let len = 7_919;
+        for distr in distributions {
+            let base = selection(&format!("{{{distr}}}"));
+            for offset in [1i64, 1000, 7_918, 20_000, -1, -1000] {
+                let shifted = selection(&format!(r#"{{{distr}, "offset": {offset}}}"#));
+                let (mut rng_a, mut rng_b) = (rng(), rng());
+                for _ in 0..10_000 {
+                    let a = base.select(&mut rng_a, len) as i64;
+                    let b = shifted.select(&mut rng_b, len) as i64;
+                    assert_eq!(
+                        b,
+                        (a + offset).rem_euclid(len as i64),
+                        "{distr} offset {offset}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn selections_stay_in_bounds_for_tiny_key_domains() {
+        for json in [
+            r#"{"zipf": {"n": 100, "s": 1.2}, "offset": 7}"#,
+            r#"{"normal": {"mean": 0.5, "std_dev": 10}}"#,
+            r#"{"pareto": {"scale": 1, "shape": 1.5}, "offset": -3}"#,
+            r#"{"uniform": {"min": 0.99, "max": 1.0}}"#,
+        ] {
+            let sel = selection(json);
+            let mut rng = rng();
+            for len in 1..20 {
+                for _ in 0..1000 {
+                    assert!(sel.select(&mut rng, len) < len, "{json}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn heavy_tails_do_not_pile_up_on_the_last_key() {
+        // Before, samples beyond the window were clamped onto the last key (1% of all selections for
+        // pareto and weibull).
+        let len = 10_000;
+        for json in [
+            r#"{"pareto": {"scale": 1, "shape": 2}}"#,
+            r#"{"weibull": {"scale": 1, "shape": 2}}"#,
+            r#"{"exponential": {"lambda": 1}}"#,
+        ] {
+            let counts = histogram(&selection(json), len, 200_000);
+            assert!(
+                counts[len - 1] < 20,
+                "{json}: {} selections of the last key",
+                counts[len - 1]
+            );
+        }
+    }
+
+    #[test]
+    fn key_selection_deserializes_with_and_without_offset() {
+        let sel = selection(r#"{"zipf": {"n": 100, "s": 1.2}}"#);
+        assert_eq!(sel.offset, 0);
+        let sel = selection(r#"{"offset": 1000, "normal": {"mean": 0.5, "std_dev": 0.1}}"#);
+        assert_eq!(sel.offset, 1000);
+        assert!(matches!(sel.distribution, Distribution::Normal { .. }));
+        assert_eq!(KeySelection::default().offset, 0);
+        assert!(serde_json::from_str::<KeySelection>(r#"{"offset": 5}"#).is_err());
+    }
+
+    #[test]
+    fn scramble_reproduces_ycsb_scrambled_zipfian() {
+        // YCSB's ScrambledZipfianGenerator: a zipf rank over 10^10 items, hashed onto the existing
+        // keys with Utils.fnvhash64 (FNV-1 over 8 bytes, then Math.abs).
+        fn fnvhash64(mut x: u64) -> u64 {
+            let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+            for _ in 0..8 {
+                hash ^= x & 0xFF;
+                hash = hash.wrapping_mul(1_099_511_628_211);
+                x >>= 8;
+            }
+            (hash as i64).unsigned_abs()
+        }
+        // Values computed by YCSB's site.ycsb.Utils.fnvhash64 (Java).
+        for (x, ycsb) in [
+            (0, 6284781860667377211),
+            (1, 8517097267634966620),
+            (2, 1820151046732198393),
+            (255, 8064062821143829734),
+            (256, 2056600594528442646),
+            (123456789, 2350796791908741607),
+            (9999999999, 3605131173811637474),
+            (i64::MAX as u64, 8289549613075766851),
+        ] {
+            assert_eq!(fnvhash64(x), ycsb);
+            assert_eq!(fnv_hash(x), ycsb);
+        }
+        let sel = selection(r#"{"zipf": {"n": 10000000000, "s": 0.99}, "scramble": true}"#);
+        assert!(sel.scramble);
+        let zipf = rand_distr::Zipf::new(1e10, 0.99).unwrap();
+        let (mut rng_a, mut rng_b) = (rng(), rng());
+        for len in [1usize, 7, 10_000, 1_000_000] {
+            for _ in 0..10_000 {
+                let rank = zipf.sample(&mut rng_a) as u64 - 1;
+                let expected = (fnvhash64(rank) % len as u64) as usize;
+                assert_eq!(sel.select(&mut rng_b, len), expected);
+            }
+        }
+    }
+
+    #[test]
+    fn scaling_a_scrambled_selection_keeps_n() {
+        // YCSB's scrambled zipfian always draws from 10^10 items, whatever the number of records.
+        let mut sel = selection(r#"{"zipf": {"n": 10000000000, "s": 0.99}, "scramble": true}"#);
+        sel.scale(0.05);
+        assert!(matches!(sel.distribution, Distribution::Zipf { n, .. } if n == 1e10));
+    }
+
+    #[test]
+    fn scramble_is_opt_in_and_composes_with_offset() {
+        assert!(!selection(r#"{"zipf": {"n": 100, "s": 1.2}}"#).scramble);
+        assert!(!KeySelection::default().scramble);
+        for distr in [
+            r#""zipf": {"n": 100000, "s": 1.2}"#,
+            r#""normal": {"mean": 0.5, "std_dev": 0.1}"#,
+            r#""uniform": {"min": 0.0, "max": 1.0}"#,
+            r#""latest": {"n": 100000, "s": 1.2}"#,
+        ] {
+            let base = selection(&format!(r#"{{{distr}, "scramble": true}}"#));
+            let shifted = selection(&format!(r#"{{{distr}, "scramble": true, "offset": 1000}}"#));
+            let (mut rng_a, mut rng_b) = (rng(), rng());
+            for _ in 0..10_000 {
+                let a = base.select(&mut rng_a, 7_919);
+                let b = shifted.select(&mut rng_b, 7_919);
+                assert_eq!(b, (a + 1000) % 7_919, "{distr}");
+            }
+        }
+    }
+
+    #[test]
+    fn scaling_a_selection_scales_only_key_counts() {
+        let mut sel = selection(r#"{"zipf": {"n": 1000, "s": 1.2}, "offset": 100}"#);
+        sel.scale(10.0);
+        assert!(matches!(sel.distribution, Distribution::Zipf { n, .. } if n == 10_000.0));
+        assert_eq!(sel.offset, 1000);
+
+        let mut sel = selection(r#"{"uniform": {"min": 0.0, "max": 1.0}}"#);
+        sel.scale(10.0);
+        assert!(
+            matches!(sel.distribution, Distribution::Uniform { min, max, .. } if min == 0.0 && max == 1.0)
+        );
+    }
+
+    #[test]
+    fn scaling_a_zipf_value_distribution_scales_n_once() {
+        let mut distr: Distribution =
+            serde_json::from_str(r#"{"zipf": {"n": 1000, "s": 1.2}}"#).unwrap();
+        distr.scale(10.0);
+        assert!(matches!(distr, Distribution::Zipf { n, .. } if n == 10_000.0));
     }
 }

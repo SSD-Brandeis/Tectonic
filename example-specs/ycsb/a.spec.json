@@ -24,6 +24,7 @@
           "point_queries": {
             "op_count": 500000,
             "selection": {
+              "scramble": true,
               "zipf": {
                 "s": 0.99,
                 "n": 10000000000
@@ -36,6 +37,7 @@
               "uniform": { "len": 109 }
             },
             "selection": {
+              "scramble": true,
               "zipf": {
                 "s": 0.99,
                 "n": 10000000000

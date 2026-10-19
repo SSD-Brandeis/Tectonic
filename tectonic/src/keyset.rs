@@ -3,13 +3,14 @@
 
 use rand::Rng;
 
-use crate::spec::Distribution;
+use crate::spec::KeySelection;
 use bloom::{ASMS, BloomFilter};
 use std::cmp::max;
 use std::collections::{HashMap, HashSet};
 use std::ops::{Bound, Range};
 use std::sync::Arc;
-use sweep_bptree::BPlusTreeSet;
+use sweep_bptree::argument::count::Count;
+use sweep_bptree::{BPlusTree, BPlusTreeSet, NodeStoreVec};
 
 // pub type Key = Box<[u8]>;
 pub type Key = Arc<[u8]>;
@@ -25,11 +26,14 @@ pub trait KeySet {
 
     fn push(&mut self, key: Key);
 
+    /// Makes pushed keys visible to index based accesses (`len`, `get`, `remove`, ...). Must be
+    /// called after pushing keys and before accessing the keyset by index.
+    fn flush(&mut self) {}
+
     fn remove(&mut self, idx: usize) -> Key;
 
-    fn remove_random(&mut self, rng: &mut impl Rng, distribution: &Distribution) -> Key {
-        let idx = distribution.evaluate_index(rng, self.len());
-        // let idx_hashed = unbiased_index(idx, self.len());
+    fn remove_random(&mut self, rng: &mut impl Rng, selection: &KeySelection) -> Key {
+        let idx = selection.select(rng, self.len());
         return self.remove(idx);
     }
 
@@ -38,35 +42,44 @@ pub trait KeySet {
         &mut self,
         range_len: usize,
         rng: &mut impl Rng,
-        distribution: &Distribution,
+        selection: &KeySelection,
     ) -> (Key, Key) {
-        let num_keys = self.len();
-        let valid_len = num_keys - range_len;
-
-        let start_idx = distribution.evaluate_index(rng, valid_len);
-        let end_idx = start_idx + range_len;
+        let start_idx = self.random_range_start(range_len, rng, selection);
+        let end_idx = (start_idx + range_len.max(1)).min(self.len());
 
         return self.remove_range(start_idx..end_idx);
     }
 
     fn get(&self, idx: usize) -> &Key;
 
-    fn get_random(&self, rng: &mut impl Rng, distribution: &Distribution) -> &Key {
-        let idx = distribution.evaluate_index(rng, self.len());
-        // let idx_hashed = unbiased_index(idx, self.len());
+    fn get_random(&self, rng: &mut impl Rng, selection: &KeySelection) -> &Key {
+        let idx = selection.select(rng, self.len());
         return self.get(idx);
+    }
+
+    /// Selects the index of the first key of a range of `range_len` keys, so that the whole range
+    /// fits in the keyset. Scrambled selections hash over all keys instead, like YCSB, so that a
+    /// rank always maps to the same start key; ranges near the end then cover fewer keys.
+    fn random_range_start(
+        &self,
+        range_len: usize,
+        rng: &mut impl Rng,
+        selection: &KeySelection,
+    ) -> usize {
+        if selection.scramble {
+            return selection.select(rng, self.len());
+        }
+        let valid_len = self.len().saturating_sub(range_len).max(1);
+        return selection.select(rng, valid_len);
     }
 
     fn get_random_range_start(
         &self,
         range_len: usize,
         rng: &mut impl Rng,
-        distribution: &Distribution,
+        selection: &KeySelection,
     ) -> (usize, &Key) {
-        let num_keys = self.len();
-        let valid_len = num_keys - range_len;
-
-        let start_idx = distribution.evaluate_index(rng, valid_len);
+        let start_idx = self.random_range_start(range_len, rng, selection);
 
         return (start_idx, self.get(start_idx));
     }
@@ -75,13 +88,10 @@ pub trait KeySet {
         &mut self,
         range_len: usize,
         rng: &mut impl Rng,
-        distribution: &Distribution,
+        selection: &KeySelection,
     ) -> (&Key, &Key) {
-        let num_keys = self.len();
-        let valid_len = num_keys - range_len;
-
-        let start_idx = distribution.evaluate_index(rng, valid_len);
-        let end_idx = start_idx + range_len;
+        let start_idx = self.random_range_start(range_len, rng, selection);
+        let end_idx = (start_idx + range_len).min(self.len() - 1);
 
         let key1 = self.get(start_idx);
         let key2 = self.get(end_idx);
@@ -902,5 +912,258 @@ impl KeySet for BPlusTreeKeySet {
         // sort_by: SortBy
     ) {
         // NOTE: Nothing to do here because the tree is sorted by default
+    }
+}
+
+/// Keeps the keys sorted in an order statistic tree, so that index `i` is always the `i`-th
+/// smallest key. Key selection distributions are laid over the sorted key domain, so this is the
+/// keyset to use whenever keys are selected by index.
+///
+/// Pushed keys are buffered until the next [`KeySet::flush`], so that loading many keys costs one
+/// sort and bulk load instead of a tree insertion per key. Duplicate keys are stored once.
+pub struct OrderedKeySet {
+    keys: BPlusTree<NodeStoreVec<Key, (), Count>>,
+    pending: Vec<Key>,
+    /// Index over `pending` so that `contains` stays fast while keys are buffered. Only kept when
+    /// the keyset is created with [`OrderedKeySet::with_contains_index`].
+    pending_index: Option<HashSet<Key>>,
+}
+
+/// Sort key that avoids dereferencing keys for most comparisons.
+fn key_prefix(key: &Key) -> u64 {
+    let mut prefix = [0u8; 8];
+    let len = key.len().min(8);
+    prefix[..len].copy_from_slice(&key[..len]);
+    return u64::from_be_bytes(prefix);
+}
+
+impl OrderedKeySet {
+    pub fn with_contains_index(capacity: usize) -> Self {
+        let mut keyset = Self::new(capacity);
+        keyset.pending_index = Some(HashSet::with_capacity(capacity));
+        return keyset;
+    }
+
+    fn assert_flushed(&self) {
+        assert!(
+            self.pending.is_empty(),
+            "OrderedKeySet must be flushed before it is accessed by index"
+        );
+    }
+}
+
+impl KeySet for OrderedKeySet {
+    fn new(capacity: usize) -> Self {
+        return Self {
+            keys: BPlusTree::new(NodeStoreVec::default()),
+            pending: Vec::with_capacity(capacity),
+            pending_index: None,
+        };
+    }
+
+    fn len(&self) -> usize {
+        self.assert_flushed();
+        return self.keys.len();
+    }
+
+    fn is_empty(&self) -> bool {
+        return self.keys.is_empty() && self.pending.is_empty();
+    }
+
+    fn push(&mut self, key: Key) {
+        if let Some(index) = &mut self.pending_index {
+            index.insert(key.clone());
+        }
+        self.pending.push(key);
+    }
+
+    fn flush(&mut self) {
+        if self.pending.is_empty() {
+            return;
+        }
+        if let Some(index) = &mut self.pending_index {
+            index.clear();
+        }
+        // Inserting is O(p log n), rebuilding is O(n + p log p).
+        if self.pending.len() * 16 < self.keys.len() {
+            for key in self.pending.drain(..) {
+                self.keys.insert(key, ());
+            }
+            return;
+        }
+
+        let mut pending: Vec<(u64, Key)> = self
+            .pending
+            .drain(..)
+            .map(|key| (key_prefix(&key), key))
+            .collect();
+        pending.sort_unstable_by(|(pa, a), (pb, b)| pa.cmp(pb).then_with(|| a.cmp(b)));
+
+        // Merge the sorted pending keys into the (sorted) keys of the tree.
+        let mut merged: Vec<(Key, ())> = Vec::with_capacity(self.keys.len() + pending.len());
+        let mut existing = self.keys.iter().map(|(key, _)| key).peekable();
+        for (_, key) in pending {
+            while let Some(smaller) = existing.next_if(|&k| *k < key) {
+                merged.push((smaller.clone(), ()));
+            }
+            if existing.peek().is_some_and(|&k| *k == key)
+                || merged.last().is_some_and(|(last, _)| *last == key)
+            {
+                continue;
+            }
+            merged.push((key, ()));
+        }
+        merged.extend(existing.map(|key| (key.clone(), ())));
+        self.keys = BPlusTree::bulk_load(merged);
+    }
+
+    fn remove(&mut self, idx: usize) -> Key {
+        self.assert_flushed();
+        return self
+            .keys
+            .remove_by_argument(idx)
+            .expect("Tried to remove an index not in the keyset")
+            .0;
+    }
+
+    fn remove_range(&mut self, idx_range: Range<usize>) -> (Key, Key) {
+        let mut key1 = None;
+        let mut key2 = None;
+        for _ in idx_range.clone() {
+            let key = self.remove(idx_range.start);
+            key1 = key1.or_else(|| Some(key.clone()));
+            key2 = Some(key);
+        }
+        return (
+            key1.expect("to have at least one element"),
+            key2.expect("to have at least one element"),
+        );
+    }
+
+    fn get(&self, idx: usize) -> &Key {
+        self.assert_flushed();
+        return self
+            .keys
+            .get_by_argument(idx)
+            .expect("Tried to get an index not in the keyset")
+            .0;
+    }
+
+    fn contains(&self, key: &Key) -> bool {
+        let pending = match &self.pending_index {
+            Some(index) => index.contains(key),
+            None => self.pending.contains(key),
+        };
+        return pending || self.keys.get(key).is_some();
+    }
+
+    fn sort(&mut self) {
+        self.flush();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rand::SeedableRng;
+    use rand_xoshiro::Xoshiro256Plus;
+
+    #[test]
+    fn ordered_keyset_index_is_rank_in_sorted_key_order() {
+        check_against_reference(OrderedKeySet::new(0));
+    }
+
+    #[test]
+    fn ordered_keyset_with_contains_index_is_rank_in_sorted_key_order() {
+        check_against_reference(OrderedKeySet::with_contains_index(0));
+    }
+
+    fn check_against_reference(mut keyset: OrderedKeySet) {
+        let mut rng = Xoshiro256Plus::seed_from_u64(42);
+        // Reference: sorted, deduplicated vector.
+        let mut reference: Vec<Key> = Vec::new();
+
+        for step in 0..50_000 {
+            let op = rng.random_range(0..10);
+            if reference.is_empty() || op < 5 {
+                // Small key space, so duplicates are common.
+                let key: Key = format!("{:05}", rng.random_range(0..20_000))
+                    .as_bytes()
+                    .into();
+                keyset.push(key.clone());
+                assert!(keyset.contains(&key));
+                if let Err(pos) = reference.binary_search(&key) {
+                    reference.insert(pos, key);
+                }
+                // Batch some pushes to exercise both the insert and the rebuild path of `flush`.
+                if rng.random_bool(0.9) {
+                    keyset.flush();
+                }
+            } else if op < 7 {
+                let idx = rng.random_range(0..reference.len());
+                assert_eq!(keyset.remove(idx), reference.remove(idx), "step {step}");
+            } else if op < 8 {
+                let start = rng.random_range(0..reference.len());
+                let end = rng.random_range(start + 1..=reference.len().min(start + 50));
+                let removed: Vec<Key> = reference.drain(start..end).collect();
+                let (first, last) = keyset.remove_range(start..end);
+                assert_eq!((&first, &last), (&removed[0], removed.last().unwrap()));
+            } else {
+                let idx = rng.random_range(0..reference.len());
+                assert_eq!(keyset.get(idx), &reference[idx], "step {step}");
+                assert!(keyset.contains(&reference[idx]));
+            }
+            keyset.flush();
+            assert_eq!(keyset.len(), reference.len());
+        }
+        let missing: Key = b"missing".as_slice().into();
+        assert!(!keyset.contains(&missing));
+    }
+
+    #[test]
+    fn scrambled_range_starts_cover_all_keys() {
+        // Like YCSB, a scrambled rank maps to the same start key whatever the scan length, so the
+        // start can be any key; ranges starting near the end are shorter.
+        let selection: KeySelection =
+            serde_json::from_str(r#"{"zipf": {"n": 10000000000, "s": 0.99}, "scramble": true}"#)
+                .unwrap();
+        let mut keyset = OrderedKeySet::new(0);
+        for i in 0..100 {
+            keyset.push(format!("{i:03}").as_bytes().into());
+        }
+        keyset.flush();
+        let starts = |range_len: usize| {
+            let mut rng = Xoshiro256Plus::seed_from_u64(3);
+            (0..2000)
+                .map(|_| keyset.random_range_start(range_len, &mut rng, &selection))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(starts(1), starts(50));
+        assert!(starts(50).iter().any(|&s| s > 50));
+        let mut rng = Xoshiro256Plus::seed_from_u64(4);
+        for _ in 0..2000 {
+            let (k1, k2) = keyset.get_range_random(50, &mut rng, &selection);
+            assert!(k1 <= k2);
+        }
+    }
+
+    #[test]
+    fn range_selection_stays_within_the_keyset() {
+        let mut rng = Xoshiro256Plus::seed_from_u64(7);
+        let selection: KeySelection =
+            serde_json::from_str(r#"{"zipf": {"n": 100, "s": 1.2}, "offset": 95}"#).unwrap();
+        let mut keyset = OrderedKeySet::new(0);
+        for i in 0..100 {
+            keyset.push(format!("{i:03}").as_bytes().into());
+        }
+        keyset.flush();
+        for range_len in [0, 1, 10, 99, 100, 150] {
+            for _ in 0..200 {
+                let start = keyset.random_range_start(range_len, &mut rng, &selection);
+                assert!(start + range_len <= 100 || start == 0);
+                let (k1, k2) = keyset.get_range_random(range_len, &mut rng, &selection);
+                assert!(k1 <= k2);
+            }
+        }
     }
 }

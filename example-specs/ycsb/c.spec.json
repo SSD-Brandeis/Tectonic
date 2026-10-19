@@ -35,9 +35,10 @@
           "point_queries": {
             "op_count": 1000000,
             "selection": {
+              "scramble": true,
               "zipf": {
                 "s": 0.99,
-                "n": 1000000
+                "n": 10000000000
               }
             }
           }

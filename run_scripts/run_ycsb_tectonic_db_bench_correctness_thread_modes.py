@@ -118,12 +118,12 @@ def write_custom_spec() -> Path:
                         "enable_granular_stats": True,
                         "point_queries": {
                             "op_count": int(BASE_RECORD_COUNT * POINT_QUERY_RATIO),
-                            "selection": {"zipf": {"s": 0.99, "n": BASE_RECORD_COUNT}},
+                            "selection": {"zipf": {"s": 0.99, "n": 10_000_000_000}, "scramble": True},
                         },
                         "updates": {
                             "op_count": int(BASE_RECORD_COUNT * UPDATE_RATIO),
                             "val": {"uniform": {"len": UPDATE_VALUE_SIZE}},
-                            "selection": {"zipf": {"s": 0.99, "n": BASE_RECORD_COUNT}},
+                            "selection": {"zipf": {"s": 0.99, "n": 10_000_000_000}, "scramble": True},
                         },
                     },
                 ]

@@ -43,10 +43,7 @@ pub mod spec;
 // - query point empty
 // - query range
 
-use crate::keyset::{
-    BloomFilterKeySet, EmptyKeySet, Key, KeySet, VecBloomFilterKeySet, VecHashSetKeySet, VecKeySet,
-    VecOptionHashSetKeySet, VecOptionKeySet,
-};
+use crate::keyset::{BloomFilterKeySet, EmptyKeySet, Key, KeySet, OrderedKeySet, VecKeySet};
 use crate::spec::{CharacterSet, RangeFormat, StringExpr, WorkloadSpec, WorkloadSpecSection, BlindRangeQueries};
 
 pub trait OperationHandler {
@@ -518,9 +515,6 @@ pub fn generate_section<OP: OperationHandler>(
         || section.has_query_range_count()
         || section.has_delete_range());
 
-    let requires_deletion = section.has_delete_point() || section.has_delete_range();
-    let requires_sorting = section.has_query_range() || section.has_delete_range();
-
     let requires_contains_check = !section.skip_contains_check()
         && (section.has_unique_insert()
             || section.has_query_point_empty()
@@ -544,59 +538,20 @@ pub fn generate_section<OP: OperationHandler>(
             EmptyKeySet::new,
             thread_id,
         )?
-    } else if requires_sorting && requires_deletion && requires_contains_check {
-        info!("Using VecHashSetOptionKeySet");
+    } else if requires_random_element {
+        // Key selection distributions are laid over the sorted key domain, so keys must be kept
+        // sorted and indexable by rank.
+        info!("Using OrderedKeySet");
         write_operations_with_keyset(
             operation_handler,
             operation_timings,
             workload,
             section,
             section_idx,
-            VecOptionHashSetKeySet::new,
-            thread_id,
-        )?
-    } else if requires_sorting && requires_deletion && !requires_contains_check {
-        info!("Using VecOptionKeySet");
-        write_operations_with_keyset(
-            operation_handler,
-            operation_timings,
-            workload,
-            section,
-            section_idx,
-            VecOptionKeySet::new,
-            thread_id,
-        )?
-    } else if (requires_sorting || requires_deletion) && requires_contains_check {
-        info!("Using VecHashSetKeySet");
-        write_operations_with_keyset(
-            operation_handler,
-            operation_timings,
-            workload,
-            section,
-            section_idx,
-            VecHashSetKeySet::new,
-            thread_id,
-        )?
-    } else if requires_sorting || requires_deletion {
-        info!("Using VecKeySet");
-        write_operations_with_keyset(
-            operation_handler,
-            operation_timings,
-            workload,
-            section,
-            section_idx,
-            VecKeySet::new,
-            thread_id,
-        )?
-    } else if requires_contains_check && requires_random_element {
-        info!("Using VecBloomFilterKeySet");
-        write_operations_with_keyset(
-            operation_handler,
-            operation_timings,
-            workload,
-            section,
-            section_idx,
-            VecBloomFilterKeySet::new,
+            |capacity| match requires_contains_check {
+                true => OrderedKeySet::with_contains_index(capacity),
+                false => OrderedKeySet::new(capacity),
+            },
             thread_id,
         )?
     } else if requires_contains_check {
@@ -923,6 +878,7 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
             ?query_range_count
         );
 
+        keys_valid.flush();
         let more_delete_point_than_keys = delete_point_count > keys_valid.len() + unique_insert_count + upsert_count;
         if more_delete_point_than_keys {
             bail!("Cannot have more point deletes than existing valid keys plus new inserts in the group.");
@@ -1209,7 +1165,7 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                     if keys_valid.is_empty() {
                         continue;
                     }
-                    // keys_valid.sort();
+                    keys_valid.flush();
                     let key = keys_valid.get_random(
                         rng_ref,
                         us.selection.as_ref().unwrap_or(
@@ -1243,7 +1199,7 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                     if keys_valid.is_empty() {
                         continue;
                     }
-                    // keys_valid.sort();
+                    keys_valid.flush();
                     let key = keys_valid.get_random(
                         rng_ref,
                         ms.selection.as_ref().unwrap_or(
@@ -1279,7 +1235,7 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                             "Point delete marker can only appear when point deletes is not None"
                         )
                     })?;
-                    // keys_valid.sort();
+                    keys_valid.flush();
                     let key = keys_valid.remove_random(
                         rng_ref,
                         pds.selection.as_ref().unwrap_or(
@@ -1306,7 +1262,7 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                     let pqs = group.point_queries.as_ref().ok_or_else(|| {
                         anyhow!("Point query marker can only appear when updates is not None")
                     })?;
-                    // keys_valid.sort();
+                    keys_valid.flush();
                     let key = keys_valid.get_random(
                         rng_ref,
                         pqs.selection.as_ref().unwrap_or(
@@ -1382,6 +1338,7 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                         continue;
                     }
 
+                    keys_valid.flush();
                     let range_length = rqs.get_range_length(rng_ref, keys_valid.len());
                     match rqs.range_format {
                         RangeFormat::StartCount => {
@@ -1438,6 +1395,7 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                         continue;
                     }
 
+                    keys_valid.flush();
                     let range_length = rds.get_range_length(rng_ref, keys_valid.len());
                     keys_valid.sort();
                     match rds.range_format {
@@ -1456,7 +1414,8 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                                 ),
                             );
                             let key = key.clone();
-                            let end_index = start_index + range_length;
+                            let end_index =
+                                (start_index + range_length.max(1)).min(keys_valid.len());
                             keys_valid.remove_range(start_index..end_index);
                             operation_handler.handle_range_delete_count(&key, range_length)?
                         }

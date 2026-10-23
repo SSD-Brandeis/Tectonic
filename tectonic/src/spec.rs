@@ -15,6 +15,9 @@ use statrs::function::gamma::gamma;
 use statrs::function::harmonic::gen_harmonic;
 use std::borrow::Cow;
 use std::io::Write;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, OnceLock};
 
 struct Numeric;
 impl rand::distr::Distribution<u8> for Numeric {
@@ -219,52 +222,6 @@ impl JsonSchema for Distribution {
     }
 }
 
-/// How many times an out-of-range sample is redrawn before it is clamped into the key domain.
-const MAX_REDRAWS: usize = 1000;
-
-/// Draws samples until one falls inside `[low, high)` and returns where it falls in that window as
-/// a fraction in `[0, 1)`. Redrawing (instead of clamping) truncates the distribution to the key
-/// domain without piling the out-of-range probability mass onto the first or last key.
-fn sample_in_window<R: Rng>(
-    rng: &mut R,
-    mut sample: impl FnMut(&mut R) -> f64,
-    low: f64,
-    high: f64,
-) -> f64 {
-    let mut x = 0.0;
-    for _ in 0..MAX_REDRAWS {
-        x = (sample(rng) - low) / (high - low);
-        if (0.0..1.0).contains(&x) {
-            return x;
-        }
-    }
-    x.clamp(0.0, 1.0 - f64::EPSILON)
-}
-
-#[inline]
-fn fraction_to_position(fraction: f64, len: usize) -> usize {
-    ((fraction * len as f64) as usize).min(len - 1)
-}
-
-/// Samples a 0-based Zipf rank over the first `min(n, len)` positions of the key domain.
-fn zipf_rank<R: Rng>(
-    rng: &mut R,
-    n: f64,
-    s: f64,
-    distr: &rand_distr::Zipf<f64>,
-    len: usize,
-) -> usize {
-    let rank = if (len as f64) < n {
-        // Fewer keys exist than the distribution has ranks: truncate it to the existing keys.
-        rand_distr::Zipf::new(len as f64, s)
-            .expect("to be able to construct a truncated zipf distribution")
-            .sample(rng)
-    } else {
-        distr.sample(rng)
-    };
-    (rank as usize).saturating_sub(1).min(len - 1)
-}
-
 // Modified from https://github.com/servo/rust-fnv/blob/main/lib.rs#L146-L157 (MIT)
 const INITIAL_STATE: u64 = 0xcbf2_9ce4_8422_2325;
 const PRIME: u64 = 0x0100_0000_01b3;
@@ -297,11 +254,11 @@ fn unbiased_index(idx: usize, len: usize) -> usize {
 }
 
 impl Distribution {
-    /// The key selection used before selections were laid over the sorted key domain: a sample is
-    /// mapped to an index and, for every distribution except `uniform`, scattered over the key
-    /// domain with FNV hashing. With `zipf` and a large `n` (e.g. 10^10), this is YCSB's scrambled
-    /// zipfian distribution.
-    pub fn scrambled_index(&self, rng: &mut impl Rng, len: usize) -> usize {
+    /// Maps a sample to the index of a key in `[0, len)`. Uniform samples are fractions of the
+    /// keys; every other distribution's sample is scattered over the keys with FNV hashing, so
+    /// selection does not depend on the order of the keys. With `zipf` and a large `n` (e.g. 10^10)
+    /// this is YCSB's scrambled zipfian distribution.
+    pub fn evaluate_index(&self, rng: &mut impl Rng, len: usize) -> usize {
         match self {
             Self::Uniform { min, max, distr } => {
                 let x = (distr.sample(rng) - min) / (max - min);
@@ -414,57 +371,6 @@ impl Distribution {
         };
     }
 
-    /// Maps a sample to a position in `[0, len)` of the *sorted* key domain (0 = smallest key).
-    ///
-    /// - `zipf`: rank `r` selects position `r - 1`, so the most frequent key is position 0, the
-    ///   second most frequent is position 1, and so on. Only the first `n` keys can be selected; if
-    ///   fewer than `n` keys exist, the distribution is truncated to the existing keys.
-    /// - `latest`: like `zipf`, but anchored at the largest key.
-    /// - `uniform`, `normal`, `beta`: samples are fractions of the key domain (0.0 = smallest key,
-    ///   1.0 = largest key).
-    /// - `exponential`, `log_normal`, `poisson`, `weibull`, `pareto`: the distribution is stretched
-    ///   over the key domain (see [`Self::key_domain_window`]).
-    ///
-    /// Samples outside the key domain are redrawn.
-    pub fn key_position<R: Rng>(&self, rng: &mut R, len: usize) -> usize {
-        assert!(len > 0, "Cannot select a key from an empty key domain");
-        let (low, high) = self.key_domain_window();
-        match self {
-            Self::Zipf { n, s, distr } => zipf_rank(rng, *n, *s, distr, len),
-            Self::Latest { n, s, distr } => len - 1 - zipf_rank(rng, *n, *s, distr, len),
-            Self::Poisson { distr, .. } => {
-                // Spread each integer outcome uniformly over its slice of the key domain, instead
-                // of always landing on the first key of the slice.
-                let x = sample_in_window(
-                    rng,
-                    |rng| distr.sample(rng) + rng.random::<f64>(),
-                    low,
-                    high,
-                );
-                fraction_to_position(x, len)
-            }
-            _ => fraction_to_position(
-                sample_in_window(rng, |rng| self.evaluate(rng), low, high),
-                len,
-            ),
-        }
-    }
-
-    /// The range of sample values that is mapped onto the whole key domain.
-    pub fn key_domain_window(&self) -> (f64, f64) {
-        match self {
-            Self::Uniform { .. } | Self::Normal { .. } | Self::Beta { .. } => (0.0, 1.0),
-            Self::Zipf { n, .. } | Self::Latest { n, .. } => (1.0, n + 1.0),
-            Self::Exponential { lambda, .. } => (0.0, 5.0 / lambda),
-            Self::LogNormal { mean, std_dev, .. } => (0.0, (mean + 3.0 * std_dev).exp()),
-            Self::Poisson { lambda, .. } => (0.0, (lambda + 5.0 * lambda.sqrt()).ceil() + 1.0),
-            // 99th percentile
-            Self::Weibull { scale, shape, .. } => (0.0, scale * (-0.01f64.ln()).powf(1.0 / shape)),
-            // 99th percentile
-            Self::Pareto { scale, shape, .. } => (*scale, scale * 100f64.powf(1.0 / shape)),
-        }
-    }
-
     pub fn expected_value(&self) -> f64 {
         return match self {
             Self::Uniform { min, max, .. } => min + max / 2.0,
@@ -512,38 +418,72 @@ impl Default for Distribution {
     }
 }
 
-/// Selects existing keys by laying a distribution over the sorted key domain (see
-/// [`Distribution::key_position`]), shifted by `offset` keys.
+/// Selects existing keys with a distribution (see [`Distribution::evaluate_index`]).
 ///
 /// ```json
-/// { "zipf": { "n": 1000000, "s": 0.99 }, "offset": 1000 }
+/// { "zipf": { "n": 10000000000, "s": 0.99 }, "scramble": true }
 /// ```
 #[derive(serde::Deserialize, JsonSchema, Clone, Debug)]
 pub struct KeySelection {
     #[serde(flatten)]
     pub distribution: Distribution,
-    /// Shifts the selected position by this many keys in sorted key order, wrapping around at the
-    /// end of the key domain (negative values shift towards smaller keys). For example, with
-    /// `offset: 1000` the key a `zipf` selection picks most often is the 1001st smallest key
-    /// (position 1000) instead of the smallest key (position 0).
-    #[serde(default)]
-    pub offset: i64,
-    /// Scatters the selected keys over the key domain with FNV hashing (see
-    /// [`Distribution::scrambled_index`]) instead of laying the distribution over the sorted key
-    /// domain. Use it to reproduce YCSB's scrambled zipfian distribution.
+    /// Makes range starts, like the keys of other operations, hash over all keys as in YCSB, so
+    /// that a rank always maps to the same start key; otherwise range starts are selected among
+    /// the keys from which the whole range fits. Also keeps a `zipf`'s `n` when the spec is
+    /// scaled, like YCSB's scrambled zipfian, which always draws from 10^10 items.
     #[serde(default)]
     pub scramble: bool,
+    /// With `zipf`, selects keys exactly like the zipfian request distribution of YCSB's
+    /// `CoreWorkload` instead of scattering exact Zipf ranks over the keys: ranks come from
+    /// `ZipfianGenerator` (the approximation of Gray et al., which puts more weight on ranks 2-9
+    /// than Zipf does), and are scrambled over one slot more than there are keys, redrawing the
+    /// empty slot, because `CoreWorkload` sizes its `ScrambledZipfianGenerator` with an inclusive
+    /// upper bound. Both change which keys are hot and how hot they are.
+    #[serde(default)]
+    pub ycsb_zipfian: bool,
+    #[serde(skip)]
+    ycsb_zetan: OnceLock<f64>,
+}
+
+/// `ScrambledZipfianGenerator.ZETAN`: zeta(10^10, 0.99), precomputed by YCSB.
+const YCSB_ZETAN: f64 = 26.46902820178302;
+
+/// One draw of YCSB's `ZipfianGenerator(0, n, s, zetan).nextValue()`, a rank in `[0, n]`.
+fn ycsb_zipfian_rank<R: Rng>(rng: &mut R, n: f64, s: f64, zetan: f64) -> u64 {
+    let items = n + 1.0;
+    let zeta2theta = 1.0 + 0.5f64.powf(s);
+    let alpha = 1.0 / (1.0 - s);
+    let eta = (1.0 - (2.0 / items).powf(1.0 - s)) / (1.0 - zeta2theta / zetan);
+    let u: f64 = rng.random();
+    let uz = u * zetan;
+    if uz < 1.0 {
+        return 0;
+    }
+    if uz < 1.0 + 0.5f64.powf(s) {
+        return 1;
+    }
+    return (items * (eta * u - eta + 1.0).powf(alpha)) as u64;
 }
 
 impl KeySelection {
-    /// Returns a position in `[0, len)` of the sorted key domain.
+    /// Returns the index in `[0, len)` of the selected key.
     pub fn select<R: Rng>(&self, rng: &mut R, len: usize) -> usize {
-        let position = match self.scramble {
-            true => self.distribution.scrambled_index(rng, len),
-            false => self.distribution.key_position(rng, len),
-        };
-        let position = position as i64 + self.offset;
-        return position.rem_euclid(len as i64) as usize;
+        if let (true, Distribution::Zipf { n, s, .. }) = (self.ycsb_zipfian, &self.distribution) {
+            let zetan = *self.ycsb_zetan.get_or_init(|| {
+                if *n == 1e10 && *s == 0.99 {
+                    YCSB_ZETAN
+                } else {
+                    gen_harmonic(*n as u64 + 1, *s)
+                }
+            });
+            loop {
+                let slot = unbiased_index(ycsb_zipfian_rank(rng, *n, *s, zetan) as usize, len + 1);
+                if slot < len {
+                    return slot;
+                }
+            }
+        }
+        return self.distribution.evaluate_index(rng, len);
     }
 }
 
@@ -551,19 +491,18 @@ impl Default for KeySelection {
     fn default() -> Self {
         Self {
             distribution: Distribution::default_key_selection(),
-            offset: 0,
             scramble: false,
+            ycsb_zipfian: false,
+            ycsb_zetan: OnceLock::new(),
         }
     }
 }
 
 impl Scalable for KeySelection {
-    /// Only quantities measured in keys are scaled. Fractions of the key domain and distribution
-    /// shapes that are stretched over it are independent of the number of keys. Scrambled
-    /// selections keep their `n`, like YCSB's scrambled zipfian, which always draws from 10^10
-    /// items regardless of the number of records.
+    /// A `zipf` or `latest` selection's `n` is scaled with the number of keys, unless the
+    /// selection is scrambled: YCSB's scrambled zipfian always draws from 10^10 items regardless of
+    /// the number of records.
     fn scale(&mut self, factor: f64) {
-        self.offset = (self.offset as f64 * factor).round() as i64;
         if self.scramble {
             return;
         }
@@ -626,11 +565,36 @@ pub enum StringExprInnerConfig {
         /// The segments to use for the string.
         segments: Vec<StringExpr>,
     },
+    /// With `probability`, one of `amount` hot keys; otherwise a random key. All keys are `len`
+    /// characters long.
     HotRange {
         len: usize,
         amount: usize,
         probability: f64,
+        #[serde(default)]
+        /// The character set of the keys (default: the enclosing one).
+        character_set: Option<CharacterSet>,
+        #[serde(default)]
+        /// Every `hot_range` with the same `seed`, `len`, `amount` and character set has the same hot
+        /// keys, e.g. so that point queries read the hot keys that inserts write. Without a seed,
+        /// each `hot_range` has its own random hot keys.
+        seed: Option<u64>,
     },
+    /// A sampled number, rounded down and written in decimal, zero-padded to `width` digits, e.g. a
+    /// timestamp: `{ "number": { "value": { "uniform": { "min": 1546300800000, "max": 1577836800000 } }, "width": 13 } }`
+    Number { value: NumberExpr, width: usize },
+    /// Consecutive numbers `start`, `start + step`, ... written like `number`, e.g. timestamps of
+    /// points recorded at a fixed rate.
+    Counter {
+        start: u64,
+        #[serde(default = "default_counter_step")]
+        step: u64,
+        width: usize,
+    },
+}
+
+fn default_counter_step() -> u64 {
+    1
 }
 
 #[derive(serde::Deserialize, Clone, Debug)]
@@ -658,7 +622,19 @@ pub enum StringExprInner {
         len: usize,
         amount: usize,
         probability: f64,
-        hot_ranges: Vec<Key>,
+        character_set: Option<CharacterSet>,
+        seed: Option<u64>,
+        /// Built on first use, when the enclosing character set is known.
+        hot_set: Arc<OnceLock<Arc<HotSet>>>,
+    },
+    Number {
+        value: NumberExpr,
+        width: usize,
+    },
+    Counter {
+        step: u64,
+        width: usize,
+        next: Arc<AtomicU64>,
     },
 }
 
@@ -707,21 +683,22 @@ impl TryFrom<StringExprInnerConfig> for StringExprInner {
                 len,
                 amount,
                 probability,
-            } => {
-                let mut rng = Xoshiro256Plus::from_os_rng();
-                let rng_ref = &mut rng;
-                let mut hot_ranges = Vec::with_capacity(amount);
-                for _ in 0..amount {
-                    let key: Key = rng_ref.sample_iter(Alphanumeric).take(len).collect();
-                    hot_ranges.push(key);
-                }
-                Ok(Self::HotRange {
-                    len,
-                    amount,
-                    probability,
-                    hot_ranges,
-                })
-            }
+                character_set,
+                seed,
+            } => Ok(Self::HotRange {
+                len,
+                amount,
+                probability,
+                character_set,
+                seed,
+                hot_set: Arc::new(OnceLock::new()),
+            }),
+            S::Number { value, width } => Ok(Self::Number { value, width }),
+            S::Counter { start, step, width } => Ok(Self::Counter {
+                step,
+                width,
+                next: Arc::new(AtomicU64::new(start)),
+            }),
         };
     }
 }
@@ -735,8 +712,151 @@ pub enum RangeFormat {
     StartEnd,
 }
 
+/// Writes a `number`/`counter` value: rounded down, in decimal, zero-padded to `width` digits.
+fn format_number(value: f64, width: usize) -> Vec<u8> {
+    format!("{:0width$}", value as u64, width = width).into_bytes()
+}
+
+fn sample_string(rng: &mut impl Rng, character_set: CharacterSet, len: usize) -> Key {
+    match character_set {
+        CharacterSet::Alphanumeric => Key::from_iter(rng.sample_iter(Alphanumeric).take(len)),
+        CharacterSet::Alphabetic => Key::from_iter(rng.sample_iter(Alphabetic).take(len)),
+        CharacterSet::Numeric => Key::from_iter(rng.sample_iter(Numeric).take(len)),
+    }
+}
+
+/// The hot keys of a `hot_range`, and which of them it has generated so far.
+#[derive(Debug)]
+pub struct HotSet {
+    keys: Vec<Key>,
+    /// Whether each hot key was generated, and the indices of the generated ones.
+    generated: Mutex<(Vec<bool>, Vec<usize>)>,
+}
+
+impl HotSet {
+    fn new(rng: &mut impl Rng, character_set: CharacterSet, len: usize, amount: usize) -> Self {
+        Self {
+            keys: (0..amount).map(|_| sample_string(rng, character_set, len)).collect(),
+            generated: Mutex::new((vec![false; amount], Vec::new())),
+        }
+    }
+
+    /// One of the hot keys, uniformly.
+    fn generate(&self, rng: &mut impl Rng) -> Key {
+        let index = rng.random_range(0..self.keys.len());
+        let mut generated = self.generated.lock().expect("hot set lock");
+        if !generated.0[index] {
+            generated.0[index] = true;
+            generated.1.push(index);
+        }
+        self.keys[index].clone()
+    }
+
+    /// One of the hot keys generated so far, uniformly; None if there is none yet.
+    fn sample_generated(&self, rng: &mut impl Rng) -> Option<Key> {
+        let generated = self.generated.lock().expect("hot set lock");
+        if generated.1.is_empty() {
+            return None;
+        }
+        Some(self.keys[generated.1[rng.random_range(0..generated.1.len())]].clone())
+    }
+}
+
+/// Hot sets of seeded `hot_range`s, shared by seed, length, amount and character set.
+static SEEDED_HOT_SETS: OnceLock<Mutex<HashMap<(u64, usize, usize, CharacterSet), Arc<HotSet>>>> =
+    OnceLock::new();
+
+impl StringExprInner {
+    fn hot_range_character_set(&self, character_set_parent: Option<CharacterSet>) -> CharacterSet {
+        match self {
+            Self::HotRange { character_set, .. } => character_set.or(character_set_parent).unwrap_or_default(),
+            _ => unreachable!("only called on hot_range"),
+        }
+    }
+
+    fn hot_set(&self, character_set: CharacterSet) -> Arc<HotSet> {
+        let Self::HotRange { len, amount, seed, hot_set, .. } = self else {
+            unreachable!("only called on hot_range")
+        };
+        hot_set
+            .get_or_init(|| match seed {
+                Some(seed) => SEEDED_HOT_SETS
+                    .get_or_init(Default::default)
+                    .lock()
+                    .expect("hot set registry lock")
+                    .entry((*seed, *len, *amount, character_set))
+                    .or_insert_with(|| {
+                        let mut rng = Xoshiro256Plus::seed_from_u64(*seed);
+                        Arc::new(HotSet::new(&mut rng, character_set, *len, *amount))
+                    })
+                    .clone(),
+                None => {
+                    let mut rng = Xoshiro256Plus::from_os_rng();
+                    Arc::new(HotSet::new(&mut rng, character_set, *len, *amount))
+                }
+            })
+            .clone()
+    }
+}
+
 impl StringExpr {
+    /// For the `key` of point queries, which must be a `hot_range`: with its probability, one of
+    /// its hot keys that has already been generated (e.g. inserted by a `hot_range` with the same
+    /// seed), uniformly; otherwise None, and the query selects an existing key as usual.
+    pub fn sample_generated_hot_key(
+        &self,
+        rng: &mut impl Rng,
+        character_set_parent: Option<CharacterSet>,
+    ) -> Result<Option<Key>> {
+        let Self::Inner(inner @ StringExprInner::HotRange { probability, .. }) = self else {
+            anyhow::bail!("the key of point queries must be a hot_range");
+        };
+        if !rng.random_bool(*probability) {
+            return Ok(None);
+        }
+        let character_set = inner.hot_range_character_set(character_set_parent);
+        Ok(inner.hot_set(character_set).sample_generated(rng))
+    }
+
     pub fn generate(&self, rng: &mut impl Rng, character_set_parent: Option<CharacterSet>, thread_id: Option<usize>) -> Key {
+        self.generate_shifted(rng, character_set_parent, thread_id, 0.0, &mut None)
+    }
+
+    /// Generates a key range spanning `span` of the first `number` segment: the start key and the
+    /// same key with that number increased by `span`. Start keys are redrawn while the end number
+    /// would exceed `max_end`. Returns None if the expression has no `number` segment.
+    pub fn generate_window<R: Rng + Clone>(
+        &self,
+        rng: &mut R,
+        character_set_parent: Option<CharacterSet>,
+        thread_id: Option<usize>,
+        span: f64,
+        max_end: Option<f64>,
+    ) -> Option<(Key, Key)> {
+        loop {
+            // Rendering the end key from the same random state repeats every other segment.
+            let mut replay = rng.clone();
+            let mut number = None;
+            let start = self.generate_shifted(rng, character_set_parent, thread_id, 0.0, &mut number);
+            let number = number?;
+            if max_end.is_some_and(|max_end| number + span > max_end) {
+                continue;
+            }
+            let end = self.generate_shifted(&mut replay, character_set_parent, thread_id, span, &mut None);
+            return Some((start, end));
+        }
+    }
+
+    /// `generate` with the first `number` segment increased by `shift`; `number` receives the
+    /// unshifted value of that segment.
+    fn generate_shifted(
+        &self,
+        rng: &mut impl Rng,
+        character_set_parent: Option<CharacterSet>,
+        thread_id: Option<usize>,
+        shift: f64,
+        number: &mut Option<f64>,
+    ) -> Key {
         let key = match self {
             Self::Constant(val) => Key::from(val.as_bytes()),
             Self::Inner(inner) => {
@@ -765,7 +885,7 @@ impl StringExpr {
                     S::Weighted { items, distr } => {
                         let random_value = rng.sample(distr);
                         let item = &items[random_value];
-                        item.value.generate(rng, None, thread_id)
+                        item.value.generate_shifted(rng, None, thread_id, shift, number)
                     }
                     S::Segmented {
                         separator,
@@ -774,7 +894,7 @@ impl StringExpr {
                         let mut buf = Vec::new();
                         for (i, segment) in segments.iter().enumerate() {
                             segment
-                                .write_all(&mut buf, rng, None)
+                                .write_all_shifted(&mut buf, rng, None, shift, number)
                                 .context("Writing weighted string")
                                 .expect("to be able to write to a vec");
                             if i != segments.len() - 1 {
@@ -783,20 +903,24 @@ impl StringExpr {
                         }
                         Key::from(buf)
                     }
-                    S::HotRange {
-                        hot_ranges,
-                        probability,
-                        len,
-                        ..
-                    } => {
-                        let is_hot = rng.random_bool(*probability);
-                        if is_hot {
-                            let index = rng.random_range(0..hot_ranges.len());
-                            hot_ranges[index].clone()
+                    S::HotRange { probability, len, .. } => {
+                        let character_set = inner.hot_range_character_set(character_set_parent);
+                        if rng.random_bool(*probability) {
+                            inner.hot_set(character_set).generate(rng)
                         } else {
-                            let key: Key = rng.sample_iter(Alphanumeric).take(*len).collect();
-                            Key::from(key)
+                            sample_string(rng, character_set, *len)
                         }
+                    }
+                    S::Number { value, width } => {
+                        let value = value.evaluate(rng).floor();
+                        let shifted = value + if number.is_none() { shift } else { 0.0 };
+                        number.get_or_insert(value);
+                        Key::from(format_number(shifted, *width))
+                    }
+                    S::Counter { step, width, next } => {
+                        let value = next.fetch_add(*step, Ordering::Relaxed) as f64;
+                        number.get_or_insert(value);
+                        Key::from(format_number(value, *width))
                     }
                 }
             }
@@ -816,6 +940,18 @@ impl StringExpr {
         writer: &mut impl Write,
         rng: &mut impl Rng,
         character_set_parent: Option<CharacterSet>,
+    ) -> Result<()> {
+        self.write_all_shifted(writer, rng, character_set_parent, 0.0, &mut None)
+    }
+
+    /// `write_all` with the first `number` segment increased by `shift` (see `generate_shifted`).
+    fn write_all_shifted(
+        &self,
+        writer: &mut impl Write,
+        rng: &mut impl Rng,
+        character_set_parent: Option<CharacterSet>,
+        shift: f64,
+        number: &mut Option<f64>,
     ) -> Result<()> {
         match self {
             Self::Constant(val) => writer
@@ -853,7 +989,7 @@ impl StringExpr {
                         let item = &items[random_value];
                         return item
                             .value
-                            .write_all(writer, rng, None)
+                            .write_all_shifted(writer, rng, None, shift, number)
                             .context("Writing weighted string");
                     }
                     S::Segmented {
@@ -862,7 +998,7 @@ impl StringExpr {
                     } => {
                         for segment in segments {
                             segment
-                                .write_all(writer, rng, None)
+                                .write_all_shifted(writer, rng, None, shift, number)
                                 .context("Writing weighted string")?;
                             writer
                                 .write_all(separator.as_bytes())
@@ -870,21 +1006,25 @@ impl StringExpr {
                         }
                         return Ok(());
                     }
-                    S::HotRange {
-                        hot_ranges,
-                        probability,
-                        len,
-                        ..
-                    } => {
-                        let is_hot = rng.random_bool(*probability);
-                        let key = if is_hot {
-                            let index = rng.random_range(0..hot_ranges.len());
-                            hot_ranges[index].clone()
+                    S::HotRange { probability, len, .. } => {
+                        let character_set = inner.hot_range_character_set(character_set_parent);
+                        let key = if rng.random_bool(*probability) {
+                            inner.hot_set(character_set).generate(rng)
                         } else {
-                            let key: Key = rng.sample_iter(Alphanumeric).take(*len).collect();
-                            Key::from(key)
+                            sample_string(rng, character_set, *len)
                         };
                         writer.write_all(&key).context("Writing weighted string")
+                    }
+                    S::Number { value, width } => {
+                        let value = value.evaluate(rng).floor();
+                        let shifted = value + if number.is_none() { shift } else { 0.0 };
+                        number.get_or_insert(value);
+                        writer.write_all(&format_number(shifted, *width)).context("Writing number")
+                    }
+                    S::Counter { step, width, next } => {
+                        let value = next.fetch_add(*step, Ordering::Relaxed) as f64;
+                        number.get_or_insert(value);
+                        writer.write_all(&format_number(value, *width)).context("Writing counter")
                     }
                 }
             }
@@ -984,6 +1124,10 @@ pub struct PointQueries {
     pub op_count: NumberExpr,
     /// Key selection strategy of the start key
     pub selection: Option<KeySelection>,
+    /// Hot keys: a `hot_range`. With its probability, a query reads one of its hot keys that has
+    /// already been written (give the inserts' `hot_range` the same `seed`), uniformly; otherwise
+    /// it reads a key chosen with `selection`.
+    pub key: Option<StringExpr>,
     ///// Key sort order
     //pub sort_by: SortBy,
 }
@@ -1055,6 +1199,13 @@ pub struct BlindRangeQueries {
     pub selectivity: Option<NumberExpr>,
     /// Specifies an exact scan length for range queries. Mutally exclusive with selectivity.
     pub scan_length: Option<NumberExpr>,
+    /// Makes each query a window over the values of the first `number` segment of `key` instead of a
+    /// number of keys: the range is [key, the same key with that number increased by `span`), e.g. a
+    /// time window over timestamp keys. Written with a start and an end key. Mutually exclusive with
+    /// selectivity and scan_length.
+    pub span: Option<NumberExpr>,
+    /// With `span`: windows must end at or below this value; start keys are redrawn until they do.
+    pub span_max_end: Option<f64>,
     #[serde(default)]
     pub character_set: Option<CharacterSet>,
 }
@@ -1173,7 +1324,7 @@ pub struct WorkloadSpecGroup {
     pub enable_granular_stats: bool,
 }
 
-#[derive(serde::Deserialize, JsonSchema, Default, Copy, Clone, Debug)]
+#[derive(serde::Deserialize, JsonSchema, Default, Copy, Clone, Debug, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub enum CharacterSet {
     #[default]
@@ -1478,9 +1629,6 @@ fn enforce_thread_uniqueness(key: &mut [u8], thread_id: usize) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use statrs::distribution::{
-        Beta, ContinuousCDF, Exp, LogNormal, Normal, Pareto, Uniform, Weibull,
-    };
 
     fn selection(json: &str) -> KeySelection {
         serde_json::from_str(json).expect("valid key selection")
@@ -1490,212 +1638,12 @@ mod tests {
         Xoshiro256Plus::seed_from_u64(0xdead_beef)
     }
 
-    fn histogram(sel: &KeySelection, len: usize, samples: usize) -> Vec<usize> {
-        let mut rng = rng();
-        let mut counts = vec![0; len];
-        for _ in 0..samples {
-            counts[sel.select(&mut rng, len)] += 1;
-        }
-        counts
-    }
-
-    fn zipf_pmf(n: usize, s: f64) -> Vec<f64> {
-        let weights: Vec<f64> = (1..=n).map(|r| (r as f64).powf(-s)).collect();
-        let total: f64 = weights.iter().sum();
-        weights.into_iter().map(|w| w / total).collect()
-    }
-
-    /// Pearson's chi-square test of `counts` against `pmf`, failing far beyond the 99.9th percentile
-    /// (df + 5 * sqrt(2 df)) so the test is not flaky, but still catches any systematic deviation.
-    fn assert_chi_square(counts: &[usize], pmf: &[f64]) {
-        let total: usize = counts.iter().sum();
-        let (mut chi2, mut df) = (0.0, 0usize);
-        let (mut obs_tail, mut exp_tail) = (0.0, 0.0);
-        for (&c, &p) in counts.iter().zip(pmf) {
-            let e = p * total as f64;
-            if e >= 5.0 {
-                chi2 += (c as f64 - e).powi(2) / e;
-                df += 1;
-            } else {
-                obs_tail += c as f64;
-                exp_tail += e;
-            }
-        }
-        if exp_tail >= 5.0 {
-            chi2 += (obs_tail - exp_tail).powi(2) / exp_tail;
-            df += 1;
-        }
-        let df = (df - 1) as f64;
-        let limit = df + 5.0 * (2.0 * df).sqrt();
-        assert!(
-            chi2 < limit,
-            "chi2 = {chi2:.1} exceeds {limit:.1} (df = {df})"
-        );
-    }
-
-    /// One-sample Kolmogorov-Smirnov test of the selected positions against the distribution's CDF
-    /// truncated to its key domain window. Fails at alpha = 0.001.
-    fn assert_ks(json: &str, cdf: impl Fn(f64) -> f64) {
-        let sel = selection(json);
-        let len = 1_000_000;
-        let samples = 100_000;
-        let (low, high) = sel.distribution.key_domain_window();
-        let (cdf_low, cdf_high) = (cdf(low), cdf(high));
-        let truncated_cdf =
-            |fraction: f64| (cdf(low + fraction * (high - low)) - cdf_low) / (cdf_high - cdf_low);
-
-        let mut rng = rng();
-        let mut fractions: Vec<f64> = (0..samples)
-            .map(|_| (sel.select(&mut rng, len) as f64 + 0.5) / len as f64)
-            .collect();
-        fractions.sort_by(f64::total_cmp);
-        let d = fractions
-            .iter()
-            .enumerate()
-            .map(|(i, &x)| {
-                let f = truncated_cdf(x);
-                (f - i as f64 / samples as f64)
-                    .abs()
-                    .max(((i + 1) as f64 / samples as f64 - f).abs())
-            })
-            .fold(0.0, f64::max);
-        let critical = 1.95 / (samples as f64).sqrt();
-        assert!(d < critical, "{json}: KS statistic {d:.5} >= {critical:.5}");
-    }
-
-    #[test]
-    fn continuous_distributions_follow_their_cdf_over_the_key_domain() {
-        let normal = Normal::new(0.3, 0.1).unwrap();
-        assert_ks(r#"{"normal": {"mean": 0.3, "std_dev": 0.1}}"#, |x| {
-            normal.cdf(x)
-        });
-        // Wide normal, heavily truncated at both ends of the key domain.
-        let normal = Normal::new(0.5, 0.5).unwrap();
-        assert_ks(r#"{"normal": {"mean": 0.5, "std_dev": 0.5}}"#, |x| {
-            normal.cdf(x)
-        });
-        let uniform = Uniform::new(0.2, 0.4).unwrap();
-        assert_ks(r#"{"uniform": {"min": 0.2, "max": 0.4}}"#, |x| {
-            uniform.cdf(x)
-        });
-        let beta = Beta::new(2.0, 5.0).unwrap();
-        assert_ks(r#"{"beta": {"alpha": 2, "beta": 5}}"#, |x| beta.cdf(x));
-        let exp = Exp::new(2.0).unwrap();
-        assert_ks(r#"{"exponential": {"lambda": 2}}"#, |x| exp.cdf(x));
-        let log_normal = LogNormal::new(10.0, 2.0).unwrap();
-        assert_ks(r#"{"log_normal": {"mean": 10, "std_dev": 2}}"#, |x| {
-            log_normal.cdf(x)
-        });
-        let weibull = Weibull::new(1.5, 3.0).unwrap();
-        assert_ks(r#"{"weibull": {"scale": 3, "shape": 1.5}}"#, |x| {
-            weibull.cdf(x)
-        });
-        let pareto = Pareto::new(1.0, 2.0).unwrap();
-        assert_ks(r#"{"pareto": {"scale": 1, "shape": 2}}"#, |x| pareto.cdf(x));
-    }
-
-    #[test]
-    fn poisson_outcomes_cover_their_slice_of_the_key_domain() {
-        let sel = selection(r#"{"poisson": {"lambda": 4}}"#);
-        let (_, high) = sel.distribution.key_domain_window();
-        let len = 100_000;
-        let counts = histogram(&sel, len, 400_000);
-        let pmf: Vec<f64> = (0..len)
-            .map(|pos| {
-                // Each outcome k is spread uniformly over [k, k + 1) of the window.
-                let k = (pos as f64 / len as f64 * high).floor() as u64;
-                let p = (-4.0f64).exp() * 4f64.powi(k as i32)
-                    / (1..=k).map(|i| i as f64).product::<f64>();
-                p / (len as f64 / high)
-            })
-            .collect();
-        let total: f64 = pmf.iter().sum();
-        let pmf: Vec<f64> = pmf.iter().map(|p| p / total).collect();
-        // Compare per slice of 1000 keys.
-        let bucket = |v: &[f64]| v.chunks(1000).map(|c| c.iter().sum()).collect::<Vec<f64>>();
-        let counts_b: Vec<usize> = counts.chunks(1000).map(|c| c.iter().sum()).collect();
-        assert_chi_square(&counts_b, &bucket(&pmf));
-    }
-
-    #[test]
-    fn zipf_ranks_map_to_consecutive_keys_starting_at_offset() {
-        let len = 10_000;
-        let pmf = zipf_pmf(1000, 1.1);
-        for offset in [0usize, 1, 1000, 5000] {
-            let sel = selection(&format!(
-                r#"{{"zipf": {{"n": 1000, "s": 1.1}}, "offset": {offset}}}"#
-            ));
-            let counts = histogram(&sel, len, 500_000);
-            let hottest = (0..len).max_by_key(|&i| counts[i]).unwrap();
-            assert_eq!(
-                hottest, offset,
-                "the most frequent key must be at the offset"
-            );
-            // Only the n keys starting at the offset are selected.
-            assert!(counts[..offset].iter().all(|&c| c == 0));
-            assert!(counts[offset + 1000..].iter().all(|&c| c == 0));
-            assert_chi_square(&counts[offset..offset + 1000], &pmf);
-        }
-    }
-
-    #[test]
-    fn zipf_is_truncated_when_there_are_fewer_keys_than_ranks() {
-        let sel = selection(r#"{"zipf": {"n": 1000000, "s": 0.99}}"#);
-        let counts = histogram(&sel, 500, 500_000);
-        assert_chi_square(&counts, &zipf_pmf(500, 0.99));
-    }
-
-    #[test]
-    fn latest_is_anchored_at_the_largest_key() {
-        let len = 10_000;
-        let pmf = zipf_pmf(1000, 1.1);
-        let sel = selection(r#"{"latest": {"n": 1000, "s": 1.1}}"#);
-        let counts = histogram(&sel, len, 500_000);
-        let reversed: Vec<usize> = counts[len - 1000..].iter().rev().copied().collect();
-        assert!(counts[..len - 1000].iter().all(|&c| c == 0));
-        assert_chi_square(&reversed, &pmf);
-    }
-
-    #[test]
-    fn offset_shifts_every_distribution_and_wraps_around() {
-        let distributions = [
-            r#""uniform": {"min": 0.0, "max": 1.0}"#,
-            r#""uniform": {"min": 0.2, "max": 0.4}"#,
-            r#""normal": {"mean": 0.5, "std_dev": 0.1}"#,
-            r#""beta": {"alpha": 2, "beta": 5}"#,
-            r#""zipf": {"n": 10000, "s": 1.2}"#,
-            r#""latest": {"n": 10000, "s": 1.2}"#,
-            r#""exponential": {"lambda": 1}"#,
-            r#""log_normal": {"mean": 0.4, "std_dev": 0.2}"#,
-            r#""poisson": {"lambda": 10}"#,
-            r#""weibull": {"scale": 1, "shape": 2}"#,
-            r#""pareto": {"scale": 1, "shape": 2}"#,
-        ];
-        let len = 7_919;
-        for distr in distributions {
-            let base = selection(&format!("{{{distr}}}"));
-            for offset in [1i64, 1000, 7_918, 20_000, -1, -1000] {
-                let shifted = selection(&format!(r#"{{{distr}, "offset": {offset}}}"#));
-                let (mut rng_a, mut rng_b) = (rng(), rng());
-                for _ in 0..10_000 {
-                    let a = base.select(&mut rng_a, len) as i64;
-                    let b = shifted.select(&mut rng_b, len) as i64;
-                    assert_eq!(
-                        b,
-                        (a + offset).rem_euclid(len as i64),
-                        "{distr} offset {offset}"
-                    );
-                }
-            }
-        }
-    }
-
     #[test]
     fn selections_stay_in_bounds_for_tiny_key_domains() {
         for json in [
-            r#"{"zipf": {"n": 100, "s": 1.2}, "offset": 7}"#,
+            r#"{"zipf": {"n": 100, "s": 1.2}}"#,
             r#"{"normal": {"mean": 0.5, "std_dev": 10}}"#,
-            r#"{"pareto": {"scale": 1, "shape": 1.5}, "offset": -3}"#,
+            r#"{"pareto": {"scale": 1, "shape": 1.5}}"#,
             r#"{"uniform": {"min": 0.99, "max": 1.0}}"#,
         ] {
             let sel = selection(json);
@@ -1706,36 +1654,6 @@ mod tests {
                 }
             }
         }
-    }
-
-    #[test]
-    fn heavy_tails_do_not_pile_up_on_the_last_key() {
-        // Before, samples beyond the window were clamped onto the last key (1% of all selections for
-        // pareto and weibull).
-        let len = 10_000;
-        for json in [
-            r#"{"pareto": {"scale": 1, "shape": 2}}"#,
-            r#"{"weibull": {"scale": 1, "shape": 2}}"#,
-            r#"{"exponential": {"lambda": 1}}"#,
-        ] {
-            let counts = histogram(&selection(json), len, 200_000);
-            assert!(
-                counts[len - 1] < 20,
-                "{json}: {} selections of the last key",
-                counts[len - 1]
-            );
-        }
-    }
-
-    #[test]
-    fn key_selection_deserializes_with_and_without_offset() {
-        let sel = selection(r#"{"zipf": {"n": 100, "s": 1.2}}"#);
-        assert_eq!(sel.offset, 0);
-        let sel = selection(r#"{"offset": 1000, "normal": {"mean": 0.5, "std_dev": 0.1}}"#);
-        assert_eq!(sel.offset, 1000);
-        assert!(matches!(sel.distribution, Distribution::Normal { .. }));
-        assert_eq!(KeySelection::default().offset, 0);
-        assert!(serde_json::from_str::<KeySelection>(r#"{"offset": 5}"#).is_err());
     }
 
     #[test]
@@ -1779,6 +1697,62 @@ mod tests {
     }
 
     #[test]
+    fn seeded_hot_ranges_share_hot_keys() {
+        let insert = string_expr(r#"{"hot_range": {"len": 8, "amount": 10, "probability": 1.0, "seed": 1}}"#);
+        let query = string_expr(r#"{"hot_range": {"len": 8, "amount": 10, "probability": 1.0, "seed": 1}}"#);
+        let mut rng = rng();
+        // nothing inserted yet: no hot key to read
+        assert!(query.sample_generated_hot_key(&mut rng, None).unwrap().is_none());
+        let inserted: Vec<Key> = (0..3).map(|_| insert.generate(&mut rng, None, None)).collect();
+        for _ in 0..100 {
+            let key = query.sample_generated_hot_key(&mut rng, None).unwrap().expect("a hot key");
+            assert!(inserted.contains(&key));
+        }
+    }
+
+    #[test]
+    fn unseeded_hot_ranges_have_own_hot_keys() {
+        let a = string_expr(r#"{"hot_range": {"len": 16, "amount": 5, "probability": 1.0}}"#);
+        let b = string_expr(r#"{"hot_range": {"len": 16, "amount": 5, "probability": 1.0}}"#);
+        let mut rng = rng();
+        let keys_a: Vec<Key> = (0..50).map(|_| a.generate(&mut rng, None, None)).collect();
+        assert!((0..50).all(|_| !keys_a.contains(&b.generate(&mut rng, None, None))));
+    }
+
+    #[test]
+    fn hot_range_uses_character_set() {
+        let hot = string_expr(r#"{"hot_range": {"len": 16, "amount": 5, "probability": 0.5}}"#);
+        let mut rng = rng();
+        for _ in 0..100 {
+            let key = hot.generate(&mut rng, Some(CharacterSet::Numeric), None);
+            assert!(key.iter().all(u8::is_ascii_digit));
+        }
+    }
+
+    #[test]
+    fn point_query_key_must_be_hot_range() {
+        let key = string_expr(r#"{"uniform": {"len": 8}}"#);
+        assert!(key.sample_generated_hot_key(&mut rng(), None).is_err());
+    }
+
+    #[test]
+    fn selection_does_not_depend_on_scramble() {
+        // Keys are always selected by scattering the sample over the keys, like the paper's design.
+        for distr in [
+            r#""zipf": {"n": 100000, "s": 1.2}"#,
+            r#""normal": {"mean": 0.5, "std_dev": 0.1}"#,
+            r#""uniform": {"min": 0.0, "max": 1.0}"#,
+        ] {
+            let plain = selection(&format!("{{{distr}}}"));
+            let scrambled = selection(&format!(r#"{{{distr}, "scramble": true}}"#));
+            let (mut rng_a, mut rng_b) = (rng(), rng());
+            for _ in 0..10_000 {
+                assert_eq!(plain.select(&mut rng_a, 7_919), scrambled.select(&mut rng_b, 7_919));
+            }
+        }
+    }
+
+    #[test]
     fn scaling_a_scrambled_selection_keeps_n() {
         // YCSB's scrambled zipfian always draws from 10^10 items, whatever the number of records.
         let mut sel = selection(r#"{"zipf": {"n": 10000000000, "s": 0.99}, "scramble": true}"#);
@@ -1787,32 +1761,10 @@ mod tests {
     }
 
     #[test]
-    fn scramble_is_opt_in_and_composes_with_offset() {
-        assert!(!selection(r#"{"zipf": {"n": 100, "s": 1.2}}"#).scramble);
-        assert!(!KeySelection::default().scramble);
-        for distr in [
-            r#""zipf": {"n": 100000, "s": 1.2}"#,
-            r#""normal": {"mean": 0.5, "std_dev": 0.1}"#,
-            r#""uniform": {"min": 0.0, "max": 1.0}"#,
-            r#""latest": {"n": 100000, "s": 1.2}"#,
-        ] {
-            let base = selection(&format!(r#"{{{distr}, "scramble": true}}"#));
-            let shifted = selection(&format!(r#"{{{distr}, "scramble": true, "offset": 1000}}"#));
-            let (mut rng_a, mut rng_b) = (rng(), rng());
-            for _ in 0..10_000 {
-                let a = base.select(&mut rng_a, 7_919);
-                let b = shifted.select(&mut rng_b, 7_919);
-                assert_eq!(b, (a + 1000) % 7_919, "{distr}");
-            }
-        }
-    }
-
-    #[test]
     fn scaling_a_selection_scales_only_key_counts() {
-        let mut sel = selection(r#"{"zipf": {"n": 1000, "s": 1.2}, "offset": 100}"#);
+        let mut sel = selection(r#"{"zipf": {"n": 1000, "s": 1.2}}"#);
         sel.scale(10.0);
         assert!(matches!(sel.distribution, Distribution::Zipf { n, .. } if n == 10_000.0));
-        assert_eq!(sel.offset, 1000);
 
         let mut sel = selection(r#"{"uniform": {"min": 0.0, "max": 1.0}}"#);
         sel.scale(10.0);
@@ -1827,5 +1779,64 @@ mod tests {
             serde_json::from_str(r#"{"zipf": {"n": 1000, "s": 1.2}}"#).unwrap();
         distr.scale(10.0);
         assert!(matches!(distr, Distribution::Zipf { n, .. } if n == 10_000.0));
+    }
+
+    fn string_expr(json: &str) -> StringExpr {
+        serde_json::from_str(json).expect("valid string expression")
+    }
+
+    #[test]
+    fn number_is_zero_padded_and_counter_counts() {
+        let mut rng = rng();
+        let expr = string_expr(r#"{"number": {"value": 42.9, "width": 5}}"#);
+        assert_eq!(&*expr.generate(&mut rng, None, None), b"00042");
+
+        let expr = string_expr(
+            r#"{"segmented": {"separator": ":", "segments": ["m", {"counter": {"start": 7, "step": 2, "width": 3}}]}}"#,
+        );
+        let keys: Vec<_> = (0..3).map(|_| expr.generate(&mut rng, None, None)).collect();
+        assert_eq!(keys, [b"m:007".as_slice(), b"m:009", b"m:011"].map(Key::from));
+    }
+
+    #[test]
+    fn windows_shift_only_the_first_number_and_respect_max_end() {
+        let mut rng = rng();
+        let expr = string_expr(
+            r#"{"segmented": {"separator": ":", "segments": [
+                {"number": {"value": {"uniform": {"min": 1000, "max": 2000}}, "width": 4}},
+                {"uniform": {"len": 6}},
+                {"number": {"value": {"uniform": {"min": 0, "max": 100}}, "width": 3}}]}}"#,
+        );
+        for _ in 0..1000 {
+            let (start, end) = expr.generate_window(&mut rng, None, None, 300.0, Some(2000.0)).unwrap();
+            let (start, end) = (std::str::from_utf8(&start).unwrap(), std::str::from_utf8(&end).unwrap());
+            let s: u64 = start[..4].parse().unwrap();
+            let e: u64 = end[..4].parse().unwrap();
+            assert_eq!(e, s + 300);
+            assert!(e <= 2000);
+            assert_eq!(start[4..], end[4..], "every other segment repeats");
+        }
+        let no_number = string_expr(r#"{"uniform": {"len": 6}}"#);
+        assert!(no_number.generate_window(&mut rng, None, None, 1.0, None).is_none());
+    }
+
+    #[test]
+    fn ycsb_zipfian_matches_ycsbs_rank_frequencies() {
+        // Frequencies of ranks 0-4 of YCSB's ZipfianGenerator(0, 10^10, 0.99, ZETAN), measured from
+        // 2*10^7 draws of YCSB's Java implementation.
+        let ycsb = [0.03778, 0.01903, 0.01532, 0.01090, 0.00848];
+        let mut rng = rng();
+        let n = 2_000_000;
+        let mut counts = [0usize; 5];
+        for _ in 0..n {
+            let rank = ycsb_zipfian_rank(&mut rng, 1e10, 0.99, YCSB_ZETAN) as usize;
+            if rank < 5 {
+                counts[rank] += 1;
+            }
+        }
+        for (rank, p) in ycsb.iter().enumerate() {
+            let freq = counts[rank] as f64 / n as f64;
+            assert!((freq - p).abs() < 0.0006, "rank {rank}: {freq} vs YCSB {p}");
+        }
     }
 }

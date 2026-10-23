@@ -113,6 +113,25 @@
               "type": "null"
             }
           ]
+        },
+        "span": {
+          "description": "Makes each query a window over the values of the first `number` segment of `key` instead of a\nnumber of keys: the range is [key, the same key with that number increased by `span`), e.g. a\ntime window over timestamp keys. Written with a start and an end key. Mutually exclusive with\nselectivity and scan_length.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NumberExpr"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "span_max_end": {
+          "description": "With `span`: windows must end at or below this value; start keys are redrawn until they do.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
         }
       },
       "required": [
@@ -633,17 +652,16 @@
       ]
     },
     "KeySelection": {
-      "description": "Selects existing keys by laying a distribution over the sorted key domain (see\n[`Distribution::key_position`]), shifted by `offset` keys.\n\n```json\n{ \"zipf\": { \"n\": 1000000, \"s\": 0.99 }, \"offset\": 1000 }\n```",
+      "description": "Selects existing keys with a distribution (see [`Distribution::evaluate_index`]).\n\n```json\n{ \"zipf\": { \"n\": 10000000000, \"s\": 0.99 }, \"scramble\": true }\n```",
       "type": "object",
       "properties": {
-        "offset": {
-          "description": "Shifts the selected position by this many keys in sorted key order, wrapping around at the\nend of the key domain (negative values shift towards smaller keys). For example, with\n`offset: 1000` the key a `zipf` selection picks most often is the 1001st smallest key\n(position 1000) instead of the smallest key (position 0).",
-          "type": "integer",
-          "format": "int64",
-          "default": 0
-        },
         "scramble": {
-          "description": "Scatters the selected keys over the key domain with FNV hashing (see\n[`Distribution::scrambled_index`]) instead of laying the distribution over the sorted key\ndomain. Use it to reproduce YCSB's scrambled zipfian distribution.",
+          "description": "Makes range starts, like the keys of other operations, hash over all keys as in YCSB, so\nthat a rank always maps to the same start key; otherwise range starts are selected among\nthe keys from which the whole range fits. Also keeps a `zipf`'s `n` when the spec is\nscaled, like YCSB's scrambled zipfian, which always draws from 10^10 items.",
+          "type": "boolean",
+          "default": false
+        },
+        "ycsb_zipfian": {
+          "description": "With `zipf`, selects keys exactly like the zipfian request distribution of YCSB's\n`CoreWorkload` instead of scattering exact Zipf ranks over the keys: ranks come from\n`ZipfianGenerator` (the approximation of Gray et al., which puts more weight on ranks 2-9\nthan Zipf does), and are scrambled over one slot more than there are keys, redrawing the\nempty slot, because `CoreWorkload` sizes its `ScrambledZipfianGenerator` with an inclusive\nupper bound. Both change which keys are hot and how hot they are.",
           "type": "boolean",
           "default": false
         }
@@ -975,6 +993,17 @@
       "description": "Non-empty point queries specification.",
       "type": "object",
       "properties": {
+        "key": {
+          "description": "Hot keys: a `hot_range`. With its probability, a query reads one of its hot keys that has\nalready been written (give the inserts' `hot_range` the same `seed`), uniformly; otherwise\nit reads a key chosen with `selection`.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StringExpr"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "op_count": {
           "description": "Number of point queries",
           "$ref": "#/$defs/NumberExpr"
@@ -1234,6 +1263,7 @@
           ]
         },
         {
+          "description": "With `probability`, one of `amount` hot keys; otherwise a random key. All keys are `len`\ncharacters long.",
           "type": "object",
           "properties": {
             "hot_range": {
@@ -1244,6 +1274,17 @@
                   "format": "uint",
                   "minimum": 0
                 },
+                "character_set": {
+                  "description": "The character set of the keys (default: the enclosing one).",
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/CharacterSet"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
                 "len": {
                   "type": "integer",
                   "format": "uint",
@@ -1252,6 +1293,16 @@
                 "probability": {
                   "type": "number",
                   "format": "double"
+                },
+                "seed": {
+                  "description": "Every `hot_range` with the same `seed`, `len`, `amount` and character set has the same hot\nkeys, e.g. so that point queries read the hot keys that inserts write. Without a seed,\neach `hot_range` has its own random hot keys.",
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "format": "uint64",
+                  "default": null,
+                  "minimum": 0
                 }
               },
               "required": [
@@ -1264,6 +1315,68 @@
           "additionalProperties": false,
           "required": [
             "hot_range"
+          ]
+        },
+        {
+          "description": "A sampled number, rounded down and written in decimal, zero-padded to `width` digits, e.g. a\ntimestamp: `{ \"number\": { \"value\": { \"uniform\": { \"min\": 1546300800000, \"max\": 1577836800000 } }, \"width\": 13 } }`",
+          "type": "object",
+          "properties": {
+            "number": {
+              "type": "object",
+              "properties": {
+                "value": {
+                  "$ref": "#/$defs/NumberExpr"
+                },
+                "width": {
+                  "type": "integer",
+                  "format": "uint",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "value",
+                "width"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "number"
+          ]
+        },
+        {
+          "description": "Consecutive numbers `start`, `start + step`, ... written like `number`, e.g. timestamps of\npoints recorded at a fixed rate.",
+          "type": "object",
+          "properties": {
+            "counter": {
+              "type": "object",
+              "properties": {
+                "start": {
+                  "type": "integer",
+                  "format": "uint64",
+                  "minimum": 0
+                },
+                "step": {
+                  "type": "integer",
+                  "format": "uint64",
+                  "default": 1,
+                  "minimum": 0
+                },
+                "width": {
+                  "type": "integer",
+                  "format": "uint",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "start",
+                "width"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "counter"
           ]
         }
       ]

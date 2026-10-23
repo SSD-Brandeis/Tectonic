@@ -1,0 +1,223 @@
+{
+  "$schema": "../../workload_schema.json",
+  "sections": [
+    {
+      "groups": [
+        {
+          "name": "load",
+          "inserts": {
+            "op_count": 101000,
+            "key": {
+              "segmented": {
+                "separator": "",
+                "segments": [
+                  "usertable:user",
+                  {
+                    "uniform": {
+                      "len": 19,
+                      "character_set": "numeric"
+                    }
+                  }
+                ]
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 1090
+              }
+            }
+          }
+        },
+        {
+          "name": "extend1",
+          "merges": {
+            "op_count": 10000,
+            "selection": {
+              "uniform": {
+                "min": 0,
+                "max": 1
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 109
+              }
+            }
+          }
+        },
+        {
+          "name": "run1",
+          "point_queries": {
+            "op_count": 5000,
+            "selection": {
+              "uniform": {
+                "min": 0,
+                "max": 1
+              }
+            }
+          },
+          "updates": {
+            "op_count": 5000,
+            "selection": {
+              "uniform": {
+                "min": 0,
+                "max": 1
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 109
+              }
+            }
+          }
+        },
+        {
+          "name": "extend2",
+          "merges": {
+            "op_count": 10000,
+            "selection": {
+              "uniform": {
+                "min": 0,
+                "max": 1
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 109
+              }
+            }
+          }
+        },
+        {
+          "name": "run2",
+          "point_queries": {
+            "op_count": 5000,
+            "selection": {
+              "uniform": {
+                "min": 0,
+                "max": 1
+              }
+            }
+          },
+          "updates": {
+            "op_count": 5000,
+            "selection": {
+              "uniform": {
+                "min": 0,
+                "max": 1
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 109
+              }
+            }
+          }
+        },
+        {
+          "name": "extend3",
+          "merges": {
+            "op_count": 10000,
+            "selection": {
+              "uniform": {
+                "min": 0,
+                "max": 1
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 109
+              }
+            }
+          }
+        },
+        {
+          "name": "run3",
+          "point_queries": {
+            "op_count": 5000,
+            "selection": {
+              "uniform": {
+                "min": 0,
+                "max": 1
+              }
+            }
+          },
+          "updates": {
+            "op_count": 5000,
+            "selection": {
+              "uniform": {
+                "min": 0,
+                "max": 1
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 109
+              }
+            }
+          }
+        },
+        {
+          "name": "extend4",
+          "merges": {
+            "op_count": 10000,
+            "selection": {
+              "uniform": {
+                "min": 0,
+                "max": 1
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 109
+              }
+            }
+          }
+        },
+        {
+          "name": "run4",
+          "point_queries": {
+            "op_count": 5000,
+            "selection": {
+              "uniform": {
+                "min": 0,
+                "max": 1
+              }
+            }
+          },
+          "updates": {
+            "op_count": 5000,
+            "selection": {
+              "uniform": {
+                "min": 0,
+                "max": 1
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 109
+              }
+            }
+          }
+        },
+        {
+          "name": "extend5",
+          "merges": {
+            "op_count": 10000,
+            "selection": {
+              "uniform": {
+                "min": 0,
+                "max": 1
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 109
+              }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

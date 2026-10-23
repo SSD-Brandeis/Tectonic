@@ -1,7 +1,7 @@
 #![allow(clippy::needless_return)]
 use anyhow::{Context, Result, bail};
 use clap::{Args, Parser, Subcommand};
-use db_layer::execute_operations;
+use db_layer::{MergeMode, execute_operations};
 use rayon::iter::ParallelIterator;
 use rayon::prelude::ParallelBridge;
 use std::{
@@ -9,7 +9,7 @@ use std::{
     path::{Path, PathBuf},
 };
 use tectonic::{
-    benchmark_workload, generate_workload, generate_workload_spec_schema,
+    KeySetChoice, benchmark_workload, generate_workload, generate_workload_spec_schema,
     scale_and_benchmark_workload, scale_and_generate_workload,
 };
 use tracing::info;
@@ -38,6 +38,12 @@ enum Command {
         #[arg(short = 's', long = "scale")]
         scale: Option<f64>,
 
+        /// KeySet that tracks the valid keys: "adaptive" selects one per section from its
+        /// operations (Algorithm 1); "empty", "vec", "bloom", "vec-bloom", "vec-hashset",
+        /// "vec-option" or "vec-option-hashset" forces that KeySet for every section
+        #[arg(long = "keyset", default_value = "adaptive", value_parser = parse_keyset)]
+        keyset: KeySetChoice,
+
         /// Number of threads to divide the workload into
         #[arg(short = 't', long = "threads", default_value_t = 1)]
         threads: usize,
@@ -64,6 +70,10 @@ enum Command {
         /// Target rate in operations per second
         #[arg(long = "target-rate")]
         target_rate: Option<u64>,
+        /// How merge operations are applied: "rmw" overwrites the read value with the operand,
+        /// "append" writes back the read value with the operand appended
+        #[arg(long = "merge-mode", default_value = "rmw", value_parser = parse_merge_mode)]
+        merge_mode: MergeMode,
     },
     /// Generate and Execute a workload from a spec file against a specific database
     Benchmark {
@@ -200,7 +210,9 @@ fn main() -> Result<()> {
             output,
             scale,
             threads,
+            keyset,
         } => {
+            tectonic::set_keyset_choice(keyset)?;
             let workload_path = workload_path.into_path()?;
             let base_scale = scale.unwrap_or(1.0);
             let thread_scale = base_scale / (threads as f64);
@@ -226,6 +238,7 @@ fn main() -> Result<()> {
             config,
             threads,
             target_rate,
+            merge_mode,
         } => {
             return execute_operations(
                 &database,
@@ -234,6 +247,7 @@ fn main() -> Result<()> {
                 config.as_deref(),
                 threads,
                 target_rate,
+                merge_mode,
             );
         }
         Command::Benchmark {
@@ -288,6 +302,31 @@ fn main() -> Result<()> {
                 );
             }
         }
+    }
+}
+
+fn parse_keyset(keyset: &str) -> Result<KeySetChoice, String> {
+    match keyset {
+        "adaptive" => Ok(KeySetChoice::Adaptive),
+        "empty" => Ok(KeySetChoice::Empty),
+        "vec" => Ok(KeySetChoice::Vec),
+        "bloom" => Ok(KeySetChoice::BloomFilter),
+        "vec-bloom" => Ok(KeySetChoice::VecBloomFilter),
+        "vec-hashset" => Ok(KeySetChoice::VecHashSet),
+        "vec-option" => Ok(KeySetChoice::VecOption),
+        "vec-option-hashset" => Ok(KeySetChoice::VecOptionHashSet),
+        _ => Err(format!(
+            "unknown keyset \"{keyset}\" (expected adaptive, empty, vec, bloom, vec-bloom, vec-hashset, \
+             vec-option or vec-option-hashset)"
+        )),
+    }
+}
+
+fn parse_merge_mode(mode: &str) -> Result<MergeMode, String> {
+    match mode {
+        "rmw" => Ok(MergeMode::Rmw),
+        "append" => Ok(MergeMode::Append),
+        _ => Err(format!("unknown merge mode \"{mode}\" (expected \"rmw\" or \"append\")")),
     }
 }
 

@@ -1,0 +1,45 @@
+{
+  "$schema": "../../workload_schema.json",
+  "character_set": "alphanumeric",
+  "sections": [
+    {
+      "groups": [
+        {
+          "name": "load",
+          "unique_inserts": {
+            "op_count": 2000000,
+            "key": {
+              "uniform": {
+                "len": 32
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 128
+              }
+            }
+          }
+        },
+        {
+          "name": "run",
+          "point_queries": {
+            "op_count": 1000000
+          },
+          "range_queries": {
+            "op_count": 200000,
+            "scan_length": 100,
+            "range_format": "StartEnd"
+          },
+          "empty_point_queries": {
+            "op_count": 500000,
+            "key": {
+              "uniform": {
+                "len": 32
+              }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

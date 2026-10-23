@@ -1,0 +1,111 @@
+{
+  "$schema": "../../workload_schema.json",
+  "sections": [
+    {
+      "groups": [
+        {
+          "name": "load",
+          "inserts": {
+            "op_count": 2190000,
+            "key": {
+              "segmented": {
+                "separator": "",
+                "segments": [
+                  "usermetric:",
+                  {
+                    "counter": {
+                      "start": 1546300800000,
+                      "width": 13
+                    }
+                  },
+                  ":Region0=",
+                  {
+                    "hot_range": {
+                      "len": 4,
+                      "amount": 5,
+                      "probability": 1.0
+                    }
+                  }
+                ]
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 17,
+                "character_set": "numeric"
+              }
+            }
+          }
+        },
+        {
+          "name": "run",
+          "inserts": {
+            "op_count": 2190426,
+            "key": {
+              "segmented": {
+                "separator": "",
+                "segments": [
+                  "usermetric:",
+                  {
+                    "number": {
+                      "value": {
+                        "uniform": {
+                          "min": 1546300800000,
+                          "max": 1577836800000
+                        }
+                      },
+                      "width": 13
+                    }
+                  },
+                  ":Region0=",
+                  {
+                    "hot_range": {
+                      "len": 4,
+                      "amount": 5,
+                      "probability": 1.0
+                    }
+                  }
+                ]
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 17,
+                "character_set": "numeric"
+              }
+            }
+          },
+          "blind_range_queries": {
+            "op_count": 78414,
+            "key": {
+              "segmented": {
+                "separator": "",
+                "segments": [
+                  "usermetric:",
+                  {
+                    "number": {
+                      "value": {
+                        "uniform": {
+                          "min": 1546300800000,
+                          "max": 1577836800000
+                        }
+                      },
+                      "width": 13
+                    }
+                  }
+                ]
+              }
+            },
+            "span": {
+              "uniform": {
+                "min": 86400000,
+                "max": 864000000
+              }
+            },
+            "span_max_end": 1577836800000
+          }
+        }
+      ]
+    }
+  ]
+}

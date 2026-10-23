@@ -26,7 +26,13 @@ __pycache__/
 
 # Experiment data and artifacts
 data/
+official-table5-revision/
 *.zip
 *.jsonl
 *.bak
 
+
+# Third-party clones (own git repos): YCSB, YCSB-IVS, YCSB-TS
+YCSB/
+YCSB-IVS/
+YCSB-TS/

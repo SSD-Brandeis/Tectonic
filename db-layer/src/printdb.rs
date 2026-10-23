@@ -84,4 +84,12 @@ impl DBTranslationLayer for PrintDB {
 
         return Ok(());
     }
+
+    fn append(&self, key: &Key, value: &Value) -> Result<()> {
+        let key = str::from_utf8(key)?;
+        let value = str::from_utf8(value)?;
+        println!("Append: {{key = {key}, value = {value}}}");
+
+        return Ok(());
+    }
 }

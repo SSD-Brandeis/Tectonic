@@ -129,6 +129,7 @@ pub fn execute_and_benchmark_db(
     config: Option<&str>,
     threads: usize,
     target_rate: Option<u64>,
+    merge_mode: MergeMode,
 ) -> Result<()> {
     eprintln!("[Executing]");
 
@@ -160,6 +161,7 @@ pub fn execute_and_benchmark_db(
             let connect_start = time::Instant::now();
             let db = Db::new(&db_name_clone, thread_db_path.as_deref(), config_clone.as_deref())?;
             let mut benchmarker = Benchmarker::new(db);
+            benchmarker.set_merge_mode(merge_mode);
             benchmarker.start_at(connect_start);
 
             let file = File::open(&final_path)?;
@@ -556,6 +558,16 @@ macro_rules! measure {
     };
 }
 
+/// How the executor applies merge (M) operations.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum MergeMode {
+    /// Read the key, then overwrite it with the operand (YCSB read-modify-write).
+    #[default]
+    Rmw,
+    /// Read the key, then write back the stored value with the operand appended.
+    Append,
+}
+
 pub enum BenchmarkerType {
     Overall,
     Section,
@@ -564,6 +576,7 @@ pub enum BenchmarkerType {
 
 pub struct Benchmarker<'a> {
     db_layer: Db,
+    merge_mode: MergeMode,
     pub overall: BenchmarkerInner<'a>,
     pub section: Option<Box<BenchmarkerInner<'a>>>,
     pub group: Option<Box<BenchmarkerInner<'a>>>,
@@ -573,10 +586,15 @@ impl<'a> Benchmarker<'a> {
     pub fn new(db_layer: Db) -> Self {
         Self {
             db_layer,
+            merge_mode: MergeMode::default(),
             overall: BenchmarkerInner::default(),
             section: None,
             group: None,
         }
+    }
+
+    pub fn set_merge_mode(&mut self, merge_mode: MergeMode) {
+        self.merge_mode = merge_mode;
     }
 
     pub fn start(&mut self) {
@@ -615,7 +633,14 @@ impl<'a> Benchmarker<'a> {
     }
 
     pub fn handle_merge(&mut self, key: &Key, value: &Value) -> Result<()> {
-        measure!(self, "M", self.db_layer.merge(key, value));
+        match self.merge_mode {
+            MergeMode::Rmw => {
+                measure!(self, "M", self.db_layer.merge(key, value));
+            }
+            MergeMode::Append => {
+                measure!(self, "M", self.db_layer.append(key, value));
+            }
+        }
 
         return Ok(());
     }
@@ -717,6 +742,10 @@ pub trait DBTranslationLayer {
     fn insert(&self, key: &Key, value: &Value) -> Result<()>;
     fn update(&self, key: &Key, value: &Value) -> Result<()>;
     fn merge(&self, key: &Key, value: &Value) -> Result<()>;
+    /// Read-modify-write that appends `value` to the stored value, like YCSB-IVS's extend.
+    fn append(&self, _key: &Key, _value: &Value) -> Result<()> {
+        bail!("Append merges are not supported by this database")
+    }
     fn point_delete(&self, key: &Key) -> Result<()>;
     fn point_query(&self, key: &Key) -> Result<()>;
     fn range_query(&self, start_key: &Key, end_key: &Value) -> Result<()>;
@@ -776,6 +805,7 @@ pub fn execute_operations(
     config: Option<&str>,
     threads: usize,
     target_rate: Option<u64>,
+    merge_mode: MergeMode,
 ) -> Result<()> {
-    execute_and_benchmark_db(name, input_file, db_path, config, threads, target_rate)
+    execute_and_benchmark_db(name, input_file, db_path, config, threads, target_rate, merge_mode)
 }

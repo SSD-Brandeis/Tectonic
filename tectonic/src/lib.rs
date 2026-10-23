@@ -26,7 +26,7 @@ use std::{
 use std::mem::variant_count;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
-use tracing::{debug, info, trace, warn};
+use tracing::{debug, trace, warn};
 
 mod keyset;
 pub mod spec;
@@ -43,7 +43,10 @@ pub mod spec;
 // - query point empty
 // - query range
 
-use crate::keyset::{BloomFilterKeySet, EmptyKeySet, Key, KeySet, OrderedKeySet, VecKeySet};
+use crate::keyset::{
+    BloomFilterKeySet, EmptyKeySet, Key, KeySet, VecBloomFilterKeySet, VecHashSetKeySet, VecKeySet,
+    VecOptionHashSetKeySet, VecOptionKeySet,
+};
 use crate::spec::{CharacterSet, RangeFormat, StringExpr, WorkloadSpec, WorkloadSpecSection, BlindRangeQueries};
 
 pub trait OperationHandler {
@@ -495,15 +498,48 @@ enum Op {
 
 // TODO: Allow for different sections to use different keysets
 
-/// Generates a workload given the spec and writes it to the given writer.
-pub fn generate_section<OP: OperationHandler>(
-    operation_handler: &mut OP,
-    operation_timings: &mut OperationTimings,
-    workload: &WorkloadSpec,
-    section: &WorkloadSpecSection,
-    section_idx: usize,
-    thread_id: Option<usize>,
-) -> Result<()> {
+/// KeySet that tracks the valid keys of a section.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum KeySetChoice {
+    /// Selected per section from the operations the section issues (Algorithm 1)
+    Adaptive,
+    Empty,
+    Vec,
+    BloomFilter,
+    VecBloomFilter,
+    VecHashSet,
+    VecOption,
+    VecOptionHashSet,
+}
+
+impl KeySetChoice {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Adaptive => "adaptive",
+            Self::Empty => "EmptyKeySet",
+            Self::Vec => "VecKeySet",
+            Self::BloomFilter => "BloomFilterKeySet",
+            Self::VecBloomFilter => "VecBloomFilterKeySet",
+            Self::VecHashSet => "VecHashSetKeySet",
+            Self::VecOption => "VecOptionKeySet",
+            Self::VecOptionHashSet => "VecOptionHashSetKeySet",
+        }
+    }
+}
+
+static KEYSET_CHOICE: std::sync::OnceLock<KeySetChoice> = std::sync::OnceLock::new();
+
+/// Uses `choice` for every section instead of selecting a KeySet per section. Can be set once,
+/// before generating.
+pub fn set_keyset_choice(choice: KeySetChoice) -> Result<()> {
+    KEYSET_CHOICE
+        .set(choice)
+        .map_err(|_| anyhow!("The KeySet choice can only be set once"))
+}
+
+/// Algorithm 1: the KeySet that supports every operation the section issues with the lowest
+/// memory footprint.
+fn adaptive_keyset(section: &WorkloadSpecSection) -> KeySetChoice {
     let no_keyset = !(section.has_unique_insert()
         || section.has_update()
         || section.has_merge()
@@ -514,6 +550,9 @@ pub fn generate_section<OP: OperationHandler>(
         || section.has_query_range()
         || section.has_query_range_count()
         || section.has_delete_range());
+
+    let requires_deletion = section.has_delete_point() || section.has_delete_range();
+    let requires_sorting = section.has_query_range() || section.has_delete_range();
 
     let requires_contains_check = !section.skip_contains_check()
         && (section.has_unique_insert()
@@ -528,54 +567,61 @@ pub fn generate_section<OP: OperationHandler>(
         || section.has_query_range_count();
 
     if no_keyset {
-        info!("Using EmptyKeySet");
-        write_operations_with_keyset(
-            operation_handler,
-            operation_timings,
-            workload,
-            section,
-            section_idx,
-            EmptyKeySet::new,
-            thread_id,
-        )?
-    } else if requires_random_element {
-        // Key selection distributions are laid over the sorted key domain, so keys must be kept
-        // sorted and indexable by rank.
-        info!("Using OrderedKeySet");
-        write_operations_with_keyset(
-            operation_handler,
-            operation_timings,
-            workload,
-            section,
-            section_idx,
-            |capacity| match requires_contains_check {
-                true => OrderedKeySet::with_contains_index(capacity),
-                false => OrderedKeySet::new(capacity),
-            },
-            thread_id,
-        )?
+        KeySetChoice::Empty
+    } else if requires_sorting && requires_deletion && requires_contains_check {
+        KeySetChoice::VecOptionHashSet
+    } else if requires_sorting && requires_deletion && !requires_contains_check {
+        KeySetChoice::VecOption
+    } else if (requires_sorting || requires_deletion) && requires_contains_check {
+        KeySetChoice::VecHashSet
+    } else if requires_sorting || requires_deletion {
+        KeySetChoice::Vec
+    } else if requires_contains_check && requires_random_element {
+        KeySetChoice::VecBloomFilter
     } else if requires_contains_check {
-        info!("Using BloomFilterKeySet");
-        write_operations_with_keyset(
-            operation_handler,
-            operation_timings,
-            workload,
-            section,
-            section_idx,
-            BloomFilterKeySet::new,
-            thread_id,
-        )?
+        KeySetChoice::BloomFilter
     } else {
-        info!("Using VecKeySet");
-        write_operations_with_keyset(
-            operation_handler,
-            operation_timings,
-            workload,
-            section,
-            section_idx,
-            VecKeySet::new,
-            thread_id,
-        )?
+        KeySetChoice::Vec
+    }
+}
+
+/// Generates a workload given the spec and writes it to the given writer.
+pub fn generate_section<OP: OperationHandler>(
+    operation_handler: &mut OP,
+    operation_timings: &mut OperationTimings,
+    workload: &WorkloadSpec,
+    section: &WorkloadSpecSection,
+    section_idx: usize,
+    thread_id: Option<usize>,
+) -> Result<()> {
+    let choice = match KEYSET_CHOICE.get() {
+        Some(choice) if *choice != KeySetChoice::Adaptive => *choice,
+        _ => adaptive_keyset(section),
+    };
+    eprintln!("[Tectonic KeySet] Section {}: {}", section_idx, choice.name());
+
+    macro_rules! write_with {
+        ($constructor:expr) => {
+            write_operations_with_keyset(
+                operation_handler,
+                operation_timings,
+                workload,
+                section,
+                section_idx,
+                $constructor,
+                thread_id,
+            )?
+        };
+    }
+    match choice {
+        KeySetChoice::Adaptive => unreachable!("adaptive resolves to a KeySet"),
+        KeySetChoice::Empty => write_with!(EmptyKeySet::new),
+        KeySetChoice::Vec => write_with!(VecKeySet::new),
+        KeySetChoice::BloomFilter => write_with!(BloomFilterKeySet::new),
+        KeySetChoice::VecBloomFilter => write_with!(VecBloomFilterKeySet::new),
+        KeySetChoice::VecHashSet => write_with!(VecHashSetKeySet::new),
+        KeySetChoice::VecOption => write_with!(VecOptionKeySet::new),
+        KeySetChoice::VecOptionHashSet => write_with!(VecOptionHashSetKeySet::new),
     }
 
     Ok(())
@@ -716,6 +762,14 @@ fn pregenerate_keys_parallel(
     keys
 }
 
+/// A pregenerated blind range query.
+enum BlindRange {
+    /// Start key and number of keys
+    Count(Key, usize),
+    /// Start and end key of a window over the key's `number` segment
+    Window(Key, Key),
+}
+
 fn pregenerate_range_queries_parallel(
     brq: &BlindRangeQueries,
     char_set: Option<CharacterSet>,
@@ -723,19 +777,28 @@ fn pregenerate_range_queries_parallel(
     default_key: Option<&StringExpr>,
     total_entries: usize,
     thread_id: Option<usize>,
-) -> Vec<(Key, usize)> {
+) -> Result<Vec<BlindRange>> {
     if count == 0 {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     let mut rng = Xoshiro256Plus::from_os_rng();
     let mut queries = Vec::with_capacity(count);
     for _ in 0..count {
         let key_expr = brq.key.as_ref().or(default_key).expect("No key or default key set for blind range queries");
-        let key = key_expr.generate(&mut rng, brq.character_set.or(char_set), thread_id);
-        let range_count = brq.get_range_length(&mut rng, total_entries);
-        queries.push((key, range_count));
+        let char_set = brq.character_set.or(char_set);
+        if let Some(span) = &brq.span {
+            let span = span.evaluate(&mut rng);
+            let (start, end) = key_expr
+                .generate_window(&mut rng, char_set, thread_id, span, brq.span_max_end)
+                .ok_or_else(|| anyhow!("Blind range queries with a span need a key with a number segment"))?;
+            queries.push(BlindRange::Window(start, end));
+        } else {
+            let key = key_expr.generate(&mut rng, char_set, thread_id);
+            let range_count = brq.get_range_length(&mut rng, total_entries);
+            queries.push(BlindRange::Count(key, range_count));
+        }
     }
-    queries
+    Ok(queries)
 }
 
 pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
@@ -1060,7 +1123,7 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                 key.or(Some(&default_fallback)),
                 total_entries,
                 thread_id,
-            )
+            )?
         } else {
             Vec::new()
         };
@@ -1263,16 +1326,23 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                         anyhow!("Point query marker can only appear when updates is not None")
                     })?;
                     keys_valid.flush();
-                    let key = keys_valid.get_random(
-                        rng_ref,
-                        pqs.selection.as_ref().unwrap_or(
-                            section
-                                .default_distributions
-                                .point_queries_selection
-                                .as_ref()
-                                .unwrap_or(&workload.default_distributions.point_queries_selection),
+                    let hot_key = match &pqs.key {
+                        Some(key) => key.sample_generated_hot_key(rng_ref, character_set)?,
+                        None => None,
+                    };
+                    let key = match &hot_key {
+                        Some(key) => key,
+                        None => keys_valid.get_random(
+                            rng_ref,
+                            pqs.selection.as_ref().unwrap_or(
+                                section
+                                    .default_distributions
+                                    .point_queries_selection
+                                    .as_ref()
+                                    .unwrap_or(&workload.default_distributions.point_queries_selection),
+                            ),
                         ),
-                    );
+                    };
                     operation_handler.handle_point_query(key)?;
                     let duration = Instant::now().duration_since(start);
                     operation_timings.time_query_point += duration;
@@ -1469,9 +1539,10 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                 }
                 Op::BlindRangeQuery => {
                     let start = Instant::now();
-                    let (key, count) = pregen_blind_range_queries.pop().expect("pregenerated blind range query");
-
-                    operation_handler.handle_blind_range_query(&key, count)?;
+                    match pregen_blind_range_queries.pop().expect("pregenerated blind range query") {
+                        BlindRange::Count(key, count) => operation_handler.handle_blind_range_query(&key, count)?,
+                        BlindRange::Window(start, end) => operation_handler.handle_range_query(&start, &end)?,
+                    }
 
                     let duration = Instant::now().duration_since(start);
                     operation_timings.time_blind_range_query += duration;

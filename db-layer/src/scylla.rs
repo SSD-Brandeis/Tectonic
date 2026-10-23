@@ -158,6 +158,26 @@ impl DBTranslationLayer for Scylla {
         Ok(())
     }
 
+    fn append(&self, key: &Key, value: &Value) -> Result<()> {
+        let key_str = from_utf8(key)?;
+        let rows = self
+            .runtime
+            .block_on(
+                self.session
+                    .execute_unpaged(&self.point_query_statement, (key_str,)),
+            )
+            .map_err(|e| anyhow!("Scylla Error: {:#?}", e))?
+            .into_rows_result()
+            .map_err(|e| anyhow!("Scylla Error: {:#?}", e))?;
+        let mut new = rows
+            .maybe_first_row::<(Option<String>,)>()
+            .map_err(|e| anyhow!("Scylla Error: {:#?}", e))?
+            .and_then(|(v,)| v)
+            .unwrap_or_default();
+        new.push_str(from_utf8(value)?);
+        self.update(key, new.as_bytes())
+    }
+
     fn point_delete(&self, key: &Key) -> Result<()> {
         let key = from_utf8(key)?;
 

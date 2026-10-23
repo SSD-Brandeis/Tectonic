@@ -102,6 +102,14 @@ impl DBTranslationLayer for Redis {
         Ok(())
     }
 
+    fn append(&self, key: &Key, value: &Value) -> Result<()> {
+        // The read must observe every buffered write, so it cannot be pipelined.
+        self.flush()?;
+        let mut new: Vec<u8> = self.conn.borrow_mut().get::<_, Option<Vec<u8>>>(key)?.unwrap_or_default();
+        new.extend_from_slice(value);
+        self.update(key, &new)
+    }
+
     fn point_delete(&self, key: &Key) -> Result<()> {
         if self.pipeline_depth <= 1 {
             let _: () = self.conn.borrow_mut().del(key)?;

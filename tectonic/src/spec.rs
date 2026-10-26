@@ -40,6 +40,10 @@ enum DistributionConfig {
     Poisson { lambda: f64 },
     Weibull { scale: f64, shape: f64 },
     Pareto { scale: f64, shape: f64 },
+    /// `location + scale * ((1 - u)^-shape - 1) / shape` for `u` uniform in `[0, 1)` (shape 0:
+    /// `location - scale * ln(1 - u)`), e.g. the value sizes and scan lengths of db_bench's mixgraph;
+    /// with `max`, conditioned on being below `max` (truncated)
+    GeneralizedPareto { location: f64, scale: f64, shape: f64, #[serde(default)] max: Option<f64> },
 }
 
 #[derive(serde::Deserialize, Clone, Debug)]
@@ -101,6 +105,28 @@ pub enum Distribution {
         shape: f64,
         distr: rand_distr::Pareto<f64>,
     },
+    GeneralizedPareto {
+        location: f64,
+        scale: f64,
+        shape: f64,
+        /// The probability below `max` (1 without `max`): `u` is drawn uniform in `[0, top)`.
+        top: f64,
+    },
+}
+
+/// The CDF of the generalized Pareto distribution.
+fn generalized_pareto_cdf(location: f64, scale: f64, shape: f64, x: f64) -> f64 {
+    let z = ((x - location) / scale).max(0.0);
+    if shape == 0.0 { 1.0 - (-z).exp() } else { 1.0 - (1.0 + shape * z).powf(-1.0 / shape) }
+}
+
+/// The `q`-quantile of the generalized Pareto distribution.
+fn generalized_pareto_quantile(location: f64, scale: f64, shape: f64, q: f64) -> f64 {
+    if shape == 0.0 {
+        location - scale * (1.0 - q).ln()
+    } else {
+        location + scale * ((1.0 - q).powf(-shape) - 1.0) / shape
+    }
 }
 
 impl Scalable for Distribution {
@@ -138,6 +164,10 @@ impl Scalable for Distribution {
                 *scale *= factor;
                 *distr = rand_distr::Pareto::new(*scale, *shape)
                     .expect("Failed to scale pareto Distribution");
+            }
+            Distribution::GeneralizedPareto { location, scale, .. } => {
+                *location *= factor;
+                *scale *= factor;
             }
             _ => (),
         }
@@ -206,6 +236,12 @@ impl TryFrom<DistributionConfig> for Distribution {
                     shape,
                     distr: rand_distr::Pareto::new(scale, shape)?,
                 }
+            }
+            DC::GeneralizedPareto { location, scale, shape, max } => {
+                anyhow::ensure!(scale > 0.0, "generalized_pareto: scale must be positive");
+                let top = max.map_or(1.0, |max| generalized_pareto_cdf(location, scale, shape, max));
+                anyhow::ensure!(top > 0.0, "generalized_pareto: max must be above location");
+                Self::GeneralizedPareto { location, scale, shape, top }
             }
         };
         return Ok(distr);
@@ -351,6 +387,15 @@ impl Distribution {
                     len,
                 )
             }
+            Self::GeneralizedPareto { location, scale, shape, top } => {
+                let x = generalized_pareto_quantile(*location, *scale, *shape, top * rng.random::<f64>());
+                let high = generalized_pareto_quantile(*location, *scale, *shape, 0.99);
+                let normalized = (x - location) / (high - location);
+                unbiased_index(
+                    (normalized.clamp(0.0, 1.0 - f64::EPSILON) * len as f64) as usize,
+                    len,
+                )
+            }
         }
     }
 }
@@ -368,6 +413,9 @@ impl Distribution {
             Self::Poisson { distr, .. } => distr.sample(rng),
             Self::Weibull { distr, .. } => distr.sample(rng),
             Self::Pareto { distr, .. } => distr.sample(rng),
+            Self::GeneralizedPareto { location, scale, shape, top } => {
+                generalized_pareto_quantile(*location, *scale, *shape, top * rng.random::<f64>())
+            }
         };
     }
 
@@ -397,6 +445,14 @@ impl Distribution {
 
             Self::Weibull { scale, shape, .. } => *scale * gamma(1.0 + 1.0 / *shape),
             Self::Pareto { scale, shape, .. } => (shape * scale) / (shape - 1.0),
+            Self::GeneralizedPareto { location, scale, shape, top } if *top < 1.0 => {
+                // truncated: the mean of the quantile function over [0, top), midpoint rule
+                let n = 10_000;
+                (0..n).map(|i| generalized_pareto_quantile(*location, *scale, *shape, top * (i as f64 + 0.5) / n as f64)).sum::<f64>() / n as f64
+            }
+            Self::GeneralizedPareto { location, scale, shape, .. } => {
+                if *shape < 1.0 { location + scale / (1.0 - shape) } else { f64::INFINITY }
+            }
         };
     }
 
@@ -521,6 +577,367 @@ impl Scalable for KeySelection {
 pub enum NumberExpr {
     Constant(f64),
     Sampled(Distribution),
+    Weighted(WeightedNumbers),
+    Scattered(ScatteredNumber),
+    Modulo(ModuloNumber),
+    Ranges(RangesNumber),
+    Pool(PoolNumber),
+}
+
+/// One of the values, picked with probability proportional to its weight, e.g. an empirical
+/// histogram: `{ "weighted": [{ "weight": 3, "value": 7 }, { "weight": 1, "value": 27 }] }`. A value can
+/// itself be any number expression, e.g. `{ "uniform": { "min": 8, "max": 16 } }` for a histogram bucket.
+/// With `pick_seed`, the values are picked with their own random generator, like a `pool`'s: weighted
+/// numbers with the same weights and `pick_seed` pick the same entries in the same order, e.g. the class
+/// of an operation's key and of its scan length.
+#[derive(serde::Deserialize, JsonSchema, Clone, Debug)]
+pub struct WeightedNumbers {
+    pub weighted: Vec<WeightedNumber>,
+    #[serde(default)]
+    pub pick_seed: Option<u64>,
+    #[serde(skip)]
+    distr: OnceLock<WeightedIndex<f64>>,
+    #[serde(skip)]
+    picker: Arc<OnceLock<Mutex<Xoshiro256Plus>>>,
+}
+
+#[derive(serde::Deserialize, JsonSchema, Clone, Debug)]
+pub struct WeightedNumber {
+    /// The weight of the value.
+    pub weight: f64,
+    /// The value.
+    pub value: Box<NumberExpr>,
+}
+
+impl WeightedNumbers {
+    fn sample(&self, rng: &mut impl Rng) -> f64 {
+        let distr = self.distr.get_or_init(|| {
+            WeightedIndex::new(self.weighted.iter().map(|w| w.weight)).expect("weights of a weighted number")
+        });
+        let i = match self.pick_seed {
+            Some(seed) => {
+                let picker = self.picker.get_or_init(|| Mutex::new(Xoshiro256Plus::seed_from_u64(seed)));
+                distr.sample(&mut *picker.lock().expect("weighted picker"))
+            }
+            None => distr.sample(rng),
+        };
+        self.weighted[i].value.evaluate(rng)
+    }
+
+    fn mean(&self) -> f64 {
+        let total: f64 = self.weighted.iter().map(|w| w.weight).sum();
+        self.weighted.iter().map(|w| w.weight * w.value.expected_value()).sum::<f64>() / total
+    }
+}
+
+/// `start` plus a fixed one-to-one shuffle of the number (rounded down, modulo `len`), e.g. so that the
+/// hot ranks of a skewed distribution land at scattered keys of the key range `[start, start + len)`
+/// while every rank keeps its frequency:
+/// `{ "scatter": { "start": 1000, "len": 1000, "value": { "zipf": { "n": 1000, "s": 0.9 } } } }`
+#[derive(serde::Deserialize, JsonSchema, Clone, Debug)]
+pub struct ScatteredNumber {
+    pub scatter: Scatter,
+}
+
+#[derive(serde::Deserialize, JsonSchema, Clone, Debug)]
+pub struct Scatter {
+    #[serde(default)]
+    pub start: u64,
+    pub len: u64,
+    pub value: Box<NumberExpr>,
+}
+
+impl Scatter {
+    /// `x mod len` -> `start + (x * a) mod len`, `a` the integer nearest `len` / golden ratio that is
+    /// coprime with `len`: one-to-one on `[0, len)`, and consecutive numbers land far apart.
+    fn apply(&self, x: f64) -> f64 {
+        let len = self.len.max(1);
+        let mut a = ((len as f64) * 0.618_033_988_749_894_9).round() as u64;
+        while a > 1 && gcd(a, len) != 1 {
+            a -= 1;
+        }
+        let x = (x.floor() as u64) % len;
+        (self.start + ((x as u128 * a.max(1) as u128) % len as u128) as u64) as f64
+    }
+}
+
+/// The number rounded down, modulo `len`, e.g. a scan length capped like db_bench's
+/// `mix_max_scan_len`: `{ "modulo": { "len": 10000, "value": { "pareto": { "scale": 1, "shape": 1.5 } } } }`
+#[derive(serde::Deserialize, JsonSchema, Clone, Debug)]
+pub struct ModuloNumber {
+    pub modulo: Modulo,
+}
+
+#[derive(serde::Deserialize, JsonSchema, Clone, Debug)]
+pub struct Modulo {
+    pub len: u64,
+    pub value: Box<NumberExpr>,
+}
+
+/// A key space cut into consecutive ranges of `len` numbers: range `i`, picked with probability
+/// proportional to `weights[i]`, plus the number (rounded down, modulo `len`) as the offset in it, e.g.
+/// key ranges of different hotness that share how keys are picked inside a range:
+/// Weights for `ranges`: either an explicit list of weights, or a distribution specification
+/// like `two_term_exponential` (Cao et al. FAST '20 prefix distribution) or `hotspot`.
+#[derive(serde::Deserialize, JsonSchema, Clone, Debug)]
+#[serde(untagged)]
+pub enum RangeWeights {
+    Explicit(Vec<f64>),
+    Distribution(Box<RangeDistribution>),
+}
+
+#[derive(serde::Deserialize, JsonSchema, Clone, Debug)]
+pub enum RangeDistribution {
+    #[serde(rename = "two_term_exponential")]
+    TwoTermExponential {
+        a: f64,
+        b: f64,
+        c: f64,
+        d: f64,
+        #[serde(default = "default_n_30")]
+        n: usize,
+        #[serde(default)]
+        shuffle_seed: Option<u64>,
+        #[serde(default)]
+        exclude: Vec<usize>,
+    },
+    #[serde(rename = "hotspot")]
+    Hotspot {
+        #[serde(default = "default_n_30")]
+        n: usize,
+        hot: Vec<HotRange>,
+        #[serde(default)]
+        exclude: Vec<usize>,
+    },
+}
+
+#[derive(serde::Deserialize, JsonSchema, Clone, Debug)]
+pub struct HotRange {
+    pub range: usize,
+    pub weight: f64,
+}
+
+fn default_n_30() -> usize {
+    30
+}
+
+#[derive(Clone, Debug)]
+struct Mt19937_64 {
+    mt: [u64; 312],
+    mti: usize,
+}
+
+impl Mt19937_64 {
+    const NN: usize = 312;
+    const MM: usize = 156;
+    const MATRIX_A: u64 = 0xB5026F5AA96619E9;
+    const UM: u64 = 0xFFFFFFFF80000000;
+    const LM: u64 = 0x7FFFFFFF;
+
+    fn new(seed: u64) -> Self {
+        let mut mt = [0u64; Self::NN];
+        mt[0] = seed;
+        for i in 1..Self::NN {
+            mt[i] = 6364136223846793005u64
+                .wrapping_mul(mt[i - 1] ^ (mt[i - 1] >> 62))
+                .wrapping_add(i as u64);
+        }
+        Self { mt, mti: Self::NN }
+    }
+
+    fn next_u64(&mut self) -> u64 {
+        const MAG01: [u64; 2] = [0, Mt19937_64::MATRIX_A];
+        if self.mti >= Self::NN {
+            for i in 0..(Self::NN - Self::MM) {
+                let x = (self.mt[i] & Self::UM) | (self.mt[i + 1] & Self::LM);
+                self.mt[i] = self.mt[i + Self::MM] ^ (x >> 1) ^ MAG01[(x & 1) as usize];
+            }
+            for i in (Self::NN - Self::MM)..(Self::NN - 1) {
+                let x = (self.mt[i] & Self::UM) | (self.mt[i + 1] & Self::LM);
+                self.mt[i] = self.mt[i + Self::MM - Self::NN] ^ (x >> 1) ^ MAG01[(x & 1) as usize];
+            }
+            let x = (self.mt[Self::NN - 1] & Self::UM) | (self.mt[0] & Self::LM);
+            self.mt[Self::NN - 1] = self.mt[Self::MM - 1] ^ (x >> 1) ^ MAG01[(x & 1) as usize];
+            self.mti = 0;
+        }
+
+        let mut x = self.mt[self.mti];
+        self.mti += 1;
+        x ^= (x >> 29) & 0x5555555555555555;
+        x ^= (x << 17) & 0x71D67FFFEDA60000;
+        x ^= (x << 37) & 0xFFF7EEE000000000;
+        x ^= x >> 43;
+        x
+    }
+}
+
+impl RangeWeights {
+    pub fn to_vec(&self) -> Vec<f64> {
+        match self {
+            RangeWeights::Explicit(w) => w.clone(),
+            RangeWeights::Distribution(d) => match **d {
+                RangeDistribution::TwoTermExponential { a, b, c, d: d_param, n, shuffle_seed, ref exclude } => {
+                    let mut amplify = 0i64;
+                    let mut keyrange_access = Vec::with_capacity(n);
+                    let mut total_access = 0i64;
+                    for pfx in (1..=n).rev() {
+                        let pfx = pfx as f64;
+                        let mut p = a * (b * pfx).exp() + c * (d_param * pfx).exp();
+                        if p < 1e-16 {
+                            p = 0.0;
+                        }
+                        if amplify == 0 && p > 0.0 {
+                            amplify = (1.0 / p).floor() as i64 + 1;
+                        }
+                        let access = if p <= 0.0 { 0 } else { (amplify as f64 * p).floor() as i64 };
+                        keyrange_access.push(access);
+                        total_access += access;
+                    }
+                    let seed = shuffle_seed.unwrap_or(total_access as u64);
+                    let mut mt = Mt19937_64::new(seed);
+                    for i in 0..n {
+                        let pos = (mt.next_u64() % n as u64) as usize;
+                        keyrange_access.swap(i, pos);
+                    }
+                    for &ex in exclude {
+                        if ex < n {
+                            keyrange_access[ex] = 0;
+                        }
+                    }
+                    let sum: f64 = keyrange_access.iter().map(|&x| x as f64).sum();
+                    if sum <= 0.0 {
+                        vec![1.0 / n as f64; n]
+                    } else {
+                        keyrange_access.iter().map(|&x| x as f64 / sum).collect()
+                    }
+                }
+                RangeDistribution::Hotspot { n, ref hot, ref exclude } => {
+                    let mut weights = vec![0.0; n];
+                    let mut hot_sum = 0.0;
+                    let mut is_hot = vec![false; n];
+                    for h in hot {
+                        if h.range < n {
+                            weights[h.range] = h.weight;
+                            hot_sum += h.weight;
+                            is_hot[h.range] = true;
+                        }
+                    }
+                    for &ex in exclude {
+                        if ex < n {
+                            weights[ex] = 0.0;
+                            is_hot[ex] = true;
+                        }
+                    }
+                    let rem_count = is_hot.iter().filter(|&&h| !h).count();
+                    if rem_count > 0 && hot_sum < 1.0 {
+                        let rem_w = (1.0 - hot_sum) / rem_count as f64;
+                        for i in 0..n {
+                            if !is_hot[i] {
+                                weights[i] = rem_w;
+                            }
+                        }
+                    }
+                    let total: f64 = weights.iter().sum();
+                    if total <= 0.0 {
+                        vec![1.0 / n as f64; n]
+                    } else {
+                        weights.iter().map(|&w| w / total).collect()
+                    }
+                }
+            },
+        }
+    }
+}
+
+/// `{ "ranges": { "len": 1000, "weights": [1, 8, 1], "value": { "zipf": { "n": 1000, "s": 0.9 } } } }`
+#[derive(serde::Deserialize, JsonSchema, Clone, Debug)]
+pub struct RangesNumber {
+    pub ranges: Ranges,
+}
+
+#[derive(serde::Deserialize, JsonSchema, Clone, Debug)]
+pub struct Ranges {
+    pub len: u64,
+    pub weights: RangeWeights,
+    pub value: Box<NumberExpr>,
+    #[serde(skip)]
+    distr: OnceLock<WeightedIndex<f64>>,
+    #[serde(skip)]
+    resolved_weights: OnceLock<Vec<f64>>,
+}
+
+impl Ranges {
+    fn weights_slice(&self) -> &[f64] {
+        self.resolved_weights.get_or_init(|| self.weights.to_vec())
+    }
+
+    fn sample(&self, rng: &mut impl Rng) -> f64 {
+        let distr = self
+            .distr
+            .get_or_init(|| WeightedIndex::new(self.weights_slice()).expect("weights of ranges"));
+        let len = self.len.max(1);
+        let range = distr.sample(rng) as u64;
+        (range * len + (self.value.evaluate(rng).floor() as u64) % len) as f64
+    }
+
+    fn mean(&self) -> f64 {
+        let weights = self.weights_slice();
+        let total: f64 = weights.iter().sum();
+        let start: f64 = weights.iter().enumerate().map(|(i, w)| w * (i as u64 * self.len) as f64).sum();
+        start / total + self.value.expected_value().min((self.len as f64 - 1.0).max(0.0))
+    }
+}
+
+/// `size` numbers drawn once from `value`; every evaluation returns one of them, uniformly at random:
+/// a fixed population of items that is accessed over and over, e.g. db_bench's mixgraph, which draws
+/// every query from `num` precomputed slots. Pools with the same `seed` (and the same `value`) draw the
+/// same numbers, a smaller one the first numbers of a larger one; without a seed every pool draws its own.
+/// With `pick_seed`, the pool picks its numbers with its own random generator: pools of the same size and
+/// `pick_seed` pick the same positions in the same order, so that, e.g., the n-th key and the n-th scan
+/// length of an operation's pools come from the same row (generate such operations with one thread).
+/// `{ "pool": { "size": 1000, "seed": 7, "value": { "zipf": { "n": 1000000, "s": 0.9 } } } }`
+#[derive(serde::Deserialize, JsonSchema, Clone, Debug)]
+pub struct PoolNumber {
+    pub pool: Pool,
+}
+
+#[derive(serde::Deserialize, JsonSchema, Clone, Debug)]
+pub struct Pool {
+    pub size: u64,
+    #[serde(default)]
+    pub seed: Option<u64>,
+    #[serde(default)]
+    pub pick_seed: Option<u64>,
+    pub value: Box<NumberExpr>,
+    /// Shared by the clones of the pool, so that it is drawn once.
+    #[serde(skip)]
+    items: Arc<OnceLock<Vec<f64>>>,
+    /// The generator of `pick_seed`, shared by the clones of the pool.
+    #[serde(skip)]
+    picker: Arc<OnceLock<Mutex<Xoshiro256Plus>>>,
+}
+
+impl Pool {
+    fn sample(&self, rng: &mut impl Rng) -> f64 {
+        let items = self.items.get_or_init(|| {
+            let mut own = Xoshiro256Plus::seed_from_u64(self.seed.unwrap_or_else(|| rng.random()));
+            (0..self.size.max(1)).map(|_| self.value.evaluate(&mut own)).collect()
+        });
+        match self.pick_seed {
+            Some(seed) => {
+                let picker = self.picker.get_or_init(|| Mutex::new(Xoshiro256Plus::seed_from_u64(seed)));
+                items[picker.lock().expect("pool picker").random_range(0..items.len())]
+            }
+            None => items[rng.random_range(0..items.len())],
+        }
+    }
+}
+
+fn gcd(mut a: u64, mut b: u64) -> u64 {
+    while b != 0 {
+        (a, b) = (b, a % b);
+    }
+    a
 }
 
 impl NumberExpr {
@@ -529,6 +946,13 @@ impl NumberExpr {
         match self {
             Self::Constant(val) => *val,
             Self::Sampled(dist) => dist.evaluate(rng),
+            Self::Weighted(weighted) => weighted.sample(rng),
+            Self::Scattered(ScatteredNumber { scatter }) => scatter.apply(scatter.value.evaluate(rng)),
+            Self::Modulo(ModuloNumber { modulo }) => {
+                (modulo.value.evaluate(rng).floor() as u64 % modulo.len.max(1)) as f64
+            }
+            Self::Ranges(RangesNumber { ranges }) => ranges.sample(rng),
+            Self::Pool(PoolNumber { pool }) => pool.sample(rng),
         }
     }
 
@@ -537,6 +961,31 @@ impl NumberExpr {
         match self {
             Self::Constant(val) => *val,
             Self::Sampled(dist) => dist.expected_value(),
+            Self::Weighted(weighted) => weighted.mean(),
+            // the shuffle keeps the values within [start, start + len) but not their mean
+            Self::Scattered(ScatteredNumber { scatter }) => scatter.start as f64 + (scatter.len as f64 - 1.0) / 2.0,
+            Self::Modulo(ModuloNumber { modulo }) => {
+                modulo.value.expected_value().min((modulo.len as f64 - 1.0).max(0.0))
+            }
+            Self::Ranges(RangesNumber { ranges }) => ranges.mean(),
+            Self::Pool(PoolNumber { pool }) => pool.value.expected_value(),
+        }
+    }
+
+    /// Scales the expression, e.g. an operation count, by `factor`.
+    pub fn scale(&mut self, factor: f64) {
+        match self {
+            Self::Constant(val) => *val *= factor,
+            Self::Sampled(distr) => distr.scale(factor),
+            Self::Weighted(weighted) => {
+                for w in &mut weighted.weighted {
+                    w.value.scale(factor);
+                }
+            }
+            Self::Scattered(ScatteredNumber { scatter }) => scatter.value.scale(factor),
+            Self::Modulo(ModuloNumber { modulo }) => modulo.value.scale(factor),
+            Self::Ranges(RangesNumber { ranges }) => ranges.value.scale(factor),
+            Self::Pool(PoolNumber { pool }) => pool.value.scale(factor),
         }
     }
 }
@@ -1246,10 +1695,7 @@ macro_rules! impl_scalable_regular {
     ($($t:ty),*) => {
         $(impl Scalable for $t {
             fn scale(&mut self, factor: f64) {
-                match &mut self.op_count {
-                    NumberExpr::Constant(op_count) => *op_count *= factor,
-                    NumberExpr::Sampled(distr) => distr.scale(factor),
-                }
+                self.op_count.scale(factor);
             }
         })*
     }
@@ -1259,10 +1705,7 @@ macro_rules! impl_scalable_with_selection {
     ($($t:ty),*) => {
         $(impl Scalable for $t {
             fn scale(&mut self, factor: f64) {
-                match &mut self.op_count {
-                    NumberExpr::Constant(op_count) => *op_count *= factor,
-                    NumberExpr::Sampled(distr) => distr.scale(factor),
-                }
+                self.op_count.scale(factor);
 
                 if let Some(distr) = &mut self.selection {
                     distr.scale(factor);
@@ -1654,6 +2097,112 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn scatter_shuffles_a_number_one_to_one_into_its_range() {
+        let number = |json: &str| serde_json::from_str::<NumberExpr>(json).expect("valid number");
+        // every rank of [0, len) lands at a distinct number of [start, start + len)
+        let all = number(r#"{"scatter": {"start": 1000, "len": 97, "value": {"uniform": {"min": 0, "max": 97}}}}"#);
+        let mut rng = rng();
+        let mut seen = std::collections::HashSet::new();
+        for _ in 0..20_000 {
+            let x = all.evaluate(&mut rng);
+            assert!((1000.0..1097.0).contains(&x) && x.fract() == 0.0, "{x}");
+            seen.insert(x as u64);
+        }
+        assert_eq!(seen.len(), 97);
+        // a rank goes to start + (rank * a) mod len, a = 60 (nearest 97 / golden ratio, coprime with 97)
+        let rank = number(r#"{"scatter": {"start": 1000, "len": 97, "value": 3.7}}"#);
+        assert_eq!(rank.evaluate(&mut rng), 1000.0 + (3 * 60 % 97) as f64);
+        // ranks beyond len wrap around
+        let wrapped = number(r#"{"scatter": {"len": 97, "value": 100}}"#);
+        assert_eq!(wrapped.evaluate(&mut rng), (3 * 60 % 97) as f64);
+    }
+
+    #[test]
+    fn generalized_pareto_has_its_quantiles_and_mean() {
+        let number = |json: &str| serde_json::from_str::<NumberExpr>(json).expect("valid number");
+        let gpd = number(r#"{"generalized_pareto": {"location": 10, "scale": 25, "shape": 0.25}}"#);
+        let mut rng = rng();
+        let mut xs: Vec<f64> = (0..200_000).map(|_| gpd.evaluate(&mut rng)).collect();
+        xs.sort_by(f64::total_cmp);
+        assert!(xs[0] >= 10.0);
+        // median: 10 + 25 * (2^0.25 - 1) / 0.25 = 28.92
+        assert!((xs[100_000] - 28.92).abs() < 0.3, "{}", xs[100_000]);
+        // mean: 10 + 25 / 0.75
+        let mean = xs.iter().sum::<f64>() / xs.len() as f64;
+        assert!((mean - gpd.expected_value()).abs() < 0.5 && (gpd.expected_value() - 43.333).abs() < 1e-3, "{mean}");
+        // truncated at max: never above it, and the median of what is left
+        let truncated = number(r#"{"generalized_pareto": {"location": 10, "scale": 25, "shape": 0.25, "max": 50}}"#);
+        let mut ys: Vec<f64> = (0..200_000).map(|_| truncated.evaluate(&mut rng)).collect();
+        ys.sort_by(f64::total_cmp);
+        assert!(ys[ys.len() - 1] < 50.0 && ys[0] >= 10.0);
+        let top = generalized_pareto_cdf(10.0, 25.0, 0.25, 50.0);
+        let median = generalized_pareto_quantile(10.0, 25.0, 0.25, top / 2.0);
+        assert!((ys[100_000] - median).abs() < 0.3, "{} {median}", ys[100_000]);
+        let mean = ys.iter().sum::<f64>() / ys.len() as f64;
+        assert!((mean - truncated.expected_value()).abs() < 0.3, "{mean}");
+    }
+
+    #[test]
+    fn modulo_and_ranges_place_numbers() {
+        let number = |json: &str| serde_json::from_str::<NumberExpr>(json).expect("valid number");
+        let mut rng = rng();
+        assert_eq!(number(r#"{"modulo": {"len": 10, "value": 123.9}}"#).evaluate(&mut rng), 3.0);
+        // range 1 only (weight 0 elsewhere), offset 1234 mod 100
+        let one = number(r#"{"ranges": {"len": 100, "weights": [0, 1, 0], "value": 1234}}"#);
+        assert_eq!(one.evaluate(&mut rng), 134.0);
+        // ranges are picked in proportion to their weights
+        let ranges = number(r#"{"ranges": {"len": 100, "weights": [1, 3], "value": {"uniform": {"min": 0, "max": 100}}}}"#);
+        let n = 40_000;
+        let second = (0..n).filter(|_| ranges.evaluate(&mut rng) >= 100.0).count();
+        assert!((second as f64 / n as f64 - 0.75).abs() < 0.01, "{second}");
+
+        // two_term_exponential matches db_bench's FAST '20 prefix distribution
+        let exp_ranges = number(r#"{"ranges": {"len": 1000, "weights": {"two_term_exponential": {"a": 14.18, "b": -2.917, "c": 0.0164, "d": -0.08082, "n": 30}}, "value": 0}}"#);
+        let n = 50_000;
+        let in_hot_29 = (0..n).filter(|_| exp_ranges.evaluate(&mut rng) >= 29_000.0).count();
+        assert!((in_hot_29 as f64 / n as f64 - 0.8066).abs() < 0.01, "{in_hot_29}");
+
+        // hotspot mixture: range 29 at 0.80, range 23 at 0.06, others uniform
+        let hot_ranges = number(r#"{"ranges": {"len": 1000, "weights": {"hotspot": {"n": 30, "hot": [{"range": 29, "weight": 0.80}, {"range": 23, "weight": 0.06}]}}, "value": 0}}"#);
+        let in_hot_29 = (0..n).filter(|_| hot_ranges.evaluate(&mut rng) >= 29_000.0).count();
+        assert!((in_hot_29 as f64 / n as f64 - 0.80).abs() < 0.01, "{in_hot_29}");
+    }
+
+    #[test]
+    fn pools_draw_a_fixed_population_shared_by_seed() {
+        let number = |json: &str| serde_json::from_str::<NumberExpr>(json).expect("valid number");
+        let mut rng = rng();
+        let population = |expr: &NumberExpr, rng: &mut Xoshiro256Plus| -> std::collections::BTreeSet<u64> {
+            (0..50_000).map(|_| expr.evaluate(rng) as u64).collect()
+        };
+        // an unseeded pool keeps its numbers, also in its clones
+        let pool = number(r#"{"pool": {"size": 100, "value": {"uniform": {"min": 0, "max": 1e12}}}}"#);
+        let first = population(&pool, &mut rng);
+        assert_eq!(first.len(), 100);
+        assert_eq!(population(&pool.clone(), &mut rng), first);
+        // pools with the same seed: the smaller holds the first numbers of the larger
+        let large = number(r#"{"pool": {"size": 100, "seed": 3, "value": {"uniform": {"min": 0, "max": 1e12}}}}"#);
+        let small = number(r#"{"pool": {"size": 40, "seed": 3, "value": {"uniform": {"min": 0, "max": 1e12}}}}"#);
+        let (large, small) = (population(&large, &mut rng), population(&small, &mut rng));
+        assert_eq!((large.len(), small.len()), (100, 40));
+        assert!(small.is_subset(&large));
+        // pools with the same size and pick_seed pick the same rows: key k always comes with length 2k
+        let keys = number(r#"{"pool": {"size": 50, "seed": 4, "pick_seed": 9, "value": {"uniform": {"min": 0, "max": 1e9}}}}"#);
+        let lengths = number(r#"{"pool": {"size": 50, "seed": 4, "pick_seed": 9, "value": {"uniform": {"min": 0, "max": 1e9}}}}"#);
+        for _ in 0..1000 {
+            assert_eq!(keys.evaluate(&mut rng), lengths.evaluate(&mut rng));
+        }
+        // weighted numbers with the same weights and pick_seed pick the same entries
+        let classes = number(r#"{"weighted": [{"weight": 1, "value": 0}, {"weight": 2, "value": {"uniform": {"min": 1, "max": 9}}}], "pick_seed": 5}"#);
+        let lengths = number(r#"{"weighted": [{"weight": 1, "value": 100}, {"weight": 2, "value": 200}], "pick_seed": 5}"#);
+        let picks: Vec<(f64, f64)> = (0..1000).map(|_| (classes.evaluate(&mut rng), lengths.evaluate(&mut rng))).collect();
+        assert!(picks.iter().all(|&(c, l)| (c == 0.0) == (l == 100.0)));
+        assert!(picks.iter().any(|&(c, _)| c == 0.0) && picks.iter().any(|&(c, _)| c != 0.0));
+        let unlinked = number(r#"{"pool": {"size": 50, "seed": 4, "value": {"uniform": {"min": 0, "max": 1e9}}}}"#);
+        assert!((0..100).any(|_| keys.evaluate(&mut rng) != unlinked.evaluate(&mut rng)));
     }
 
     #[test]

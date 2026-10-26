@@ -30,9 +30,22 @@ official-table5-revision/
 *.zip
 *.jsonl
 *.bak
+*.out
+*.npz
+*.tar.gz
+*.tgz
+_superseded/
+# Original paper data archives and their reproductions; the tools/ scripts stay tracked
+original-paper-data/*
+!original-paper-data/tools/
 
 
 # Third-party clones (own git repos): YCSB, YCSB-IVS, YCSB-TS
 YCSB/
 YCSB-IVS/
 YCSB-TS/
+rocksdb-v10.4.2/
+rocksdb-v10.4.2-scanlog/
+
+# Workload specifications are tracked despite *.json above
+!example-specs/**/*.spec.json

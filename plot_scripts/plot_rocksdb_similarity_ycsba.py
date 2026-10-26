@@ -227,7 +227,7 @@ def main():
     ax.plot(x, sw_tec, label="write (X-Bench)", **{**no_marker_style('Tectonic'), "linestyle": "--"})
 
     ax.set_xlabel(plot_style.format_label("time (s)"))
-    ax.set_ylabel(plot_style.format_label("bytes transferred (MB/s)"))
+    ax.set_ylabel(plot_style.format_label("bytes transferred (MB)"))
     # This label is long enough that, centered by default, its top overflows
     # the fixed page's slim top margin and gets clipped. Shift the label's
     # vertical anchor down so it fits within the page.
@@ -287,7 +287,7 @@ def main():
 
     ax.set_xticks(positions)
     ax.set_xticklabels(["insert", "PQ", "update"])
-    ax.set_ylabel(plot_style.format_label("latency (us)"))
+    ax.set_ylabel(plot_style.format_label(r"latency ($\mu$s)"))
     plot_style.apply_plot_style(ax)
     path = OUTPUT_DIR / f"{OUTPUT_NAME}_latency.pdf"
     save_fixed_size(fig, path)

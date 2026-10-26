@@ -54,11 +54,13 @@
                           "max": 1577836800000
                         }
                       },
+                      // number of digit of timestamp
                       "width": 13
                     }
                   },
                   ":Region0=",
                   {
+                    //5tags, random string of 4
                     "hot_range": {
                       "len": 4,
                       "amount": 5,
@@ -86,6 +88,7 @@
                     "number": {
                       "value": {
                         "uniform": {
+                          // time stamp, min and max, the window
                           "min": 1546300800000,
                           "max": 1577836800000
                         }
@@ -98,10 +101,12 @@
             },
             "span": {
               "uniform": {
+                // 1 day to 10 days
                 "min": 86400000,
                 "max": 864000000
               }
             },
+            //2020-01-01, past this date there is no data, must stop
             "span_max_end": 1577836800000
           }
         }

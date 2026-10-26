@@ -535,6 +535,46 @@
           "required": [
             "pareto"
           ]
+        },
+        {
+          "description": "`location + scale * ((1 - u)^-shape - 1) / shape` for `u` uniform in `[0, 1)` (shape 0:\n`location - scale * ln(1 - u)`), e.g. the value sizes and scan lengths of db_bench's mixgraph;\nwith `max`, conditioned on being below `max` (truncated)",
+          "type": "object",
+          "properties": {
+            "generalized_pareto": {
+              "type": "object",
+              "properties": {
+                "location": {
+                  "type": "number",
+                  "format": "double"
+                },
+                "max": {
+                  "type": [
+                    "number",
+                    "null"
+                  ],
+                  "format": "double",
+                  "default": null
+                },
+                "scale": {
+                  "type": "number",
+                  "format": "double"
+                },
+                "shape": {
+                  "type": "number",
+                  "format": "double"
+                }
+              },
+              "required": [
+                "location",
+                "scale",
+                "shape"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "generalized_pareto"
+          ]
         }
       ]
     },
@@ -604,6 +644,24 @@
       },
       "required": [
         "op_count"
+      ]
+    },
+    "HotRange": {
+      "type": "object",
+      "properties": {
+        "range": {
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "weight": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "required": [
+        "range",
+        "weight"
       ]
     },
     "Inserts": {
@@ -906,6 +964,45 @@
           "required": [
             "pareto"
           ]
+        },
+        {
+          "description": "`location + scale * ((1 - u)^-shape - 1) / shape` for `u` uniform in `[0, 1)` (shape 0:\n`location - scale * ln(1 - u)`), e.g. the value sizes and scan lengths of db_bench's mixgraph;\nwith `max`, conditioned on being below `max` (truncated)",
+          "type": "object",
+          "properties": {
+            "generalized_pareto": {
+              "type": "object",
+              "properties": {
+                "location": {
+                  "type": "number",
+                  "format": "double"
+                },
+                "max": {
+                  "type": [
+                    "number",
+                    "null"
+                  ],
+                  "format": "double",
+                  "default": null
+                },
+                "scale": {
+                  "type": "number",
+                  "format": "double"
+                },
+                "shape": {
+                  "type": "number",
+                  "format": "double"
+                }
+              },
+              "required": [
+                "location",
+                "scale",
+                "shape"
+              ]
+            }
+          },
+          "required": [
+            "generalized_pareto"
+          ]
         }
       ]
     },
@@ -954,6 +1051,35 @@
         "op_count"
       ]
     },
+    "Modulo": {
+      "type": "object",
+      "properties": {
+        "len": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "value": {
+          "$ref": "#/$defs/NumberExpr"
+        }
+      },
+      "required": [
+        "len",
+        "value"
+      ]
+    },
+    "ModuloNumber": {
+      "description": "The number rounded down, modulo `len`, e.g. a scan length capped like db_bench's\n`mix_max_scan_len`: `{ \"modulo\": { \"len\": 10000, \"value\": { \"pareto\": { \"scale\": 1, \"shape\": 1.5 } } } }`",
+      "type": "object",
+      "properties": {
+        "modulo": {
+          "$ref": "#/$defs/Modulo"
+        }
+      },
+      "required": [
+        "modulo"
+      ]
+    },
     "NumberExpr": {
       "anyOf": [
         {
@@ -962,6 +1088,21 @@
         },
         {
           "$ref": "#/$defs/Distribution"
+        },
+        {
+          "$ref": "#/$defs/WeightedNumbers"
+        },
+        {
+          "$ref": "#/$defs/ScatteredNumber"
+        },
+        {
+          "$ref": "#/$defs/ModuloNumber"
+        },
+        {
+          "$ref": "#/$defs/RangesNumber"
+        },
+        {
+          "$ref": "#/$defs/PoolNumber"
         }
       ]
     },
@@ -1024,6 +1165,53 @@
         "op_count"
       ]
     },
+    "Pool": {
+      "type": "object",
+      "properties": {
+        "pick_seed": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "default": null,
+          "minimum": 0
+        },
+        "seed": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "default": null,
+          "minimum": 0
+        },
+        "size": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "value": {
+          "$ref": "#/$defs/NumberExpr"
+        }
+      },
+      "required": [
+        "size",
+        "value"
+      ]
+    },
+    "PoolNumber": {
+      "description": "`size` numbers drawn once from `value`; every evaluation returns one of them, uniformly at random:\na fixed population of items that is accessed over and over, e.g. db_bench's mixgraph, which draws\nevery query from `num` precomputed slots. Pools with the same `seed` (and the same `value`) draw the\nsame numbers, a smaller one the first numbers of a larger one; without a seed every pool draws its own.\nWith `pick_seed`, the pool picks its numbers with its own random generator: pools of the same size and\n`pick_seed` pick the same positions in the same order, so that, e.g., the n-th key and the n-th scan\nlength of an operation's pools come from the same row (generate such operations with one thread).\n`{ \"pool\": { \"size\": 1000, \"seed\": 7, \"value\": { \"zipf\": { \"n\": 1000000, \"s\": 0.9 } } } }`",
+      "type": "object",
+      "properties": {
+        "pool": {
+          "$ref": "#/$defs/Pool"
+        }
+      },
+      "required": [
+        "pool"
+      ]
+    },
     "RangeDeletes": {
       "description": "Range deletes specification.",
       "type": "object",
@@ -1082,6 +1270,108 @@
       },
       "required": [
         "op_count"
+      ]
+    },
+    "RangeDistribution": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "two_term_exponential": {
+              "type": "object",
+              "properties": {
+                "a": {
+                  "type": "number",
+                  "format": "double"
+                },
+                "b": {
+                  "type": "number",
+                  "format": "double"
+                },
+                "c": {
+                  "type": "number",
+                  "format": "double"
+                },
+                "d": {
+                  "type": "number",
+                  "format": "double"
+                },
+                "exclude": {
+                  "type": "array",
+                  "default": [],
+                  "items": {
+                    "type": "integer",
+                    "format": "uint",
+                    "minimum": 0
+                  }
+                },
+                "n": {
+                  "type": "integer",
+                  "format": "uint",
+                  "default": 30,
+                  "minimum": 0
+                },
+                "shuffle_seed": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "format": "uint64",
+                  "default": null,
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "a",
+                "b",
+                "c",
+                "d"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "two_term_exponential"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "hotspot": {
+              "type": "object",
+              "properties": {
+                "exclude": {
+                  "type": "array",
+                  "default": [],
+                  "items": {
+                    "type": "integer",
+                    "format": "uint",
+                    "minimum": 0
+                  }
+                },
+                "hot": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/HotRange"
+                  }
+                },
+                "n": {
+                  "type": "integer",
+                  "format": "uint",
+                  "default": 30,
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "hot"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "hotspot"
+          ]
+        }
       ]
     },
     "RangeFormat": {
@@ -1156,6 +1446,89 @@
       },
       "required": [
         "op_count"
+      ]
+    },
+    "RangeWeights": {
+      "description": "A key space cut into consecutive ranges of `len` numbers: range `i`, picked with probability\nproportional to `weights[i]`, plus the number (rounded down, modulo `len`) as the offset in it, e.g.\nkey ranges of different hotness that share how keys are picked inside a range:\nWeights for `ranges`: either an explicit list of weights, or a distribution specification\nlike `two_term_exponential` (Cao et al. FAST '20 prefix distribution) or `hotspot`.",
+      "anyOf": [
+        {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        {
+          "$ref": "#/$defs/RangeDistribution"
+        }
+      ]
+    },
+    "Ranges": {
+      "type": "object",
+      "properties": {
+        "len": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "value": {
+          "$ref": "#/$defs/NumberExpr"
+        },
+        "weights": {
+          "$ref": "#/$defs/RangeWeights"
+        }
+      },
+      "required": [
+        "len",
+        "weights",
+        "value"
+      ]
+    },
+    "RangesNumber": {
+      "description": "`{ \"ranges\": { \"len\": 1000, \"weights\": [1, 8, 1], \"value\": { \"zipf\": { \"n\": 1000, \"s\": 0.9 } } } }`",
+      "type": "object",
+      "properties": {
+        "ranges": {
+          "$ref": "#/$defs/Ranges"
+        }
+      },
+      "required": [
+        "ranges"
+      ]
+    },
+    "Scatter": {
+      "type": "object",
+      "properties": {
+        "len": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "start": {
+          "type": "integer",
+          "format": "uint64",
+          "default": 0,
+          "minimum": 0
+        },
+        "value": {
+          "$ref": "#/$defs/NumberExpr"
+        }
+      },
+      "required": [
+        "len",
+        "value"
+      ]
+    },
+    "ScatteredNumber": {
+      "description": "`start` plus a fixed one-to-one shuffle of the number (rounded down, modulo `len`), e.g. so that the\nhot ranks of a skewed distribution land at scattered keys of the key range `[start, start + len)`\nwhile every rank keeps its frequency:\n`{ \"scatter\": { \"start\": 1000, \"len\": 1000, \"value\": { \"zipf\": { \"n\": 1000, \"s\": 0.9 } } } }`",
+      "type": "object",
+      "properties": {
+        "scatter": {
+          "$ref": "#/$defs/Scatter"
+        }
+      },
+      "required": [
+        "scatter"
       ]
     },
     "Sorted": {
@@ -1442,6 +1815,48 @@
       "required": [
         "weight",
         "value"
+      ]
+    },
+    "WeightedNumber": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "description": "The value.",
+          "$ref": "#/$defs/NumberExpr"
+        },
+        "weight": {
+          "description": "The weight of the value.",
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "required": [
+        "weight",
+        "value"
+      ]
+    },
+    "WeightedNumbers": {
+      "description": "One of the values, picked with probability proportional to its weight, e.g. an empirical\nhistogram: `{ \"weighted\": [{ \"weight\": 3, \"value\": 7 }, { \"weight\": 1, \"value\": 27 }] }`. A value can\nitself be any number expression, e.g. `{ \"uniform\": { \"min\": 8, \"max\": 16 } }` for a histogram bucket.\nWith `pick_seed`, the values are picked with their own random generator, like a `pool`'s: weighted\nnumbers with the same weights and `pick_seed` pick the same entries in the same order, e.g. the class\nof an operation's key and of its scan length.",
+      "type": "object",
+      "properties": {
+        "pick_seed": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "default": null,
+          "minimum": 0
+        },
+        "weighted": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WeightedNumber"
+          }
+        }
+      },
+      "required": [
+        "weighted"
       ]
     },
     "WorkloadSpecGroup": {

@@ -33,7 +33,7 @@ TOOLS = [
     ),
     (
         "tectonic",
-        "X-Bench (blind)",
+        "X-Bench (untracked)",
         {"color": "tab:red", "linestyle": "-.", "marker": "s", "markerfacecolor": "none"},
     ),
     (

@@ -90,6 +90,8 @@ IVS_RUN_PHASES = 4
 # mixes random inserts with time-range queries.
 WORKLOADS = {
     "ivs-uniform": {"tool": "ivs", "distribution": "uniform", "scale": 1},
+    # the same with 10x records and operations per phase (a 1x trial takes ~2 s); everything else as shipped
+    "ivs-uniform-x10": {"tool": "ivs", "distribution": "uniform", "scale": 10},
     "ts-energy": {"tool": "ts", "workload_file": f"{TS_DIR}/workloads/energy"},
 }
 
@@ -861,7 +863,7 @@ EXEC_PATH = f"{RESULTS_DIR}/execution.json"
 
 
 def drop_caches():
-    subprocess.run(["sudo", "sh", "-c", "sync; echo 3 > /proc/sys/vm/drop_caches"], check=False)
+    subprocess.run(["sudo", "sh", "-c", "sync; echo 3 > /proc/sys/vm/drop_caches"], check=True)  # fail loudly: a trial on a warm page cache is not comparable
 
 
 STAT_LINE = re.compile(r'\[([^\]]+)\]\s+([^:]+):\s+([\d\.]+)')
@@ -1001,11 +1003,11 @@ class Iostat:
         return self.samples
 
 
-def execute_trial(name, side, trace, trial, merge_mode):
+def execute_trial(name, side, trace, trial, merge_mode, state_dir=None):
     if os.path.exists(ROCKSDB_DIR):
         shutil.rmtree(ROCKSDB_DIR)
     os.makedirs(ROCKSDB_DIR)
-    out_dir = f"{DBSTATE_DIR}/{name}/{side}/trial{trial}"
+    out_dir = f"{state_dir or f'{DBSTATE_DIR}/{name}'}/{side}/trial{trial}"
     os.makedirs(out_dir, exist_ok=True)
     scan_log = f"{out_dir}/range_query_keys.txt"
     shutil.copyfile(trace, SHM_TRACE)
@@ -1087,6 +1089,38 @@ def stage_execute(args):
                 done.append(rec)
                 write_json_atomic(EXEC_PATH, results)
                 log(f"  -> {rec['end_to_end_time_s']:.3f}s  read_stats={rec['read_stats']}")
+    if os.path.exists(ROCKSDB_DIR):
+        shutil.rmtree(ROCKSDB_DIR)
+
+
+# The execute stage runs the trials of one trace after another: YCSB, then the YCSB rerun, then X-Bench.
+# The order check runs one trial of every trace per round and rotates the order each round, so every trace
+# runs first, second and third; a difference that comes from the order shows up as one by position.
+ORDER_PATH = f"{RESULTS_DIR}/order_check.json"
+ORDER_STATE_DIR = f"{DBSTATE_DIR}/order_check"
+
+
+def stage_order_check(args):
+    gen = load_json(GEN_PATH, {})
+    results = load_json(ORDER_PATH, {})
+    for name in args.workloads:
+        if name not in gen:
+            continue
+        done = results.setdefault(name, {})
+        if args.force:
+            done.clear()
+        for rnd in range(1, args.trials + 1):
+            order = SIDES[(rnd - 1) % len(SIDES):] + SIDES[:(rnd - 1) % len(SIDES)]
+            for pos, side in enumerate(order, 1):
+                if any(r["round"] == rnd for r in done.get(side, [])):
+                    continue
+                banner(f"ORDER CHECK {name} | round {rnd}/{args.trials} | {pos}. {side}")
+                rec = execute_trial(name, side, marked_trace(gen[name], side), rnd, "append",
+                                    state_dir=f"{ORDER_STATE_DIR}/{name}")
+                rec.update({"round": rnd, "position": pos})
+                done.setdefault(side, []).append(rec)
+                write_json_atomic(ORDER_PATH, results)
+                log(f"  -> {rec['end_to_end_time_s']:.3f}s")
     if os.path.exists(ROCKSDB_DIR):
         shutil.rmtree(ROCKSDB_DIR)
 
@@ -1333,6 +1367,33 @@ def write_report(summary, analysis):
             cells = [", ".join(f"{k}={v:,}" for k, v in sorted(a[side]["per_phase_ops"].get(ph, {}).items()))
                      for side in ("ycsb_derivative", "xbench", "ycsb_derivative_rerun")]
             L.append(f"| {name} | {ph} | {' | '.join(cells)} |")
+    order = load_json(ORDER_PATH, {})
+    if order:
+        L += ["", "## 7. Order check", "",
+              "Sections 2–4 run all trials of one trace, then all of the next, always in the order YCSB derivative, "
+              "YCSB rerun, X-Bench. Here each round runs one trial of every trace and the order rotates every round, "
+              "so each trace runs first, second and third (`--stage order-check`, `results/order_check.json`). "
+              "Mean ± stdev over the rounds; Diff to the YCSB derivative. Last column: the mean over all three "
+              "traces of the trials run first / second / third in their round.", "",
+              "| Workload | Metric | YCSB derivative | X-Bench | Diff | YCSB rerun | Diff | 1st / 2nd / 3rd in round |",
+              "| --- | --- | --- | --- | --- | --- | --- | --- |"]
+        for name, sides in order.items():
+            if not all(sides.get(side) for side in SIDES):
+                continue
+            metrics = [("throughput (ops/s)", lambda r: r["overall"].get("Throughput (using start and end time)"), 0),
+                       ("RocksDB read (GB)", lambda r: sum(r["rocksdb_statistics"][k] for k in FIG12_READ_TICKERS) / GIB, 3),
+                       ("RocksDB write (GB)", lambda r: sum(r["rocksdb_statistics"][k] for k in FIG12_WRITE_TICKERS) / GIB, 3)]
+            for op in sides["ycsb_derivative"][0]["operations"]:
+                metrics.append((f"{op} p50 (µs)", lambda r, op=op: r["operations"][op]["50th Percentile Latency"], 1))
+            for label, get, nd in metrics:
+                vals = {side: mean_sd([get(r) for r in sides[side]]) for side in SIDES}
+                ref = vals["ycsb_derivative"][0]
+                by_pos = [statistics.mean(get(r) for side in SIDES for r in sides[side] if r["position"] == pos)
+                          for pos in range(1, len(SIDES) + 1)]
+                L.append(f"| {name} | {label} | {fmt(vals['ycsb_derivative'], nd)} | {fmt(vals['xbench'], nd)} | "
+                         f"{fmt(pct_diff(ref, vals['xbench'][0]))}% | {fmt(vals['ycsb_derivative_rerun'], nd)} | "
+                         f"{fmt(pct_diff(ref, vals['ycsb_derivative_rerun'][0]))}% | "
+                         f"{' / '.join(fmt(v, nd) for v in by_pos)} |")
     with open(REPORT_PATH, "w") as f:
         f.write("\n".join(L) + "\n")
 
@@ -1343,7 +1404,8 @@ def write_report(summary, analysis):
 def main():
     global _log_fh
     ap = argparse.ArgumentParser()
-    ap.add_argument("--stage", choices=["generate", "analyze", "trace-spread", "execute", "report", "all"],
+    ap.add_argument("--stage", choices=["generate", "analyze", "trace-spread", "execute", "order-check", "report",
+                                        "all"],
                     default="all")
     ap.add_argument("--workloads", nargs="+", default=list(WORKLOADS))
     ap.add_argument("--trials", type=int, default=TRIALS)
@@ -1367,6 +1429,8 @@ def main():
         stage_trace_spread(args)
     if args.stage in ("execute", "all"):
         stage_execute(args)
+    if args.stage == "order-check":
+        stage_order_check(args)
     if args.stage in ("report", "all"):
         stage_report(args)
 

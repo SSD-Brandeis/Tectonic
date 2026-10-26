@@ -358,13 +358,14 @@ def stage_report(args):
             continue
         selected = [name for _, name in rows["adaptive"]["keysets_used"]]
         forced = {k: v for k, v in rows.items() if k != "adaptive" and not v["timed_out"]}
-        best_time = min(forced, key=lambda k: forced[k]["time_s"][0])
-        best_mem = min(forced, key=lambda k: forced[k]["peak_rss_mib"][0])
+        # None when every forced KeySet timed out (e.g. table4-upsert Tec-1, where only VecKeySet is forced)
+        best_time = min(forced, key=lambda k: forced[k]["time_s"][0]) if forced else None
+        best_mem = min(forced, key=lambda k: forced[k]["peak_rss_mib"][0]) if forced else None
         summary[wl] = {"label": label, "spec": spec_path, "requirements": reqs, "compatible": keysets,
                        "algorithm1_selects": selected, "rows": rows,
                        "best_time": best_time, "best_memory": best_mem,
-                       "tied_time": ties(forced, best_time, "time_s"),
-                       "tied_memory": ties(forced, best_mem, "peak_rss_mib"),
+                       "tied_time": ties(forced, best_time, "time_s") if forced else [],
+                       "tied_memory": ties(forced, best_mem, "peak_rss_mib") if forced else [],
                        "dominated_by": (dominating(forced, sel_key) if (sel_key := single_keyset(selected)) in forced
                                         else None)}
     write_json_atomic(SUMMARY_PATH, summary)
@@ -416,14 +417,14 @@ def stage_report(args):
         rows = s["rows"]
         sel = next(iter(sel_keys)) if len(sel_keys) == 1 else None
         dt = dm = verdict = "-"
-        if sel and sel in rows:
+        if sel and sel in rows and s["best_time"]:
             verdict = (f"{'yes' if sel in s['tied_time'] else 'no'} / "
                        f"{'yes' if sel in s['tied_memory'] else 'no'}")
             bt, bm = rows[s["best_time"]]["time_s"][0], rows[s["best_memory"]]["peak_rss_mib"][0]
             dt = f"{(rows[sel]['time_s'][0] - bt) / bt * 100:+.1f}%"
             dm = f"{(rows[sel]['peak_rss_mib'][0] - bm) / bm * 100:+.1f}%"
-        tied = lambda best, group: KEYSETS[best] + "".join(
-            f"; {KEYSETS[k]}" for k in group if k != best)
+        tied = lambda best, group: (KEYSETS[best] + "".join(
+            f"; {KEYSETS[k]}" for k in group if k != best)) if best else "- (every forced KeySet timed out)"
         L.append(f"| {wl} | {', '.join(KEYSETS[k] for k in sorted(sel_keys))} | {tied(s['best_time'], s['tied_time'])} | "
                  f"{tied(s['best_memory'], s['tied_memory'])} | {dt} | {dm} | {verdict} | "
                  f"{', '.join(KEYSETS[k] for k in s['dominated_by']) if s['dominated_by'] else 'none'} |")

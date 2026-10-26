@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Repeat the concurrent blind generation experiment with resource monitoring."""
+"""Repeat the concurrent untracked generation experiment with resource monitoring."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from typing import Any
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
-EXPERIMENT_NAME = "concurrent_blind_generation_resource_monitoring"
+EXPERIMENT_NAME = "concurrent_untracked_generation_resource_monitoring"
 DATA_DIR = ROOT_DIR / "data" / EXPERIMENT_NAME
 LOG_DIR = DATA_DIR / "logs"
 PLOT_DIR = DATA_DIR / "plots"
@@ -25,10 +25,10 @@ RESULTS_PATH = DATA_DIR / f"{EXPERIMENT_NAME}_results.json"
 RUNNER_SCRIPT = ROOT_DIR / "run_scripts" / f"run_{EXPERIMENT_NAME}.py"
 PLOT_SCRIPT = ROOT_DIR / "plot_scripts" / f"plot_{EXPERIMENT_NAME}.py"
 
-SOURCE_RUNNER = ROOT_DIR / "run_scripts" / "run_concurrent_blind_generation_experiment.py"
-SOURCE_PLOT = ROOT_DIR / "plot_scripts" / "plot_concurrent_blind_generation_experiment.py"
-SOURCE_RESULTS = ROOT_DIR / "data" / "concurrent_blind_experiment" / "results.json"
-SOURCE_PDF = ROOT_DIR / "blind_unique_compare" / "generation_speedup_comparison.pdf"
+SOURCE_RUNNER = ROOT_DIR / "run_scripts" / "run_concurrent_untracked_generation_experiment.py"
+SOURCE_PLOT = ROOT_DIR / "plot_scripts" / "plot_concurrent_untracked_generation_experiment.py"
+SOURCE_RESULTS = ROOT_DIR / "data" / "concurrent_untracked_experiment" / "results.json"
+SOURCE_PDF = ROOT_DIR / "untracked_unique_compare" / "generation_speedup_comparison.pdf"
 
 TECTONIC_CLI = ROOT_DIR / "target" / "release" / "tectonic-cli"
 YCSB_DIR = ROOT_DIR / "rocksdb-benchmark-harness" / "vendor" / "YCSB"
@@ -398,7 +398,7 @@ def ycsb_run_cmd(threads: int) -> list[str]:
 
 
 def tectonic_cmd(threads: int, unique: bool) -> list[str]:
-    spec = ROOT_DIR / "example-specs" / ("ycsb-unique" if unique else "ycsb_blind") / "c.spec.json"
+    spec = ROOT_DIR / "example-specs" / ("ycsb-unique" if unique else "ycsb_untracked") / "c.spec.json"
     output = TMP_OUTPUTS["tectonic_unique" if unique else "tectonic"]
     return [
         str(TECTONIC_CLI),
@@ -536,7 +536,7 @@ def base_results(threads_list: list[int], iterations: int, poll_interval: float,
         },
         "setup": {
             "workload": "YCSB workload c",
-            "blind_operations": "10 M",
+            "untracked_operations": "10 M",
             "record_count": RECORD_COUNT,
             "operation_count": OPERATION_COUNT,
             "scale": SCALE,
@@ -576,7 +576,7 @@ def write_results(data: dict[str, Any], threads_list: list[int]) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Run concurrent blind workload generation with latency, memory, CPU, and output-size metrics."
+        description="Run concurrent untracked workload generation with latency, memory, CPU, and output-size metrics."
     )
     parser.add_argument("--threads", help="comma-separated thread counts or ranges; default repeats the original list")
     parser.add_argument("--iterations", type=int, default=ITERATIONS)
@@ -590,7 +590,7 @@ def main() -> None:
     ensure_setup()
     check_tmp_space(args.min_free_gib)
 
-    print("=== concurrent blind generation resource monitoring ===")
+    print("=== concurrent untracked generation resource monitoring ===")
     print(f"threads: {threads_list}")
     print(f"iterations: {args.iterations}")
     print(f"results: {RESULTS_PATH}")

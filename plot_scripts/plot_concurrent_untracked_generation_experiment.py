@@ -10,8 +10,8 @@ import matplotlib.lines as mlines
 sys.path.append("/home/cc/Tectonic")
 from plot_style import apply_plot_style, save_fig, format_label, get_seq_par_line_style, save_legend
 
-STATS_DIR = "/home/cc/Tectonic/data/concurrent_blind_experiment"
-PLOTS_DIR = "/home/cc/Tectonic/concurrent_blind_experiment"
+STATS_DIR = "/home/cc/Tectonic/data/concurrent_untracked_experiment"
+PLOTS_DIR = "/home/cc/Tectonic/concurrent_untracked_experiment"
 os.makedirs(PLOTS_DIR, exist_ok=True)
 RESULTS_FILE = f"{STATS_DIR}/results.json"
 
@@ -76,7 +76,7 @@ def main():
     ax.set_ylim(bottom=0, top=max_val * 1.15)
 
     apply_plot_style(ax, 
-                     title="YCSB workload c (10 M blind operations)", 
+                     title="YCSB workload c (10 M untracked operations)", 
                      xlabel="number of threads", 
                      ylabel="end-to-end latency (s)")
 
@@ -104,15 +104,15 @@ def main():
     save_fig(fig, f"{PLOTS_DIR}/generation_speedup_comparison")
     print(f"Plot saved to {PLOTS_DIR}/generation_speedup_comparison.png and .pdf")
 
-    # Copy files to the blind_unique_compare directory
-    COMP_DIR = "/home/cc/Tectonic/blind_unique_compare"
+    # Copy files to the untracked_unique_compare directory
+    COMP_DIR = "/home/cc/Tectonic/untracked_unique_compare"
     os.makedirs(COMP_DIR, exist_ok=True)
     import shutil
     shutil.copy2(f"{PLOTS_DIR}/generation_speedup_comparison.pdf", f"{COMP_DIR}/generation_speedup_comparison.pdf")
     shutil.copy2(f"{PLOTS_DIR}/generation_speedup_comparison.png", f"{COMP_DIR}/generation_speedup_comparison.png")
     shutil.copy2(f"{PLOTS_DIR}/generation_speedup_comparison_legend.pdf", f"{COMP_DIR}/generation_speedup_comparison_legend.pdf")
     shutil.copy2(f"{PLOTS_DIR}/generation_speedup_comparison_legend.png", f"{COMP_DIR}/generation_speedup_comparison_legend.png")
-    shutil.copy2(__file__, f"{COMP_DIR}/plot_blind_unique_compare.py")
+    shutil.copy2(__file__, f"{COMP_DIR}/plot_untracked_unique_compare.py")
     print(f"Standalone copies saved to {COMP_DIR}")
 
 if __name__ == "__main__":

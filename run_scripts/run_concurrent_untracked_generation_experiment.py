@@ -20,7 +20,7 @@ YCSB_CP = (
 )
 
 # Output directory for the experiment
-EXP_DIR = "/home/cc/Tectonic/data/concurrent_blind_experiment"
+EXP_DIR = "/home/cc/Tectonic/data/concurrent_untracked_experiment"
 os.makedirs(EXP_DIR, exist_ok=True)
 
 # Threads to test
@@ -125,7 +125,7 @@ def main():
             cmd = [
                 TECTONIC_CLI,
                 "generate",
-                "-w", "/home/cc/Tectonic/example-specs/ycsb_blind/c.spec.json",
+                "-w", "/home/cc/Tectonic/example-specs/ycsb_untracked/c.spec.json",
                 "-o", "/tmp/tectonic_out.txt",
                 "-s", "10",
                 "-t", str(threads)
@@ -178,7 +178,7 @@ def main():
     print(f"\nResults saved to {EXP_DIR}/results.json")
 
     # 3. Plotting (invoked via the separate plotting script)
-    plot_script = "/home/cc/Tectonic/plot_scripts/plot_concurrent_blind_generation_experiment.py"
+    plot_script = "/home/cc/Tectonic/plot_scripts/plot_concurrent_untracked_generation_experiment.py"
     if os.path.exists(plot_script):
         print("\nInvoking separate plotting script...")
         subprocess.run([sys.executable, plot_script])

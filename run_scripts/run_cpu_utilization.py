@@ -206,7 +206,7 @@ def count_ops(path):
     return dict(counts)
 
 
-def normalize_blind_queries_for_rocksdb(input_path, output_path):
+def normalize_untracked_queries_for_rocksdb(input_path, output_path):
     counts = collections.Counter()
     with open(input_path) as in_f, open(output_path, "w") as out_f:
         for line in in_f:
@@ -298,13 +298,13 @@ def generate_ycsb_trace(workload, scale, poll_interval):
 
 
 def generate_tectonic_trace(workload, scale, poll_interval):
-    banner(f"generate Tectonic workload {workload.upper()} blind trace")
-    spec_path = f"{ROOT_DIR}/example-specs/ycsb_blind/{workload}.spec.json"
+    banner(f"generate Tectonic workload {workload.upper()} untracked trace")
+    spec_path = f"{ROOT_DIR}/example-specs/ycsb_untracked/{workload}.spec.json"
     raw_trace = f"{OUT_DIR}/tectonic_workload{workload}_raw.txt"
     rocksdb_trace = f"{OUT_DIR}/tectonic_workload{workload}.txt"
     for path in (raw_trace, rocksdb_trace):
         remove_if_exists(path)
-    ensure_file(spec_path, "Tectonic blind spec")
+    ensure_file(spec_path, "Tectonic untracked spec")
 
     scale_factor = scale / 1_000_000.0
     result = trace_process(
@@ -321,7 +321,7 @@ def generate_tectonic_trace(workload, scale, poll_interval):
     )
     clean_metadata_lines(raw_trace)
     raw_op_counts = count_ops(raw_trace)
-    normalization_counts = normalize_blind_queries_for_rocksdb(raw_trace, rocksdb_trace)
+    normalization_counts = normalize_untracked_queries_for_rocksdb(raw_trace, rocksdb_trace)
     remove_if_exists(raw_trace)
 
     return {

@@ -3,7 +3,7 @@
 
 By default this pins each generator to one logical CPU. That keeps this aligned
 with the single-thread workload-generation plot and avoids mixing the earlier
-multi-core Tectonic blind-key pregeneration spike into the monitor comparison.
+multi-core Tectonic untracked-key pregeneration spike into the monitor comparison.
 """
 
 import argparse
@@ -335,11 +335,11 @@ def generate_ycsb(workload, scale, cpu_id, tag):
 
 
 def generate_tectonic(workload, scale, cpu_id, tag):
-    banner(f"generate Tectonic workload {workload.upper()} blind")
-    spec_path = f"{ROOT_DIR}/example-specs/ycsb_blind/{workload}.spec.json"
+    banner(f"generate Tectonic workload {workload.upper()} untracked")
+    spec_path = f"{ROOT_DIR}/example-specs/ycsb_untracked/{workload}.spec.json"
     output_path = f"{OUT_DIR}/monitor_{tag}_tectonic.txt"
     remove_if_exists(output_path)
-    ensure_file(spec_path, "Tectonic blind spec")
+    ensure_file(spec_path, "Tectonic untracked spec")
     scale_factor = scale / 1_000_000.0
     result = run_monitored(
         "Tectonic generation",

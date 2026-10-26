@@ -69,7 +69,7 @@ KVBENCH_ARGS = {
     'IV': '-I 1000000 -U 500000 -R 500000 -y 0.000001 --UD 3 --entry_size 1024',
     'V': '-I 950000 -Q 50000 -Z 0 --ID 3 --ED 0 --ZD 0 --entry_size 1024',
 }
-TECTONIC_YCSB_SPECS = {w: f'example-specs/ycsb_blind/{w.lower()}.spec.json' for w in YCSB_WORKLOADS}
+TECTONIC_YCSB_SPECS = {w: f'example-specs/ycsb_untracked/{w.lower()}.spec.json' for w in YCSB_WORKLOADS}
 TECTONIC_KV_SPECS = {w: f'example-specs/kvbench/{w.lower()}.spec.json' for w in KV_WORKLOADS}
 
 class HumanLog:

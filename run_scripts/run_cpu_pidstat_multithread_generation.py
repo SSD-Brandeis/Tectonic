@@ -15,7 +15,7 @@ import time
 ROOT_DIR = Path(__file__).resolve().parents[1]
 HARNESS_DIR = ROOT_DIR / "rocksdb-benchmark-harness"
 TECTONIC_CLI = Path(os.environ.get("TECTONIC_CLI", str(ROOT_DIR / "target/release/tectonic-cli")))
-YCSB_SPEC = ROOT_DIR / "example-specs/ycsb_blind/e.spec.json"
+YCSB_SPEC = ROOT_DIR / "example-specs/ycsb_untracked/e.spec.json"
 KV_BENCH = Path(os.environ.get("KV_BENCH_BIN", "/home/cc/KV-WorkloadGenerator/bin/load_gen"))
 YCSB_DIR = Path(os.environ.get("YCSB_DIR", str(HARNESS_DIR / "vendor/YCSB")))
 M2 = Path(os.environ.get("M2_REPO", "/home/cc/.m2/repository"))

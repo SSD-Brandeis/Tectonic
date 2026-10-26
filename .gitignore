@@ -49,3 +49,4 @@ rocksdb-v10.4.2-scanlog/
 
 # Workload specifications are tracked despite *.json above
 !example-specs/**/*.spec.json
+!x-bench-specs/**/*.spec.json

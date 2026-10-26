@@ -427,7 +427,7 @@ def ts_spec(name, props, value_len):
     return {"sections": [{"groups": [
         {"name": "load", "inserts": {"op_count": recordcount, "key": point_key(load_ts), "val": val}},
         {"name": "run", "inserts": {"op_count": opcount - range_ops, "key": point_key(uniform_ts), "val": val},
-         "blind_range_queries": window},
+         "untracked_range_queries": window},
     ]}]}
 
 

@@ -17,9 +17,9 @@ REP = PAPER / "reproduced"
 # figure -> (PDF page, crop box as fractions of the page, regenerated panels)
 FIGURES = {
     "fig7": (14, (0.08, 0.10, 0.92, 0.255), ["fig7/fig3", "fig7/fig3_mem", "fig7/fig1", "fig7/fig1_mem"]),
-    "fig8": (14, (0.50, 0.265, 0.92, 0.40), ["fig8/concurrent_blind_generation_resource_monitoring_latency",
-                                             "fig8/concurrent_blind_generation_resource_monitoring_peak_memory",
-                                             "fig8/concurrent_blind_generation_resource_monitoring_legend"]),
+    "fig8": (14, (0.50, 0.265, 0.92, 0.40), ["fig8/concurrent_untracked_generation_resource_monitoring_latency",
+                                             "fig8/concurrent_untracked_generation_resource_monitoring_peak_memory",
+                                             "fig8/concurrent_untracked_generation_resource_monitoring_legend"]),
     "fig9": (15, (0.08, 0.10, 0.47, 0.215), ["fig9/cpu_utilization_pidstat_multithread_timeseries_threads16",
                                              "fig9/cpu_utilization_pidstat_multithread_by_threads",
                                              "fig9/cpu_utilization_pidstat_multithread_legend"]),

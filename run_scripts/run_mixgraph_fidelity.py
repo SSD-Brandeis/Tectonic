@@ -641,12 +641,12 @@ def build_spec(ref, model):
          "inserts": {"op_count": ref["load_puts"], "key": key_expr({"uniform": {"min": 0, "max": NUM}}),
                      "val": {"uniform": {"len": load_sizes[0]}}}},
         {"name": "run",
-         "blind_point_queries": {"op_count": ops["Get"], "key": key_expr(rows("Get", "all", in_ranges("Get")))},
+         "untracked_point_queries": {"op_count": ops["Get"], "key": key_expr(rows("Get", "all", in_ranges("Get")))},
          "inserts": {"op_count": ops["Put"], "key": key_expr(rows("Put", "all", in_ranges("Put"), seeds["Put"])),
                      "val": {"uniform": {"len": rows("Put", "all", {"weighted": [
                          {"weight": put["p_min"], "value": put["min"]},
                          {"weight": round(1 - put["p_min"], 4), "value": gpd(put)}]}, seeds["Put"])}}},
-         "blind_range_queries": {
+         "untracked_range_queries": {
              "op_count": ops["Seek"],
              "key": key_expr(seek_classes(offset("Seek", hot * KEYRANGE_SIZE), in_ranges("Seek", exclude=[hot]))),
              "scan_length": seek_classes({"modulo": {"len": seek["hot"]["modulo"], "value": gpd(seek["hot"])}}, gpd(seek["rest"]))}},

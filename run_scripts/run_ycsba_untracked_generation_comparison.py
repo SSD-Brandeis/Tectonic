@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compare db_bench-style and Tectonic YCSB-A blind workload generation."""
+"""Compare db_bench-style and Tectonic YCSB-A untracked workload generation."""
 
 from __future__ import annotations
 
@@ -18,11 +18,11 @@ from typing import Any
 ROOT_DIR = Path(__file__).resolve().parents[1]
 RUN_SCRIPTS_DIR = ROOT_DIR / "run_scripts"
 PLOT_SCRIPTS_DIR = ROOT_DIR / "plot_scripts"
-OUT_DIR = ROOT_DIR / "data" / "db_bench_exp_test" / "ycsba_blind"
-TMP_DIR = Path("/tmp/db_bench_ycsba_blind_generation")
-GENERATOR_SCRIPT = RUN_SCRIPTS_DIR / "generate_db_bench_ycsba_blind_workload_file.py"
-PLOT_SCRIPT = PLOT_SCRIPTS_DIR / "plot_ycsba_blind_generation_comparison.py"
-YCSBA_BLIND_SPEC = ROOT_DIR / "example-specs" / "ycsb_blind" / "a.spec.json"
+OUT_DIR = ROOT_DIR / "data" / "db_bench_exp_test" / "ycsba_untracked"
+TMP_DIR = Path("/tmp/db_bench_ycsba_untracked_generation")
+GENERATOR_SCRIPT = RUN_SCRIPTS_DIR / "generate_db_bench_ycsba_untracked_workload_file.py"
+PLOT_SCRIPT = PLOT_SCRIPTS_DIR / "plot_ycsba_untracked_generation_comparison.py"
+YCSBA_UNTRACKED_SPEC = ROOT_DIR / "example-specs" / "ycsb_untracked" / "a.spec.json"
 DEFAULT_TECTONIC_CLI = ROOT_DIR / "target" / "release" / "tectonic-cli"
 DEFAULT_SCALES = "0.005,0.01,0.02"
 DEFAULT_THREADS = 1
@@ -256,21 +256,21 @@ def run_scale(
 ) -> dict[str, Any]:
     record_count = scaled_count(BASE_RECORD_COUNT, scale)
     operation_count = scaled_count(BASE_OPERATION_COUNT, scale)
-    blind_point_queries = operation_count // 2
-    updates = operation_count - blind_point_queries
+    untracked_point_queries = operation_count // 2
+    updates = operation_count - untracked_point_queries
     total_ops = record_count + operation_count
     tag = f"scale_{scale:g}".replace(".", "p")
-    db_output = TMP_DIR / f"db_bench_ycsba_blind_{tag}.txt"
-    tectonic_output = TMP_DIR / f"tectonic_ycsba_blind_{tag}.txt"
-    metadata_output = OUT_DIR / f"db_bench_ycsba_blind_{tag}.metadata.json"
+    db_output = TMP_DIR / f"db_bench_ycsba_untracked_{tag}.txt"
+    tectonic_output = TMP_DIR / f"tectonic_ycsba_untracked_{tag}.txt"
+    metadata_output = OUT_DIR / f"db_bench_ycsba_untracked_{tag}.metadata.json"
 
     for path in (db_output, tectonic_output):
         if path.exists():
             path.unlink()
 
-    banner(f"YCSB-A blind workload generation scale={scale:g}")
+    banner(f"YCSB-A untracked workload generation scale={scale:g}")
     db_result = run_monitored(
-        f"db_bench-style YCSB-A blind generation scale={scale:g}",
+        f"db_bench-style YCSB-A untracked generation scale={scale:g}",
         [
             "python3",
             str(GENERATOR_SCRIPT),
@@ -281,18 +281,18 @@ def run_scale(
             "--metadata",
             str(metadata_output),
         ],
-        OUT_DIR / f"db_bench_ycsba_blind_generate_{tag}.log",
+        OUT_DIR / f"db_bench_ycsba_untracked_generate_{tag}.log",
         cpu_id,
         poll_interval,
         ROOT_DIR,
     )
     tectonic_result = run_monitored(
-        f"Tectonic YCSB-A blind generation scale={scale:g}",
+        f"Tectonic YCSB-A untracked generation scale={scale:g}",
         [
             str(tectonic_cli),
             "generate",
             "-w",
-            str(YCSBA_BLIND_SPEC),
+            str(YCSBA_UNTRACKED_SPEC),
             "-o",
             str(tectonic_output),
             "-s",
@@ -300,18 +300,18 @@ def run_scale(
             "-t",
             str(threads),
         ],
-        OUT_DIR / f"tectonic_ycsba_blind_generate_{tag}.log",
+        OUT_DIR / f"tectonic_ycsba_untracked_generate_{tag}.log",
         cpu_id,
         poll_interval,
         ROOT_DIR,
     )
 
     return {
-        "workload": "YCSB-A blind",
+        "workload": "YCSB-A untracked",
         "scale": scale,
         "record_count": record_count,
         "operation_count": operation_count,
-        "blind_point_queries": blind_point_queries,
+        "untracked_point_queries": untracked_point_queries,
         "updates": updates,
         "generated_operations_per_tool": total_ops,
         "threads": threads,
@@ -334,7 +334,7 @@ def write_results(payload: dict[str, Any], results_path: Path) -> Path:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Run db_bench-style vs Tectonic YCSB-A blind generation comparison.",
+        description="Run db_bench-style vs Tectonic YCSB-A untracked generation comparison.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument("--scales", default=DEFAULT_SCALES, help="comma-separated scale factors")
@@ -358,15 +358,15 @@ def main() -> None:
     if cpu_id is not None and cpu_id not in os.sched_getaffinity(0):
         fail(f"requested CPU {cpu_id} is not in current affinity mask: {sorted(os.sched_getaffinity(0))}")
 
-    ensure_file(GENERATOR_SCRIPT, "db_bench-style YCSB-A blind generator")
-    ensure_file(YCSBA_BLIND_SPEC, "Tectonic YCSB-A blind spec")
+    ensure_file(GENERATOR_SCRIPT, "db_bench-style YCSB-A untracked generator")
+    ensure_file(YCSBA_UNTRACKED_SPEC, "Tectonic YCSB-A untracked spec")
     ensure_file(tectonic_cli, "tectonic-cli")
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     TMP_DIR.mkdir(parents=True, exist_ok=True)
 
     print(SEP)
-    print("  experiment : db_bench-style vs Tectonic YCSB-A blind workload generation")
-    print(f"  spec       : {YCSBA_BLIND_SPEC}")
+    print("  experiment : db_bench-style vs Tectonic YCSB-A untracked workload generation")
+    print(f"  spec       : {YCSBA_UNTRACKED_SPEC}")
     print(f"  scales     : {scales}")
     print(f"  threads    : {args.threads}")
     print(f"  cpu pin    : {cpu_id if cpu_id is not None else 'none'}")
@@ -376,12 +376,12 @@ def main() -> None:
     runs = [run_scale(scale, args.threads, cpu_id, args.poll_interval, tectonic_cli) for scale in scales]
     payload = {
         "experiment": "db_bench_exp_test",
-        "mode": "db_bench_style_vs_tectonic_ycsba_blind_generation",
+        "mode": "db_bench_style_vs_tectonic_ycsba_untracked_generation",
         "root_dir": str(ROOT_DIR),
         "output_dir": str(OUT_DIR),
         "tmp_dir": str(TMP_DIR),
-        "workload": "YCSB-A blind",
-        "tectonic_spec": str(YCSBA_BLIND_SPEC),
+        "workload": "YCSB-A untracked",
+        "tectonic_spec": str(YCSBA_UNTRACKED_SPEC),
         "generator_script": str(GENERATOR_SCRIPT),
         "tectonic_cli": str(tectonic_cli),
         "scales": scales,
@@ -389,12 +389,12 @@ def main() -> None:
         "cpu_affinity": [cpu_id] if cpu_id is not None else None,
         "single_thread_note": (
             "The runner uses Tectonic -t 1 by default and pins both processes to one logical CPU. "
-            "Tectonic blind point-key pregeneration can still create worker OS threads internally; "
+            "Tectonic untracked point-key pregeneration can still create worker OS threads internally; "
             "peak_threads records that behavior."
         ),
         "comparison_caveat": (
             "Native RocksDB db_bench does not output a Tectonic/YCSB text workload file. "
-            "The db_bench_style side is a compatibility generator that emits the same YCSB-A blind "
+            "The db_bench_style side is a compatibility generator that emits the same YCSB-A untracked "
             "operation shape for file-level generation comparison."
         ),
         "metric_definitions": {
@@ -406,7 +406,7 @@ def main() -> None:
         },
         "runs": runs,
     }
-    results_path = write_results(payload, OUT_DIR / "ycsba_blind_generation_results.json")
+    results_path = write_results(payload, OUT_DIR / "ycsba_untracked_generation_results.json")
     if not args.keep_files:
         shutil.rmtree(TMP_DIR, ignore_errors=True)
     print(f"\n  results saved: {results_path}", flush=True)

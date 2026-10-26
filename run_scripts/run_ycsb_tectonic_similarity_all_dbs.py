@@ -323,7 +323,7 @@ def compare_traces(ycsb_path, tec_path):
     for op, desc in [("I", "insert (db->Put, load phase)"),
                      ("P", "point query (db->Get, valid key, Zipfian)"),
                      ("U", "update (db->Put, existing key)"),
-                     ("BP", "blind query (key not in DB)")]:
+                     ("BP", "untracked query (key not in DB)")]:
         yv, tv = yc.get(op, 0), tc.get(op, 0)
         if yv > 0 or tv > 0:
             print(f"  {op:<12} {yv:>12,} {tv:>12,}  {desc}")

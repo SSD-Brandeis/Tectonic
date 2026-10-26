@@ -21,7 +21,7 @@
         },
         {
           "name": "run",
-          "blind_point_queries": {
+          "untracked_point_queries": {
             "op_count": 34854497,
             "key": {
               "segmented": {
@@ -104,7 +104,7 @@
               }
             }
           },
-          "blind_range_queries": {
+          "untracked_range_queries": {
             "op_count": 1262474,
             "key": {
               "segmented": {

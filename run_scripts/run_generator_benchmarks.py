@@ -175,12 +175,12 @@ def run_set2_ycsb():
 
     # 2. Tectonic Run
     tectonic_specs = {
-        "A": "example-specs/ycsb_blind/a.spec.json",
-        "B": "example-specs/ycsb_blind/b.spec.json",
-        "C": "example-specs/ycsb_blind/c.spec.json",
-        "D": "example-specs/ycsb_blind/d.spec.json",
-        "E": "example-specs/ycsb_blind/e.spec.json",
-        "F": "example-specs/ycsb_blind/f.spec.json",
+        "A": "example-specs/ycsb_untracked/a.spec.json",
+        "B": "example-specs/ycsb_untracked/b.spec.json",
+        "C": "example-specs/ycsb_untracked/c.spec.json",
+        "D": "example-specs/ycsb_untracked/d.spec.json",
+        "E": "example-specs/ycsb_untracked/e.spec.json",
+        "F": "example-specs/ycsb_untracked/f.spec.json",
     }
     for w, spec in tectonic_specs.items():
         w_lower = w.lower()

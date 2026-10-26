@@ -47,7 +47,7 @@ use crate::keyset::{
     BloomFilterKeySet, EmptyKeySet, Key, KeySet, VecBloomFilterKeySet, VecHashSetKeySet, VecKeySet,
     VecOptionHashSetKeySet, VecOptionKeySet,
 };
-use crate::spec::{CharacterSet, RangeFormat, StringExpr, WorkloadSpec, WorkloadSpecSection, BlindRangeQueries};
+use crate::spec::{CharacterSet, RangeFormat, StringExpr, WorkloadSpec, WorkloadSpecSection, UntrackedRangeQueries};
 
 pub trait OperationHandler {
     fn handle_insert(
@@ -77,9 +77,9 @@ pub trait OperationHandler {
     fn handle_range_query_count(&mut self, key1: &Key, count: usize) -> Result<()>;
     fn handle_range_delete(&mut self, key1: &Key, key2: &Key) -> Result<()>;
     fn handle_range_delete_count(&mut self, key1: &Key, count: usize) -> Result<()>;
-    fn handle_blind_point_query(&mut self, key: &Key) -> Result<()>;
-    fn handle_blind_point_delete(&mut self, key: &Key) -> Result<()>;
-    fn handle_blind_range_query(&mut self, key: &Key, count: usize) -> Result<()>;
+    fn handle_untracked_point_query(&mut self, key: &Key) -> Result<()>;
+    fn handle_untracked_point_delete(&mut self, key: &Key) -> Result<()>;
+    fn handle_untracked_range_query(&mut self, key: &Key, count: usize) -> Result<()>;
     fn start_stat_flush(&mut self, benchmarker: BenchmarkerType) -> Result<()>;
     fn end_stat_flush(&mut self, name: &str, benchmarker: BenchmarkerType) -> Result<()>;
 }
@@ -232,7 +232,7 @@ impl<'a, W: Write> OperationHandler for WriteHandler<'a, W> {
         Ok(())
     }
 
-    fn handle_blind_point_query(&mut self, key: &Key) -> Result<()> {
+    fn handle_untracked_point_query(&mut self, key: &Key) -> Result<()> {
         let w = &mut self.0;
         w.write_all("BP ".as_bytes())?;
         w.write_all(key)?;
@@ -240,7 +240,7 @@ impl<'a, W: Write> OperationHandler for WriteHandler<'a, W> {
         return Ok(());
     }
 
-    fn handle_blind_point_delete(&mut self, key: &Key) -> Result<()> {
+    fn handle_untracked_point_delete(&mut self, key: &Key) -> Result<()> {
         let w = &mut self.0;
         w.write_all("BD ".as_bytes())?;
         w.write_all(key)?;
@@ -248,7 +248,7 @@ impl<'a, W: Write> OperationHandler for WriteHandler<'a, W> {
         return Ok(());
     }
 
-    fn handle_blind_range_query(&mut self, key: &Key, count: usize) -> Result<()> {
+    fn handle_untracked_range_query(&mut self, key: &Key, count: usize) -> Result<()> {
         let w = &mut self.0;
         w.write_all("BR ".as_bytes())?;
         w.write_all(key)?;
@@ -415,7 +415,7 @@ impl<'a, 'b> OperationHandler for DBHandler<'a, 'b> {
         Ok(())
     }
 
-    fn handle_blind_point_query(&mut self, key: &Key) -> Result<()> {
+    fn handle_untracked_point_query(&mut self, key: &Key) -> Result<()> {
         self.throttle();
         let prefixed_key = Self::apply_prefix(&self.prefix, key);
         let start = std::time::Instant::now();
@@ -430,13 +430,13 @@ impl<'a, 'b> OperationHandler for DBHandler<'a, 'b> {
         res
     }
 
-    fn handle_blind_point_delete(&mut self, key: &Key) -> Result<()> {
+    fn handle_untracked_point_delete(&mut self, key: &Key) -> Result<()> {
         self.throttle();
         let prefixed_key = Self::apply_prefix(&self.prefix, key);
         self.benchmarker.handle_point_delete(&prefixed_key)
     }
 
-    fn handle_blind_range_query(&mut self, key: &Key, count: usize) -> Result<()> {
+    fn handle_untracked_range_query(&mut self, key: &Key, count: usize) -> Result<()> {
         self.throttle();
         let prefixed_key = Self::apply_prefix(&self.prefix, key);
         self.benchmarker.handle_range_query_count(&prefixed_key, count)
@@ -454,9 +454,9 @@ pub struct OperationTimings {
     time_query_point: Duration,
     time_query_point_empty: Duration,
     time_query_range: Duration,
-    time_blind_point_query: Duration,
-    time_blind_point_delete: Duration,
-    time_blind_range_query: Duration,
+    time_untracked_point_query: Duration,
+    time_untracked_point_delete: Duration,
+    time_untracked_range_query: Duration,
 }
 
 impl Default for OperationTimings {
@@ -472,9 +472,9 @@ impl Default for OperationTimings {
             time_query_point: Duration::from_secs(0),
             time_query_point_empty: Duration::from_secs(0),
             time_query_range: Duration::from_secs(0),
-            time_blind_point_query: Duration::from_secs(0),
-            time_blind_point_delete: Duration::from_secs(0),
-            time_blind_range_query: Duration::from_secs(0),
+            time_untracked_point_query: Duration::from_secs(0),
+            time_untracked_point_delete: Duration::from_secs(0),
+            time_untracked_range_query: Duration::from_secs(0),
         }
     }
 }
@@ -491,9 +491,9 @@ enum Op {
     PointQuery,
     EmptyPointQuery,
     RangeQuery,
-    BlindPointQuery,
-    BlindPointDelete,
-    BlindRangeQuery,
+    UntrackedPointQuery,
+    UntrackedPointDelete,
+    UntrackedRangeQuery,
 }
 
 // TODO: Allow for different sections to use different keysets
@@ -762,8 +762,8 @@ fn pregenerate_keys_parallel(
     keys
 }
 
-/// A pregenerated blind range query.
-enum BlindRange {
+/// A pregenerated untracked range query.
+enum UntrackedRange {
     /// Start key and number of keys
     Count(Key, usize),
     /// Start and end key of a window over the key's `number` segment
@@ -771,31 +771,31 @@ enum BlindRange {
 }
 
 fn pregenerate_range_queries_parallel(
-    brq: &BlindRangeQueries,
+    brq: &UntrackedRangeQueries,
     char_set: Option<CharacterSet>,
     count: usize,
     default_key: Option<&StringExpr>,
     total_entries: usize,
     thread_id: Option<usize>,
-) -> Result<Vec<BlindRange>> {
+) -> Result<Vec<UntrackedRange>> {
     if count == 0 {
         return Ok(Vec::new());
     }
     let mut rng = Xoshiro256Plus::from_os_rng();
     let mut queries = Vec::with_capacity(count);
     for _ in 0..count {
-        let key_expr = brq.key.as_ref().or(default_key).expect("No key or default key set for blind range queries");
+        let key_expr = brq.key.as_ref().or(default_key).expect("No key or default key set for untracked range queries");
         let char_set = brq.character_set.or(char_set);
         if let Some(span) = &brq.span {
             let span = span.evaluate(&mut rng);
             let (start, end) = key_expr
                 .generate_window(&mut rng, char_set, thread_id, span, brq.span_max_end)
-                .ok_or_else(|| anyhow!("Blind range queries with a span need a key with a number segment"))?;
-            queries.push(BlindRange::Window(start, end));
+                .ok_or_else(|| anyhow!("Untracked range queries with a span need a key with a number segment"))?;
+            queries.push(UntrackedRange::Window(start, end));
         } else {
             let key = key_expr.generate(&mut rng, char_set, thread_id);
             let range_count = brq.get_range_length(&mut rng, total_entries);
-            queries.push(BlindRange::Count(key, range_count));
+            queries.push(UntrackedRange::Count(key, range_count));
         }
     }
     Ok(queries)
@@ -915,16 +915,16 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
             .range_queries
             .as_ref()
             .map_or(0, |drs| drs.op_count.evaluate(rng_ref) as usize);
-        let blind_point_query_count = group
-            .blind_point_queries
+        let untracked_point_query_count = group
+            .untracked_point_queries
             .as_ref()
             .map_or(0, |drs| drs.op_count.evaluate(rng_ref) as usize);
-        let blind_point_delete_count = group
-            .blind_point_deletes
+        let untracked_point_delete_count = group
+            .untracked_point_deletes
             .as_ref()
             .map_or(0, |drs| drs.op_count.evaluate(rng_ref) as usize);
-        let blind_range_query_count = group
-            .blind_range_queries
+        let untracked_range_query_count = group
+            .untracked_range_queries
             .as_ref()
             .map_or(0, |drs| drs.op_count.evaluate(rng_ref) as usize);
 
@@ -1074,9 +1074,9 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
         markers.add_op_count(Op::PointQuery, query_point_count);
         markers.add_op_count(Op::EmptyPointQuery, query_point_empty_count);
         markers.add_op_count(Op::RangeQuery, query_range_count);
-        markers.add_op_count(Op::BlindPointQuery, blind_point_query_count);
-        markers.add_op_count(Op::BlindPointDelete, blind_point_delete_count);
-        markers.add_op_count(Op::BlindRangeQuery, blind_range_query_count);
+        markers.add_op_count(Op::UntrackedPointQuery, untracked_point_query_count);
+        markers.add_op_count(Op::UntrackedPointDelete, untracked_point_delete_count);
+        markers.add_op_count(Op::UntrackedRangeQuery, untracked_range_query_count);
         markers.prepare_iter();
         let total_markers = markers.total;
 
@@ -1091,35 +1091,35 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
             ],
         });
 
-        let mut pregen_blind_point_queries = if let Some(bpq) = &group.blind_point_queries {
+        let mut pregen_untracked_point_queries = if let Some(bpq) = &group.untracked_point_queries {
             pregenerate_keys_parallel(
                 bpq.key.as_ref().or(key).unwrap_or(&default_fallback),
                 bpq.character_set.or(character_set),
-                blind_point_query_count,
+                untracked_point_query_count,
                 thread_id,
             )
         } else {
             Vec::new()
         };
-        pregen_blind_point_queries.reverse();
+        pregen_untracked_point_queries.reverse();
 
-        let mut pregen_blind_point_deletes = if let Some(bpd) = &group.blind_point_deletes {
+        let mut pregen_untracked_point_deletes = if let Some(bpd) = &group.untracked_point_deletes {
             pregenerate_keys_parallel(
                 bpd.key.as_ref().or(key).unwrap_or(&default_fallback),
                 bpd.character_set.or(character_set),
-                blind_point_delete_count,
+                untracked_point_delete_count,
                 thread_id,
             )
         } else {
             Vec::new()
         };
-        pregen_blind_point_deletes.reverse();
+        pregen_untracked_point_deletes.reverse();
 
-        let mut pregen_blind_range_queries = if let Some(brq) = &group.blind_range_queries {
+        let mut pregen_untracked_range_queries = if let Some(brq) = &group.untracked_range_queries {
             pregenerate_range_queries_parallel(
                 brq,
                 character_set,
-                blind_range_query_count,
+                untracked_range_query_count,
                 key.or(Some(&default_fallback)),
                 total_entries,
                 thread_id,
@@ -1127,7 +1127,7 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
         } else {
             Vec::new()
         };
-        pregen_blind_range_queries.reverse();
+        pregen_untracked_range_queries.reverse();
 
         eprintln!("[Generating] Section {} | Group {}", section_num, group_num);
         let progress_bar = ProgressBar::with_draw_target(
@@ -1513,39 +1513,39 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                         trace!(?marker, ?duration);
                     }
                 }
-                Op::BlindPointQuery => {
+                Op::UntrackedPointQuery => {
                     let start = Instant::now();
-                    let key = pregen_blind_point_queries.pop().expect("pregenerated blind query key");
+                    let key = pregen_untracked_point_queries.pop().expect("pregenerated untracked query key");
 
-                    operation_handler.handle_blind_point_query(&key)?;
+                    operation_handler.handle_untracked_point_query(&key)?;
 
                     let duration = Instant::now().duration_since(start);
-                    operation_timings.time_blind_point_query += duration;
+                    operation_timings.time_untracked_point_query += duration;
                     if duration > Duration::from_millis(1) {
                         trace!(?marker, ?duration);
                     }
                 }
-                Op::BlindPointDelete => {
+                Op::UntrackedPointDelete => {
                     let start = Instant::now();
-                    let key = pregen_blind_point_deletes.pop().expect("pregenerated blind delete key");
+                    let key = pregen_untracked_point_deletes.pop().expect("pregenerated untracked delete key");
 
-                    operation_handler.handle_blind_point_delete(&key)?;
+                    operation_handler.handle_untracked_point_delete(&key)?;
 
                     let duration = Instant::now().duration_since(start);
-                    operation_timings.time_blind_point_delete += duration;
+                    operation_timings.time_untracked_point_delete += duration;
                     if duration > Duration::from_millis(1) {
                         trace!(?marker, ?duration);
                     }
                 }
-                Op::BlindRangeQuery => {
+                Op::UntrackedRangeQuery => {
                     let start = Instant::now();
-                    match pregen_blind_range_queries.pop().expect("pregenerated blind range query") {
-                        BlindRange::Count(key, count) => operation_handler.handle_blind_range_query(&key, count)?,
-                        BlindRange::Window(start, end) => operation_handler.handle_range_query(&start, &end)?,
+                    match pregen_untracked_range_queries.pop().expect("pregenerated untracked range query") {
+                        UntrackedRange::Count(key, count) => operation_handler.handle_untracked_range_query(&key, count)?,
+                        UntrackedRange::Window(start, end) => operation_handler.handle_range_query(&start, &end)?,
                     }
 
                     let duration = Instant::now().duration_since(start);
-                    operation_timings.time_blind_range_query += duration;
+                    operation_timings.time_untracked_range_query += duration;
                     if duration > Duration::from_millis(1) {
                         trace!(?marker, ?duration);
                     }
@@ -1624,10 +1624,10 @@ fn generate_workload_spec(workload_spec: WorkloadSpec, output_file: &PathBuf, th
             println!("Tectonic_Op_Timings: {{\"Insert\":{},\"Update\":{},\"Point Query\":{},\"Point Delete\":{},\"Range Query\":{},\"Range Delete\":{}}}",
                 timings.time_insert.as_secs_f64() + timings.time_upsert.as_secs_f64(),
                 timings.time_update.as_secs_f64() + timings.time_merge.as_secs_f64(),
-                timings.time_query_point.as_secs_f64() + timings.time_query_point_empty.as_secs_f64() + timings.time_blind_point_query.as_secs_f64(),
-                timings.time_delete_point.as_secs_f64() + timings.time_delete_point_empty.as_secs_f64() + timings.time_blind_point_delete.as_secs_f64(),
+                timings.time_query_point.as_secs_f64() + timings.time_query_point_empty.as_secs_f64() + timings.time_untracked_point_query.as_secs_f64(),
+                timings.time_delete_point.as_secs_f64() + timings.time_delete_point_empty.as_secs_f64() + timings.time_untracked_point_delete.as_secs_f64(),
                 timings.time_query_range.as_secs_f64(),
-                timings.time_delete_range.as_secs_f64() + timings.time_blind_range_query.as_secs_f64()
+                timings.time_delete_range.as_secs_f64() + timings.time_untracked_range_query.as_secs_f64()
             );
         }
         final_file.flush()?;
@@ -1840,9 +1840,9 @@ fn scale_spec(workload_spec: &mut WorkloadSpec, factor: f64) {
                     point_queries,
                     empty_point_queries,
                     range_queries,
-                    blind_point_queries,
-                    blind_point_deletes,
-                    blind_range_queries
+                    untracked_point_queries,
+                    untracked_point_deletes,
+                    untracked_range_queries
                 ]
             );
         }

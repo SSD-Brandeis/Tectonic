@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Emit a db_bench-style YCSB-A blind workload in Tectonic text format.
+"""Emit a db_bench-style YCSB-A untracked workload in Tectonic text format.
 
 Native RocksDB db_bench does not materialize its internal operations as the
 line-oriented workload file used by Tectonic. This compatibility generator
-keeps the YCSB-A blind operation shape used by example-specs/ycsb_blind/a.spec.json:
-1M scaled load inserts, then 500k scaled blind point reads and 500k scaled
+keeps the YCSB-A untracked operation shape used by example-specs/ycsb_untracked/a.spec.json:
+1M scaled load inserts, then 500k scaled untracked point reads and 500k scaled
 updates.
 """
 
@@ -96,8 +96,8 @@ def write_workload(args: argparse.Namespace) -> dict:
     if operation_count < 2:
         fail("--operation-count must be at least 2 for YCSB-A")
 
-    blind_reads = operation_count // 2
-    updates = operation_count - blind_reads
+    untracked_reads = operation_count // 2
+    updates = operation_count - untracked_reads
     rng = random.Random(args.seed)
     op_rng = random.Random(args.seed + 1)
     zipf = ZipfSampler(record_count, args.zipf_s)
@@ -119,7 +119,7 @@ def write_workload(args: argparse.Namespace) -> dict:
             out.write(b"FE G Load Phase\n")
             out.write(b"FS G\n")
 
-        run_ops = ["BP"] * blind_reads + ["U"] * updates
+        run_ops = ["BP"] * untracked_reads + ["U"] * updates
         op_rng.shuffle(run_ops)
         for index, op in enumerate(run_ops):
             selected_key = key_from_int(zipf.sample(rng), args.key_numeric_len)
@@ -137,11 +137,11 @@ def write_workload(args: argparse.Namespace) -> dict:
     metadata = {
         "output_path": str(output_path),
         "format": "Tectonic text workload: I key value, BP key, U key value",
-        "workload": "YCSB-A blind",
+        "workload": "YCSB-A untracked",
         "scale": args.scale,
         "record_count": record_count,
         "operation_count": operation_count,
-        "blind_point_queries": blind_reads,
+        "untracked_point_queries": untracked_reads,
         "updates": updates,
         "key_prefix": KEY_PREFIX.decode("ascii"),
         "key_numeric_len": args.key_numeric_len,
@@ -162,7 +162,7 @@ def write_workload(args: argparse.Namespace) -> dict:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Generate a db_bench-style YCSB-A blind workload text file.",
+        description="Generate a db_bench-style YCSB-A untracked workload text file.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument("--output", required=True)

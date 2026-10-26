@@ -124,8 +124,8 @@ CAPABILITIES = {
 }
 
 OPS = ["inserts", "unique_inserts", "updates", "merges", "point_deletes", "empty_point_deletes", "range_deletes",
-       "point_queries", "empty_point_queries", "range_queries", "blind_point_queries", "blind_point_deletes",
-       "blind_range_queries"]
+       "point_queries", "empty_point_queries", "range_queries", "untracked_point_queries", "untracked_point_deletes",
+       "untracked_range_queries"]
 
 
 def section_requirements(section):

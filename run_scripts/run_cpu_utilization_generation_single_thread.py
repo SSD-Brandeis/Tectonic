@@ -232,11 +232,11 @@ def generate_ycsb(workload, scale, poll_interval, cpu_id):
 
 
 def generate_tectonic(workload, scale, poll_interval, cpu_id):
-    banner(f"generate Tectonic workload {workload.upper()} blind trace on one logical cpu")
-    spec_path = f"{ROOT_DIR}/example-specs/ycsb_blind/{workload}.spec.json"
+    banner(f"generate Tectonic workload {workload.upper()} untracked trace on one logical cpu")
+    spec_path = f"{ROOT_DIR}/example-specs/ycsb_untracked/{workload}.spec.json"
     output_path = f"{OUT_DIR}/single_thread_tectonic_workload{workload}.txt"
     remove_if_exists(output_path)
-    ensure_file(spec_path, "Tectonic blind spec")
+    ensure_file(spec_path, "Tectonic untracked spec")
 
     scale_factor = scale / 1_000_000.0
     result = trace_process(

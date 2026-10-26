@@ -1627,9 +1627,9 @@ pub struct EmptyPointQueries {
 }
 
 #[derive(serde::Deserialize, JsonSchema, Clone, Debug)]
-/// Blind Point Query Specification
-pub struct BlindPointQueries {
-    /// Number of blind point queries
+/// Untracked Point Query Specification
+pub struct UntrackedPointQueries {
+    /// Number of untracked point queries
     pub op_count: NumberExpr,
     /// Key
     pub key: Option<StringExpr>,
@@ -1638,8 +1638,8 @@ pub struct BlindPointQueries {
 }
 
 #[derive(serde::Deserialize, JsonSchema, Clone, Debug)]
-pub struct BlindRangeQueries {
-    /// Number of blind range queries
+pub struct UntrackedRangeQueries {
+    /// Number of untracked range queries
     pub op_count: NumberExpr,
     /// Key
     pub key: Option<StringExpr>,
@@ -1685,7 +1685,7 @@ macro_rules! impl_range_query {
     };
 }
 
-impl_range_query!(RangeQueries, RangeDeletes, BlindRangeQueries);
+impl_range_query!(RangeQueries, RangeDeletes, UntrackedRangeQueries);
 
 pub trait Scalable {
     fn scale(&mut self, factor: f64);
@@ -1719,8 +1719,8 @@ impl_scalable_regular!(
     Inserts,
     EmptyPointDeletes,
     EmptyPointQueries,
-    BlindPointQueries,
-    BlindRangeQueries
+    UntrackedPointQueries,
+    UntrackedRangeQueries
 );
 
 impl_scalable_with_selection!(
@@ -1753,9 +1753,13 @@ pub struct WorkloadSpecGroup {
     pub point_queries: Option<PointQueries>,
     pub empty_point_queries: Option<EmptyPointQueries>,
     pub range_queries: Option<RangeQueries>,
-    pub blind_point_queries: Option<BlindPointQueries>,
-    pub blind_point_deletes: Option<BlindPointQueries>,
-    pub blind_range_queries: Option<BlindRangeQueries>,
+    // formerly blind_*: specs written with the old names still load
+    #[serde(alias = "blind_point_queries")]
+    pub untracked_point_queries: Option<UntrackedPointQueries>,
+    #[serde(alias = "blind_point_deletes")]
+    pub untracked_point_deletes: Option<UntrackedPointQueries>,
+    #[serde(alias = "blind_range_queries")]
+    pub untracked_range_queries: Option<UntrackedRangeQueries>,
 
     /// Defaults for the group
     pub defaults: Option<Defaults>,

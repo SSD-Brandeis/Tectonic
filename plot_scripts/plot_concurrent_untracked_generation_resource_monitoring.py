@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Plot resource-monitored concurrent blind generation results."""
+"""Plot resource-monitored concurrent untracked generation results."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ import matplotlib.ticker as ticker
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
-EXPERIMENT_NAME = "concurrent_blind_generation_resource_monitoring"
+EXPERIMENT_NAME = "concurrent_untracked_generation_resource_monitoring"
 DATA_DIR = ROOT_DIR / "data" / EXPERIMENT_NAME
 RESULTS_PATH = DATA_DIR / f"{EXPERIMENT_NAME}_results.json"
 FONT_PATH = ROOT_DIR / "LinLibertine_Mah.ttf"
@@ -185,7 +185,7 @@ def save_legend(data: dict) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Plot concurrent blind resource monitoring results.")
+    parser = argparse.ArgumentParser(description="Plot concurrent untracked resource monitoring results.")
     parser.add_argument("--results", default=str(RESULTS_PATH))
     args = parser.parse_args()
 

@@ -31,7 +31,7 @@ STAGED_MARK = ".staged_from_paper_archive"
 # (archive source, staged destination) for every experiment a paper figure or table uses
 STAGE = [
     (DATA1 / "figure_6_validate", ROOT / "data/figure_6_validate"),
-    (DATA1 / "concurrent_blind_generation_resource_monitoring", ROOT / "data/concurrent_blind_generation_resource_monitoring"),
+    (DATA1 / "concurrent_blind_generation_resource_monitoring", ROOT / "data/concurrent_untracked_generation_resource_monitoring"),
     (DATA1 / "CPU-utilization", ROOT / "data/CPU-utilization"),
     (DATA1 / "concurrent_experiment", ROOT / "data/concurrent_experiment"),
     (DATA1 / "ycsb_tectonic_correctness_thread_modes", ROOT / "data/ycsb_tectonic_correctness_thread_modes"),
@@ -48,8 +48,8 @@ FIGURES = {
         [(ROOT / "figure_6_validate_plot", None)],
     ),
     "fig8": (
-        [PY, "plot_scripts/plot_concurrent_blind_generation_resource_monitoring.py"], {},
-        [(ROOT / "data/concurrent_blind_generation_resource_monitoring/plots", None)],
+        [PY, "plot_scripts/plot_concurrent_untracked_generation_resource_monitoring.py"], {},
+        [(ROOT / "data/concurrent_untracked_generation_resource_monitoring/plots", None)],
     ),
     "fig9": (
         [PY, "plot_scripts/plot_cpu_pidstat_multithread_generation.py"],
@@ -87,6 +87,19 @@ def same_tree(a: Path, b: Path) -> bool:
     return all(same_tree(a / d, b / d) for d in cmp.common_dirs)
 
 
+def untrack(root: Path):
+    """The archive says "blind" where the repo now says "untracked": rename the staged files and
+    directories, and the word inside the staged JSON, so the repo's scripts find them."""
+    for path in sorted(root.rglob("*"), key=lambda p: len(p.parts), reverse=True):
+        if "blind" in path.name:
+            path.rename(path.with_name(path.name.replace("blind", "untracked")))
+    for path in root.rglob("*.json"):
+        text = path.read_text()
+        renamed = text.replace("Blind", "Untracked").replace("blind", "untracked").replace("BLIND", "UNTRACKED")
+        if renamed != text:
+            path.write_text(renamed)
+
+
 def stage():
     for src, dst in STAGE:
         if (dst / STAGED_MARK).exists():
@@ -97,6 +110,7 @@ def stage():
             print(f"staged (already identical): {dst}")
         else:
             shutil.copytree(src, dst, symlinks=True)
+            untrack(dst)
             (dst / STAGED_MARK).write_text(f"copied from {src} by {Path(__file__).name}\n")
             print(f"staged: {src} -> {dst}")
 

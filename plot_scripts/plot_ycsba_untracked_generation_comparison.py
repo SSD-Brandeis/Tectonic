@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Plot YCSB-A blind workload generation metrics."""
+"""Plot YCSB-A untracked workload generation metrics."""
 
 from __future__ import annotations
 
@@ -19,8 +19,8 @@ import matplotlib.ticker as ticker
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
-OUT_DIR = ROOT_DIR / "data" / "db_bench_exp_test" / "ycsba_blind"
-RESULTS_PATH = OUT_DIR / "ycsba_blind_generation_results.json"
+OUT_DIR = ROOT_DIR / "data" / "db_bench_exp_test" / "ycsba_untracked"
+RESULTS_PATH = OUT_DIR / "ycsba_untracked_generation_results.json"
 FONT_PATH = ROOT_DIR / "LinLibertine_Mah.ttf"
 
 TOOLS = [
@@ -178,7 +178,7 @@ def save_legend(base: Path) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Plot YCSB-A blind generation comparison results.")
+    parser = argparse.ArgumentParser(description="Plot YCSB-A untracked generation comparison results.")
     parser.add_argument("--results", default=str(RESULTS_PATH))
     args = parser.parse_args()
 
@@ -193,23 +193,23 @@ def main() -> None:
         data,
         "duration_s",
         "workload generation time (s)",
-        "ycsba_blind_generation_wall_time",
+        "ycsba_untracked_generation_wall_time",
     )
     plot_metric(
         data,
         "peak_vmhwm_kb",
         "peak memory footprint (MB)",
-        "ycsba_blind_generation_peak_memory",
+        "ycsba_untracked_generation_peak_memory",
         scale=1.0 / 1024.0,
     )
     plot_metric(
         data,
         "peak_threads",
         "peak thread count",
-        "ycsba_blind_generation_peak_threads",
+        "ycsba_untracked_generation_peak_threads",
     )
-    save_legend(OUT_DIR / "ycsba_blind_generation")
-    print(f"saved YCSB-A blind generation plots to {OUT_DIR}")
+    save_legend(OUT_DIR / "ycsba_untracked_generation")
+    print(f"saved YCSB-A untracked generation plots to {OUT_DIR}")
 
 
 if __name__ == "__main__":

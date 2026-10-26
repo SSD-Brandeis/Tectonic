@@ -30,114 +30,6 @@
     "sections"
   ],
   "$defs": {
-    "BlindPointQueries": {
-      "description": "Blind Point Query Specification",
-      "type": "object",
-      "properties": {
-        "character_set": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/CharacterSet"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "key": {
-          "description": "Key",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/StringExpr"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "op_count": {
-          "description": "Number of blind point queries",
-          "$ref": "#/$defs/NumberExpr"
-        }
-      },
-      "required": [
-        "op_count"
-      ]
-    },
-    "BlindRangeQueries": {
-      "type": "object",
-      "properties": {
-        "character_set": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/CharacterSet"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "key": {
-          "description": "Key",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/StringExpr"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "op_count": {
-          "description": "Number of blind range queries",
-          "$ref": "#/$defs/NumberExpr"
-        },
-        "scan_length": {
-          "description": "Specifies an exact scan length for range queries. Mutally exclusive with selectivity.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/NumberExpr"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "selectivity": {
-          "description": "Selectivity of range queries. Based off of the range of valid keys, not the full key-space.\nMutally exclusive with scan_length",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/NumberExpr"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "span": {
-          "description": "Makes each query a window over the values of the first `number` segment of `key` instead of a\nnumber of keys: the range is [key, the same key with that number increased by `span`), e.g. a\ntime window over timestamp keys. Written with a start and an end key. Mutually exclusive with\nselectivity and scan_length.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/NumberExpr"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "span_max_end": {
-          "description": "With `span`: windows must end at or below this value; start keys are redrawn until they do.",
-          "type": [
-            "number",
-            "null"
-          ],
-          "format": "double"
-        }
-      },
-      "required": [
-        "op_count"
-      ]
-    },
     "CharacterSet": {
       "type": "string",
       "enum": [
@@ -1754,6 +1646,114 @@
         }
       ]
     },
+    "UntrackedPointQueries": {
+      "description": "Untracked Point Query Specification",
+      "type": "object",
+      "properties": {
+        "character_set": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CharacterSet"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "key": {
+          "description": "Key",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StringExpr"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "op_count": {
+          "description": "Number of untracked point queries",
+          "$ref": "#/$defs/NumberExpr"
+        }
+      },
+      "required": [
+        "op_count"
+      ]
+    },
+    "UntrackedRangeQueries": {
+      "type": "object",
+      "properties": {
+        "character_set": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CharacterSet"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "key": {
+          "description": "Key",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StringExpr"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "op_count": {
+          "description": "Number of untracked range queries",
+          "$ref": "#/$defs/NumberExpr"
+        },
+        "scan_length": {
+          "description": "Specifies an exact scan length for range queries. Mutally exclusive with selectivity.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NumberExpr"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "selectivity": {
+          "description": "Selectivity of range queries. Based off of the range of valid keys, not the full key-space.\nMutally exclusive with scan_length",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NumberExpr"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "span": {
+          "description": "Makes each query a window over the values of the first `number` segment of `key` instead of a\nnumber of keys: the range is [key, the same key with that number increased by `span`), e.g. a\ntime window over timestamp keys. Written with a start and an end key. Mutually exclusive with\nselectivity and scan_length.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NumberExpr"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "span_max_end": {
+          "description": "With `span`: windows must end at or below this value; start keys are redrawn until they do.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        }
+      },
+      "required": [
+        "op_count"
+      ]
+    },
     "Updates": {
       "description": "Updates specification.",
       "type": "object",
@@ -1862,36 +1862,6 @@
     "WorkloadSpecGroup": {
       "type": "object",
       "properties": {
-        "blind_point_deletes": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/BlindPointQueries"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "blind_point_queries": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/BlindPointQueries"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "blind_range_queries": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/BlindRangeQueries"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
         "defaults": {
           "description": "Defaults for the group",
           "anyOf": [
@@ -2009,6 +1979,36 @@
           "anyOf": [
             {
               "$ref": "#/$defs/Inserts"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "untracked_point_deletes": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/UntrackedPointQueries"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "untracked_point_queries": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/UntrackedPointQueries"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "untracked_range_queries": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/UntrackedRangeQueries"
             },
             {
               "type": "null"

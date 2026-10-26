@@ -77,7 +77,7 @@
               }
             }
           },
-          "blind_range_queries": {
+          "untracked_range_queries": {
             "op_count": 78414,
             "key": {
               "segmented": {

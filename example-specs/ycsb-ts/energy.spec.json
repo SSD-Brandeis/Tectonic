@@ -105,9 +105,7 @@
                 "min": 86400000,
                 "max": 864000000
               }
-            },
-            //2020-01-01, past this date there is no data, must stop
-            "span_max_end": 1577836800000
+            }
           }
         }
       ]

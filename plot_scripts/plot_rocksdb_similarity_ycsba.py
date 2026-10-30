@@ -122,13 +122,13 @@ def avg_metrics(system: str) -> dict:
 
 FIGSIZE = (5, 3.6)
 
-def save_fixed_size(fig, path):
+def save_fixed_size(fig, path, left=0.28):
     # Lock every subplot PDF to exactly FIGSIZE inches, regardless of dataset
     # content: bbox_inches="tight" crops to the rendered content extent, which
     # drifts slightly between datasets (different tick-label digit counts,
     # etc.), so page sizes end up inconsistent across runs. Fixed margins
     # keep the page size identical while still leaving room for labels.
-    fig.subplots_adjust(left=0.28, right=0.97, bottom=0.24, top=0.97)
+    fig.subplots_adjust(left=left, right=0.97, bottom=0.24, top=0.97)
     fig.savefig(path)
     plt.close(fig)
 
@@ -294,7 +294,12 @@ def main():
     saved_paths.append(path)
 
     # ------------------ (C) DATA MOVEMENT ------------------
-    DATA_MOVEMENT_FIGSIZE = (2, 3.6)  # narrower than the shared FIGSIZE
+    # Narrower than the shared FIGSIZE. The default left margin is a fraction
+    # of the width, so on a narrow page it is too small for the tick labels
+    # plus the y label (needs ~0.74 in) and clips the label. Use a 0.85 in
+    # margin and widen the page so the plot area stays 1.38 in wide.
+    DATA_MOVEMENT_FIGSIZE = (2.3, 3.6)
+    DATA_MOVEMENT_LEFT = 0.85 / DATA_MOVEMENT_FIGSIZE[0]
     fig, ax = plt.subplots(figsize=DATA_MOVEMENT_FIGSIZE)
     categories = ["read", "write"]
     category_spacing = 0.55  # tighter gap between the two bar groups
@@ -311,7 +316,7 @@ def main():
     plot_style.apply_plot_style(ax)
     bar_handles, bar_labels = ax.get_legend_handles_labels()
     path = OUTPUT_DIR / f"{OUTPUT_NAME}_data_movement.pdf"
-    save_fixed_size(fig, path)
+    save_fixed_size(fig, path, left=DATA_MOVEMENT_LEFT)
     saved_paths.append(path)
 
     # ------------------ (D) CACHE BEHAVIOR ------------------

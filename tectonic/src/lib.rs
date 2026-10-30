@@ -789,7 +789,7 @@ fn pregenerate_range_queries_parallel(
         if let Some(span) = &brq.span {
             let span = span.evaluate(&mut rng);
             let (start, end) = key_expr
-                .generate_window(&mut rng, char_set, thread_id, span, brq.span_max_end)
+                .generate_window(&mut rng, char_set, thread_id, span)
                 .ok_or_else(|| anyhow!("Untracked range queries with a span need a key with a number segment"))?;
             queries.push(UntrackedRange::Window(start, end));
         } else {
@@ -1626,8 +1626,8 @@ fn generate_workload_spec(workload_spec: WorkloadSpec, output_file: &PathBuf, th
                 timings.time_update.as_secs_f64() + timings.time_merge.as_secs_f64(),
                 timings.time_query_point.as_secs_f64() + timings.time_query_point_empty.as_secs_f64() + timings.time_untracked_point_query.as_secs_f64(),
                 timings.time_delete_point.as_secs_f64() + timings.time_delete_point_empty.as_secs_f64() + timings.time_untracked_point_delete.as_secs_f64(),
-                timings.time_query_range.as_secs_f64(),
-                timings.time_delete_range.as_secs_f64() + timings.time_untracked_range_query.as_secs_f64()
+                timings.time_query_range.as_secs_f64() + timings.time_untracked_range_query.as_secs_f64(),
+                timings.time_delete_range.as_secs_f64()
             );
         }
         final_file.flush()?;

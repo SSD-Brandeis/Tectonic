@@ -12,6 +12,11 @@ Evaluates:
   4. Native X-Bench baseline on identical workloads A-F (5 trials each).
   5. (--stage breakdown) Heap headroom vs. working set, measured: G1 log (live heap after
      each GC) and the smaps split of resident memory at peak RSS, for 16m, 32m, 1024m, default.
+  6. (--stage xbench-breakdown) X-Bench A-F again (5 trials, current binary) with the same smaps
+     snapshot: file-backed vs. anonymous resident memory.
+  7. (--stage floor) Part 2 with 5 trials and 12m added (workload A load at 4m, 6m, 8m, 12m).
+  8. (--stage small-caps) Part 3 at 6m and 8m (A-F, load and run, 5 trials), into the same
+     ycsb_bounded_memory.json; each trial also records its exit code and OutOfMemoryError.
 """
 
 import os
@@ -297,8 +302,8 @@ def run_survivability_threshold():
     return results
 
 
-def run_ycsb_bounded_sweep():
-    """Runs the main empirical sweep across workloads A-F, 8 heap configs, 5 trials."""
+def run_ycsb_bounded_sweep(heaps=HEAP_CONFIGS):
+    """Runs the main empirical sweep across workloads A-F, the given heap configs, 5 trials."""
     print("\n=======================================================")
     print("Part 3: Main YCSB Bounded Memory Sweep (A-F, 8 configs, 5 trials)")
     print("=======================================================")
@@ -312,14 +317,14 @@ def run_ycsb_bounded_sweep():
         except Exception:
             data = {}
 
-    total_configs = len(WORKLOADS) * len(HEAP_CONFIGS)
+    total_configs = len(WORKLOADS) * len(heaps)
     config_idx = 0
 
     for w in WORKLOADS:
         if w not in data:
             data[w] = {}
 
-        for heap in HEAP_CONFIGS:
+        for heap in heaps:
             config_idx += 1
             print(f"\n[{config_idx}/{total_configs}] Workload {w.upper()} | Heap: {heap}")
 
@@ -371,6 +376,8 @@ def run_ycsb_bounded_sweep():
 
                 load_trials.append({
                     "trial": t,
+                    "exit_code": load_res["exit_code"],
+                    "out_of_memory": "OutOfMemoryError" in load_res["log_content"],
                     "duration_s": load_res["duration_s"],
                     "peak_rss_mb": load_res["peak_rss_mb"],
                     "throughput_ops_sec": load_metrics["throughput_ops_sec"],
@@ -381,6 +388,8 @@ def run_ycsb_bounded_sweep():
 
                 run_trials.append({
                     "trial": t,
+                    "exit_code": run_res["exit_code"],
+                    "out_of_memory": "OutOfMemoryError" in run_res["log_content"],
                     "duration_s": run_res["duration_s"],
                     "peak_rss_mb": run_res["peak_rss_mb"],
                     "throughput_ops_sec": run_metrics["throughput_ops_sec"],
@@ -390,8 +399,10 @@ def run_ycsb_bounded_sweep():
                 })
 
                 print(
-                    f"  Trial {t}: Load RSS = {load_res['peak_rss_mb']:.1f} MB ({load_res['duration_s']:.2f}s) | "
-                    f"Run RSS = {run_res['peak_rss_mb']:.1f} MB ({run_res['duration_s']:.2f}s)"
+                    f"  Trial {t}: Load RSS = {load_res['peak_rss_mb']:.1f} MB ({load_res['duration_s']:.2f}s, "
+                    f"exit {load_res['exit_code']}) | "
+                    f"Run RSS = {run_res['peak_rss_mb']:.1f} MB ({run_res['duration_s']:.2f}s, exit {run_res['exit_code']})",
+                    flush=True,
                 )
 
             # Calculate summary stats
@@ -425,9 +436,10 @@ def run_ycsb_bounded_sweep():
                 }
             }
 
-            # Save incrementally after each heap config
-            with open(results_file, "w") as f:
+            # Save incrementally after each heap config (atomically: a crash keeps the previous file)
+            with open(f"{results_file}.tmp", "w") as f:
                 json.dump(data, f, indent=2)
+            os.replace(f"{results_file}.tmp", results_file)
 
     return data
 
@@ -634,16 +646,119 @@ def run_heap_breakdown():
     return results
 
 
+def run_xbench_breakdown():
+    """
+    X-Bench measured the same way as YCSB in part 5: the same command as part 4 (current binary),
+    with an smaps snapshot at peak RSS split into file-backed mappings (the binary, libc) and
+    anonymous memory (everything X-Bench allocates). X-Bench has no Java heap.
+    """
+    print("\n=======================================================")
+    print("Part 6: X-Bench resident memory at peak RSS (smaps)")
+    print("=======================================================")
+    out_dir = LOGS_DIR / "xbench_breakdown"
+    results = {"binary_mtime": time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(TECTONIC_CLI.stat().st_mtime)),
+               "git_head": subprocess.run(["git", "-C", str(ROOT), "rev-parse", "--short", "HEAD"],
+                                          capture_output=True, text=True).stdout.strip()}
+    for w in WORKLOADS:
+        spec_path = ROOT / "example-specs" / "ycsb" / f"{w}.spec.json"
+        trials = []
+        for t in range(1, NUM_TRIALS + 1):
+            cmd = [str(TECTONIC_CLI), "generate", "-w", str(spec_path), "-o", str(TEMP_XBENCH_OUTPUT)]
+            cleanup_file(TEMP_XBENCH_OUTPUT)
+            res = run_and_measure(cmd, log_path=out_dir / f"{w}_trial{t}.log", snapshot_smaps=True)
+            size_mb = TEMP_XBENCH_OUTPUT.stat().st_size / (1024.0 * 1024.0) if TEMP_XBENCH_OUTPUT.exists() else 0.0
+            cleanup_file(TEMP_XBENCH_OUTPUT)
+            parts = classify_smaps(res["smaps_peak"], (0, 0))
+            trials.append({
+                "trial": t,
+                "exit_code": res["exit_code"],
+                "duration_s": res["duration_s"],
+                "peak_rss_mb": res["peak_rss_mb"],
+                "output_size_mb": size_mb,
+                "ru_minflt": res["ru_minflt"],
+                "resident_at_peak": {"file_backed_mb": parts["file_backed_mb"],
+                                     "anon_mb": parts["other_anon_mb"],
+                                     "total_mb": parts["total_mb"],
+                                     "largest_files_mb": parts["largest_files_mb"]},
+            })
+            print(f"  {w}_trial{t}: RSS {res['peak_rss_mb']:.1f} MB = file {parts['file_backed_mb']:.1f} + "
+                  f"anon {parts['other_anon_mb']:.1f} (snapshot {parts['total_mb']:.1f}), "
+                  f"{res['duration_s']:.2f} s, exit {res['exit_code']}")
+        results[w] = trials
+        with open(RESULTS_DIR / "xbench_breakdown.json", "w") as f:
+            json.dump(results, f, indent=2)
+    return results
+
+
+FLOOR_HEAPS = ["4m", "6m", "8m", "12m"]
+SMALL_CAP_HEAPS = ["6m", "8m"]  # part 8: the main sweep below 16m (4m does not run, part 7)
+
+
+def run_heap_floor():
+    """
+    Part 2 again with NUM_TRIALS trials and 12m added: how far below 16m YCSB's heap can go.
+    Workload A load only; the load phase is the same 1M inserts in every core workload.
+    """
+    print("\n=======================================================")
+    print("Part 7: Heap floor below 16m (workload A load, 5 trials)")
+    print("=======================================================")
+    results = {}
+    for heap in FLOOR_HEAPS:
+        trials = []
+        for t in range(1, NUM_TRIALS + 1):
+            cmd = [
+                "java", f"-Xmx{heap}", "-cp", YCSB_CP, "site.ycsb.Client",
+                "-db", "site.ycsb.db.FileClient",
+                "-P", "workloads/workloada",
+                "-p", f"file.output={TEMP_OUTPUT}",
+                "-p", f"recordcount={RECORD_COUNT}",
+                "-p", f"operationcount={OPERATION_COUNT}",
+                "-load",
+            ]
+            cleanup_file(TEMP_OUTPUT)
+            res = run_and_measure(cmd, cwd=YCSB_DIR, log_path=LOGS_DIR / "floor" / f"a_{heap}_trial{t}_load.log")
+            cleanup_file(TEMP_OUTPUT)
+            ycsb = parse_ycsb_log(res["log_content"])
+            trials.append({
+                "trial": t,
+                "exit_code": res["exit_code"],
+                "out_of_memory": "OutOfMemoryError" in res["log_content"],
+                "duration_s": res["duration_s"],
+                "peak_rss_mb": res["peak_rss_mb"],
+                "throughput_ops_sec": ycsb["throughput_ops_sec"],
+                "gc_count": ycsb["gc_count"],
+                "gc_time_pct": ycsb["gc_time_pct"],
+            })
+            print(f"  -Xmx{heap} trial {t}: exit {res['exit_code']}, {res['duration_s']:.2f} s, "
+                  f"RSS {res['peak_rss_mb']:.1f} MB, GC {ycsb['gc_count']} / {ycsb['gc_time_pct']}%")
+        results[heap] = trials
+        with open(RESULTS_DIR / "ycsb_heap_floor.json", "w") as f:
+            json.dump(results, f, indent=2)
+    return results
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--stage", choices=["all", "breakdown"], default="all",
-                        help="all: parts 1-4 (the original sweep); breakdown: part 5 only")
+    parser.add_argument("--stage", choices=["all", "breakdown", "xbench-breakdown", "floor", "small-caps"],
+                        default="all",
+                        help="all: parts 1-4 (the original sweep); breakdown: part 5; "
+                             "xbench-breakdown: part 6; floor: part 7; small-caps: part 8")
     args = parser.parse_args()
 
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     LOGS_DIR.mkdir(parents=True, exist_ok=True)
     if args.stage == "breakdown":
         run_heap_breakdown()
+        return
+    if args.stage == "xbench-breakdown":
+        run_xbench_breakdown()
+        return
+    if args.stage == "floor":
+        run_heap_floor()
+        return
+    if args.stage == "small-caps":
+        for heap in SMALL_CAP_HEAPS:  # every workload at 6m, then every workload at 8m
+            run_ycsb_bounded_sweep([heap])
         return
 
     print("===================================================================")

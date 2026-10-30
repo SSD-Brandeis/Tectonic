@@ -15,6 +15,7 @@ R1.O7: X-Bench vs. YCSB-IVS / YCSB-TS on RocksDB, plotted like Fig. 12 of the pa
 Input : data/revision/R1.O7_ycsb-derivatives/results/execution.json (execute stage of
         run_scripts/run_ycsb_derivatives_fidelity.py)
 Output: data/revision/R1.O7_ycsb-derivatives/plots/<workload>_{throughput,latency,data_movement}.pdf,
+        plots/<workload>_throughput_log.pdf ((A) on a log y-axis starting at 10^0 MB),
         plots/ycsb-{ivs,ts}_legend.pdf (one per YCSB derivative), plots/<workload>_preview.png (the three panels side by side)
 """
 import os
@@ -76,7 +77,7 @@ def smooth(arr):
     return np.convolve(arr, np.ones(WINDOW) / WINDOW, mode="same")
 
 
-def panel_throughput(ax, trials, ycsb):
+def panel_throughput(ax, trials, ycsb, log=False):
     series = {side: mean_iostat(trials[side]) for side, _ in SIDES}
     n = min(len(r) for r, _ in series.values())
     # sample i is the mean over the second ending at i + 1; nothing has moved at x = 0
@@ -89,8 +90,16 @@ def panel_throughput(ax, trials, ycsb):
     ax.set_xlabel(plot_style.format_label("time (s)"))
     ax.set_ylabel(plot_style.format_label("bytes transferred (MB)"))
     ax.yaxis.set_label_coords(-0.16, 0.4)
+    if log:  # the y-axis starts strictly at 10^0 MB; seconds that move less than 1 MB fall below it
+        ax.set_yscale("log")
     plot_style.apply_plot_style(ax)
     ax.set_xlim(left=-0.03 * n)
+    if log:
+        ax.set_ylim(bottom=1.0)
+
+
+def panel_throughput_log(ax, trials, ycsb):
+    panel_throughput(ax, trials, ycsb, log=True)
 
 
 def panel_latency(ax, trials, ycsb):
@@ -143,6 +152,8 @@ def panel_data_movement(ax, trials, ycsb):
 
 PANELS = (("throughput", panel_throughput, FIGSIZE), ("latency", panel_latency, FIGSIZE),
           ("data_movement", panel_data_movement, DATA_MOVEMENT_FIGSIZE))
+# saved as separate PDFs but left out of the preview
+EXTRA_PANELS = (("throughput_log", panel_throughput_log, FIGSIZE),)
 
 
 def main():
@@ -155,7 +166,7 @@ def main():
             print(f"skip {name}: no RocksDB statistics")
             continue
         ycsb = ycsb_name(name)
-        for panel, draw, size in PANELS:
+        for panel, draw, size in PANELS + EXTRA_PANELS:
             fig, ax = plt.subplots(figsize=size)
             draw(ax, trials, ycsb)
             for h, l in zip(*ax.get_legend_handles_labels()):

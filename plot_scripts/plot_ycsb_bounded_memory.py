@@ -3,11 +3,10 @@
 Plots for R2.O2(iii): YCSB Memory Under Bounded JVM Heap
 Disentangling Headroom from Working Set
 
-Generates:
-  1. plots/ycsb_memory_vs_heap.pdf (and .png)
-  2. plots/ycsb_duration_and_gc.pdf (and .png)
-  3. plots/memory_comparison_bars.pdf (and .png)
-  4. plots/ycsb_heap_breakdown.pdf (and .png), from results/ycsb_heap_breakdown.json
+Generates plots/pdf/<name>.pdf and plots/png/<name>.png for
+  xbench_vs_ycsb_capped, xbench_vs_ycsb_capped_log, ycsb_heap_floor_{memory,time}[_log];
+  with --superseded also two figures of the 2026-10-26 version: ycsb_duration_and_gc, memory_comparison_bars.
+plots/README.md describes each figure and explains its terms (-Xmx, GC, heap, ...).
 
 plot_style turns on text.usetex, so a literal percent sign must be written as \\%.
 """
@@ -18,6 +17,7 @@ import json
 from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.transforms as mtransforms
 import matplotlib.ticker as mticker
 
 ROOT = Path("/home/cc/Tectonic")
@@ -25,7 +25,10 @@ EXP_DIR = ROOT / "data" / "revision" / "R2.O2_ycsb-bounded-memory"
 RESULTS_DIR = EXP_DIR / "results"
 ENV_DIR = EXP_DIR / "logs" / "env"
 PLOTS_DIR = EXP_DIR / "plots"
-PLOTS_DIR.mkdir(parents=True, exist_ok=True)
+PDF_DIR = PLOTS_DIR / "pdf"
+PNG_DIR = PLOTS_DIR / "png"
+PDF_DIR.mkdir(parents=True, exist_ok=True)
+PNG_DIR.mkdir(parents=True, exist_ok=True)
 
 # Add plot_style
 sys.path.insert(0, str(ROOT / "plot_scripts"))
@@ -34,14 +37,6 @@ try:
 except ImportError:
     plot_style = None
 
-# Colors
-COLOR_LOAD = "#1f77b4"     # Tab blue
-COLOR_RUN = "#ff7f0e"      # Tab orange
-COLOR_XBENCH = "#2ca02c"   # Tab green
-COLOR_JVM_BASE = "#7f7f7f" # Grey
-COLOR_HEADROOM = "#d62728" # Tab red / pink shading
-
-HEAP_LABELS = ["16m", "32m", "64m", "128m", "256m", "512m", "1024m", "Default"]
 WORKLOADS = ["a", "b", "c", "d", "e", "f"]
 
 
@@ -55,83 +50,6 @@ def load_data():
     with open(RESULTS_DIR / "ycsb_threshold.json", "r") as f:
         threshold_data = json.load(f)
     return ycsb_data, xbench_data, base_data, threshold_data
-
-
-def plot_memory_vs_heap(ycsb_data, xbench_data, base_data):
-    fig, ax = plt.subplots(figsize=(7.5, 4.8), dpi=300)
-
-    # Compute mean across workloads A-F for each heap config
-    load_means = []
-    load_mins = []
-    load_maxs = []
-    run_means = []
-    run_mins = []
-    run_maxs = []
-
-    for h in HEAP_LABELS:
-        h_key = h.lower() if h != "Default" else "default"
-        l_vals = [ycsb_data[w][h_key]["summary"]["load_rss"]["mean"] for w in WORKLOADS]
-        r_vals = [ycsb_data[w][h_key]["summary"]["run_rss"]["mean"] for w in WORKLOADS]
-        load_means.append(np.mean(l_vals))
-        load_mins.append(np.min(l_vals))
-        load_maxs.append(np.max(l_vals))
-        run_means.append(np.mean(r_vals))
-        run_mins.append(np.min(r_vals))
-        run_maxs.append(np.max(r_vals))
-
-    x = np.arange(len(HEAP_LABELS))
-
-    # Shaded bands for base JVM and working set
-    base_jvm_rss = base_data["java_version_16m"]["mean_rss_mb"]  # ~35.0 MB
-    xbench_rss = np.mean([xbench_data[w]["mean_rss_mb"] for w in WORKLOADS])  # ~92.7 MB
-
-    # Plot base JVM runtime line
-    ax.axhline(base_jvm_rss, color=COLOR_JVM_BASE, linestyle=":", linewidth=1.5,
-               label=f"java -Xmx16m -version ({base_jvm_rss:.1f} MB)")
-
-    # Plot X-Bench baseline
-    ax.axhline(xbench_rss, color=COLOR_XBENCH, linestyle="--", linewidth=1.8,
-               label=f"X-Bench, load + run in one process ({xbench_rss:.1f} MB)")
-
-    # Plot Load and Run Curves
-    ax.plot(x, load_means, marker="o", markersize=7, linewidth=2.2, color=COLOR_LOAD,
-            label="YCSB Load Phase (1M inserts)")
-    ax.fill_between(x, load_mins, load_maxs, color=COLOR_LOAD, alpha=0.15)
-
-    ax.plot(x, run_means, marker="s", markersize=7, linewidth=2.2, color=COLOR_RUN,
-            label="YCSB Run Phase (1M ops)")
-    ax.fill_between(x, run_mins, run_maxs, color=COLOR_RUN, alpha=0.15)
-
-    # Annotate Knee of Curve & Headroom
-    ax.annotate(f"-Xmx16m: {load_means[0]:.0f} MB (load)",
-                xy=(0, load_means[0]), xytext=(0.5, 320),
-                arrowprops=dict(facecolor="black", shrink=0.08, width=1, headwidth=6),
-                fontsize=9.5, fontweight="bold",
-                bbox=dict(boxstyle="round,pad=0.3", facecolor="#e8f4f8", edgecolor="#1f77b4"))
-
-    ax.annotate(f"default heap: +{load_means[7] - load_means[0]:,.0f} MB\nover -Xmx16m (load)",
-                xy=(7, load_means[7]), xytext=(4.3, 1150),
-                arrowprops=dict(facecolor="black", shrink=0.08, width=1, headwidth=6),
-                fontsize=9.5, fontweight="bold",
-                bbox=dict(boxstyle="round,pad=0.3", facecolor="#fde8e8", edgecolor="#d62728"))
-
-    ax.set_xticks(x)
-    ax.set_xticklabels(HEAP_LABELS, fontsize=10.5)
-    ax.set_xlabel("Configured JVM Heap Bound (-Xmx)", fontsize=11, fontweight="bold")
-    ax.set_ylabel("Peak Resident Set Size (RSS in MB)", fontsize=11, fontweight="bold")
-    ax.set_title("R2.O2(iii): YCSB Peak Memory vs. Bounded JVM Heap Ceiling (1M Scale)",
-                 fontsize=12, fontweight="bold", pad=12)
-
-    ax.set_ylim(0, 1550)
-    ax.yaxis.set_major_locator(mticker.MultipleLocator(200))
-    ax.grid(True, linestyle="--", alpha=0.4)
-    ax.legend(loc="upper left", frameon=True, framealpha=0.9, fontsize=9.5)
-
-    fig.tight_layout()
-    fig.savefig(PLOTS_DIR / "ycsb_memory_vs_heap.pdf")
-    fig.savefig(PLOTS_DIR / "ycsb_memory_vs_heap.png")
-    plt.close(fig)
-    print(f"Generated {PLOTS_DIR / 'ycsb_memory_vs_heap.pdf'}")
 
 
 def plot_duration_and_gc(ycsb_data, threshold_data):
@@ -159,10 +77,6 @@ def plot_duration_and_gc(ycsb_data, threshold_data):
 
     # Panel 1: Duration
     ax1.plot(x, durs, marker="o", color="#d62728", linewidth=2.2, markersize=6)
-    ax1.axvline(2, color="gray", linestyle=":", linewidth=1.2)
-    ax1.annotate(f"16m: {durs[2]:.2f} s,\nGC {gc_pcts[2]:.1f}\\% of runtime", xy=(2, durs[2]), xytext=(2.6, 60),
-                 arrowprops=dict(facecolor="black", shrink=0.08, width=1, headwidth=5),
-                 fontsize=9, bbox=dict(boxstyle="round,pad=0.2", facecolor="#fff", edgecolor="gray"))
     ax1.set_xticks(x)
     ax1.set_xticklabels(threshold_labels, rotation=35, fontsize=9.5)
     ax1.set_ylabel("Load Duration (seconds)", fontsize=10.5, fontweight="bold")
@@ -181,10 +95,7 @@ def plot_duration_and_gc(ycsb_data, threshold_data):
     ax2.set_ylim(0, 100)
 
     fig.tight_layout()
-    fig.savefig(PLOTS_DIR / "ycsb_duration_and_gc.pdf")
-    fig.savefig(PLOTS_DIR / "ycsb_duration_and_gc.png")
-    plt.close(fig)
-    print(f"Generated {PLOTS_DIR / 'ycsb_duration_and_gc.pdf'}")
+    save(fig, "ycsb_duration_and_gc")
 
 
 def plot_comparison_bars(ycsb_data, xbench_data):
@@ -218,8 +129,8 @@ def plot_comparison_bars(ycsb_data, xbench_data):
 
     ax.set_xticks(x)
     ax.set_xticklabels([f"Workload {w.upper()}" for w in WORKLOADS], fontsize=10.5, fontweight="bold")
-    ax.set_ylabel("Peak Resident Set Size (RSS in MB)", fontsize=11, fontweight="bold")
-    ax.set_title("Peak RSS per workload (1M records, 1M operations)",
+    ax.set_ylabel("Memory footprint (MB)", fontsize=11, fontweight="bold")
+    ax.set_title("Memory footprint per workload (1M records, 1M operations)",
                  fontsize=11.5, fontweight="bold", pad=12)
     ax.set_ylim(0, 1600)
     ax.yaxis.set_major_locator(mticker.MultipleLocator(200))
@@ -228,10 +139,7 @@ def plot_comparison_bars(ycsb_data, xbench_data):
     ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.12), ncol=3, frameon=False, fontsize=9.5)
 
     fig.tight_layout()
-    fig.savefig(PLOTS_DIR / "memory_comparison_bars.pdf")
-    fig.savefig(PLOTS_DIR / "memory_comparison_bars.png")
-    plt.close(fig)
-    print(f"Generated {PLOTS_DIR / 'memory_comparison_bars.pdf'}")
+    save(fig, "memory_comparison_bars")
 
 
 def default_max_heap():
@@ -240,70 +148,153 @@ def default_max_heap():
     return f"max {int(m[1]) / 2**30:.0f} GiB"
 
 
-# Reference categorical palette, slots 1-4 in order; hatches as a second cue
-BREAKDOWN_PARTS = [
-    ("live", "Java heap: live after GC (working set)", "#2a78d6", ""),
-    ("headroom", "Java heap: resident, not live (headroom)", "#eb6834", "///"),
-    ("anon", "other anonymous: metaspace, code cache, GC, malloc", "#1baf7a", ".."),
-    ("file", "file-backed: libjvm.so, CDS archive, libc", "#eda100", "\\\\"),
-]
+# Figures 1-3 below compare YCSB with a capped Java heap against X-Bench. Styles follow the paper's
+# Fig. 7 (plot_figure_6_validate.py): X-Bench solid tab:red, YCSB white with black hatching.
+CAPS = ["6m", "8m", "16m"]  # main figure: 6m is the smallest cap at which YCSB runs (4m fails, T13)
+CAP_LABELS = {"6m": "YCSB, heap capped at 6 MB", "8m": "YCSB, heap capped at 8 MB",
+              "16m": "YCSB, heap capped at 16 MB"}
+BAR_STYLE = {
+    "xbench": dict(facecolor="tab:red", edgecolor="black", linewidth=0.5),
+    "6m": dict(facecolor="#bbbbbb", edgecolor="black", linewidth=0.5, hatch="\\\\\\"),
+    "8m": dict(facecolor="white", edgecolor="black", linewidth=0.5, hatch="---"),
+    "16m": dict(facecolor="white", edgecolor="black", linewidth=0.5, hatch="/////"),
+    "default": dict(facecolor="white", edgecolor="black", linewidth=0.5, hatch="xxx"),
+}
 
 
-def plot_heap_breakdown(breakdown):
-    heaps = list(breakdown["a"].keys())
-    fig, axes = plt.subplots(1, 2, figsize=(10, 4.4), dpi=300, sharey=True)
-    for ax, phase in zip(axes, ["load", "run"]):
-        parts = {k: [] for k, *_ in BREAKDOWN_PARTS}
-        peaks = []
-        for h in heaps:
-            trials = [t for w in WORKLOADS for t in breakdown[w][h][phase]]
-            heap_res = [t["resident_at_peak"]["java_heap_mb"] for t in trials]
-            # a run without any GC has no live-heap measurement: count all of its heap as live
-            live = [min(t["live_after_gc_max_mb"] if t["live_after_gc_max_mb"] is not None else r, r)
-                    for t, r in zip(trials, heap_res)]
-            parts["live"].append(np.mean(live))
-            parts["headroom"].append(np.mean(heap_res) - np.mean(live))
-            parts["anon"].append(np.mean([t["resident_at_peak"]["other_anon_mb"] for t in trials]))
-            parts["file"].append(np.mean([t["resident_at_peak"]["file_backed_mb"] for t in trials]))
-            peaks.append(np.mean([t["peak_rss_mb"] for t in trials]))
-        x = np.arange(len(heaps))
-        bottom = np.zeros(len(heaps))
-        for key, label, color, hatch in BREAKDOWN_PARTS:
-            ax.bar(x, parts[key], 0.6, bottom=bottom, label=label, color=color, hatch=hatch,
-                   edgecolor="white", linewidth=1.0)
-            bottom += np.array(parts[key])
-        for xi, top, peak in zip(x, bottom, peaks):
-            ax.annotate(f"{peak:,.0f}", xy=(xi, top), xytext=(0, 3), textcoords="offset points",
-                        ha="center", va="bottom", fontsize=9)
-        ax.set_xticks(x)
-        ax.set_xticklabels([h if h != "default" else "default" for h in heaps], fontsize=10)
-        ax.set_xlabel("JVM heap bound (-Xmx)", fontsize=10.5, fontweight="bold")
-        ax.set_title(f"YCSB {phase} phase, mean of A-F", fontsize=11, fontweight="bold")
-        ax.tick_params(axis="y", labelsize=10)
-        ax.grid(True, linestyle="--", alpha=0.4, axis="y")
-    axes[0].set_ylabel("Resident memory at peak RSS (MB)", fontsize=10.5, fontweight="bold")
-    handles, labels = axes[0].get_legend_handles_labels()
-    fig.legend(handles[::-1], labels[::-1], loc="lower center", ncol=2, frameon=False, fontsize=9)
-    fig.tight_layout(rect=(0, 0.13, 1, 1))
-    fig.savefig(PLOTS_DIR / "ycsb_heap_breakdown.pdf")
-    fig.savefig(PLOTS_DIR / "ycsb_heap_breakdown.png")
+FIG_FONT = {"font.size": 10, "axes.labelsize": 10.5, "xtick.labelsize": 10, "ytick.labelsize": 10}
+
+
+def save(fig, name):
+    fig.savefig(PDF_DIR / f"{name}.pdf", bbox_inches="tight")
+    fig.savefig(PNG_DIR / f"{name}.png", bbox_inches="tight")
     plt.close(fig)
-    print(f"Generated {PLOTS_DIR / 'ycsb_heap_breakdown.pdf'}")
+    print(f"Generated {PDF_DIR / (name + '.pdf')} and png/{name}.png")
+
+
+def ycsb_pipeline(ycsb_data, w, heap):
+    """YCSB generates a workload with two JVMs, load then run. Per trial, the pipeline's peak memory
+    is the larger of the two peaks and its time is the sum; returns the means over trials."""
+    pairs = list(zip(ycsb_data[w][heap]["load_trials"], ycsb_data[w][heap]["run_trials"]))
+    assert all(l["trial"] == r["trial"] for l, r in pairs)
+    mem = [max(l["peak_rss_mb"], r["peak_rss_mb"]) for l, r in pairs]
+    secs = [l["duration_s"] + r["duration_s"] for l, r in pairs]
+    return np.mean(mem), np.mean(secs)
+
+
+def xbench_means(xbench, w):
+    trials = xbench[w]
+    return np.mean([t["peak_rss_mb"] for t in trials]), np.mean([t["duration_s"] for t in trials])
+
+
+def plot_xbench_vs_ycsb(ycsb_data, xbench, log=False):
+    """Figure 1: peak memory and generation time per workload, X-Bench vs. YCSB with a capped heap."""
+    fig, axes = plt.subplots(1, 2, figsize=(11, 3.6))
+    x = np.arange(len(WORKLOADS))
+    width = 0.8 / (len(CAPS) + 1)
+    for ax, idx, ylabel in [(axes[0], 0, "memory footprint (MB)"), (axes[1], 1, "generation time (s)")]:
+        series = [("xbench", "X-Bench", [xbench_means(xbench, w)[idx] for w in WORKLOADS])]
+        series += [(h, CAP_LABELS[h], [ycsb_pipeline(ycsb_data, w, h)[idx] for w in WORKLOADS]) for h in CAPS]
+        for i, (key, label, vals) in enumerate(series):
+            ax.bar(x + (i - len(CAPS) / 2) * width, vals, width, label=label, **BAR_STYLE[key])
+        top = max(max(v) for *_, v in series)
+        if log:  # y-axes start strictly at 10^0; every bar is above it
+            ax.set_yscale("log")
+            ax.set_ylim(1.0, top * 2)
+        else:
+            ax.set_ylim(0, top * 1.1)
+        ax.set_xticks(x)
+        ax.set_xticklabels([w.upper() for w in WORKLOADS])
+        ax.set_xlabel(plot_style.format_label("YCSB workload") if plot_style else "YCSB workload")
+        ax.set_ylabel(plot_style.format_label(ylabel) if plot_style else ylabel)
+        ax.grid(True, linestyle="--", alpha=0.4, axis="y")
+        ax.set_axisbelow(True)
+    axes[0].set_title("(A) memory footprint", fontsize=11)
+    axes[1].set_title("(B) generation time", fontsize=11)
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.tight_layout()
+    fig.legend(handles, labels, loc="upper center", ncol=4, frameon=False, fontsize=9.5,
+               bbox_to_anchor=(0.5, 0.0), handlelength=1.6, handleheight=0.9)
+    save(fig, "xbench_vs_ycsb_capped_log" if log else "xbench_vs_ycsb_capped")
+
+
+HEAP_FLOOR_FONT = {"font.size": 17, "axes.labelsize": 17, "xtick.labelsize": 16, "ytick.labelsize": 16,
+                   "legend.fontsize": 16}
+
+
+def plot_heap_floor(floor, ycsb_data, xbench, log=False):
+    """Figure 3: the two promised metrics of workload A as YCSB's heap cap shrinks, one figure each
+    (ycsb_heap_floor_memory, ycsb_heap_floor_time), with X-Bench as a line. YCSB as in Figure 1 (per trial
+    the larger peak of load and run, the sum of their times), every cap of the main sweep; line = mean of the
+    5 trials (no min-max shading: the default heap's spread fans it out from 1024). 4m from the floor runs (the load fails); 12m is left out
+    (load phase only). The default heap (no -Xmx, the paper's setting) is the last point of the line."""
+    caps = ["6m", "8m", "16m", "32m", "64m", "128m", "256m", "512m", "1024m", "default"]
+    x_fail, x = 1, np.arange(2, len(caps) + 2)  # x = 0 is the origin, labelled 0
+    labels = ["0", "4"] + [h[:-1] for h in caps[:-1]] + [f"default\n({default_max_heap()[4:]})"]
+    metrics = [(0, "memory", "memory footprint (MB)", "upper left"), (1, "time", "generation time (s)", "upper right")]
+    for idx, name, ylabel, legend_loc in metrics:
+        with plt.rc_context(HEAP_FLOOR_FONT):
+            fig, ax = plt.subplots(figsize=(5.8, 3.6))
+            per_trial = np.array([[max(l["peak_rss_mb"], r["peak_rss_mb"]) if idx == 0 else l["duration_s"] + r["duration_s"]
+                                   for l, r in zip(ycsb_data["a"][h]["load_trials"], ycsb_data["a"][h]["run_trials"])]
+                                  for h in caps])
+            ycsb_mean, hi = per_trial.mean(axis=1), per_trial.max(axis=1)
+            xb = np.array([t["peak_rss_mb"] if idx == 0 else t["duration_s"] for t in xbench["a"]])
+            # the y-axis ends at the first tick at or above the highest trial: 10^k on log, a round tick on linear
+            if log:  # the y-axis starts strictly at 10^0; every value is above it
+                ax.set_yscale("log")
+                bottom, top = 1.0, 10.0 ** np.ceil(np.log10(hi.max()))
+            else:
+                ax.set_ylim(0.0, hi.max())
+                bottom, top = 0.0, min(t for t in ax.get_yticks() if t >= hi.max())
+            ax.axhspan(xb.min(), xb.max(), color="tab:red", alpha=0.15, linewidth=0)
+            ax.axhline(xb.mean(), color="tab:red", linestyle="--", linewidth=1.8, label="X-Bench")
+            ax.plot(x, ycsb_mean, color="black", marker="o", markersize=5, linewidth=1.8, label="YCSB")
+            label_box = dict(boxstyle="round,pad=0.12", facecolor="white", edgecolor="none", alpha=0.85)
+            # the note goes below X-Bench if that leaves at least 40% of the axis height, else just above it
+            below = np.log10(xb.min() / bottom) / np.log10(top / bottom) if log else (xb.min() - bottom) / (top - bottom)
+            ax.annotate("fails:\nout of\nmemory", xy=(x_fail, bottom if below >= 0.4 else xb.max()), xytext=(0, 4),
+                        textcoords="offset points",
+                        ha="center", va="bottom", fontsize=14, bbox=label_box, zorder=5)
+            ax.set_ylim(bottom, top)
+            ax.set_xlim(0, x[-1] + 0.5)
+            ax.set_xticks([0, x_fail, *x])
+            ax.set_xticklabels(labels, fontsize=14)  # 11 categories: 16 pt runs 512, 1024 and default together
+            default_label = ax.get_xticklabels()[-1]
+            default_label.set_fontsize(12)
+            default_label.set_transform(default_label.get_transform()  # clear of the 1024 label
+                                        + mtransforms.ScaledTranslation(7 / 72, 0, fig.dpi_scale_trans))
+            ax.set_xlabel("YCSB Java heap cap, -Xmx (MB)")  # not format_label: it lowercases Java and -Xmx
+            ax.set_ylabel(plot_style.format_label(ylabel) if plot_style else ylabel)
+            ax.grid(True, linestyle="--", alpha=0.4)
+            ax.set_axisbelow(True)
+            handles, legend_labels = ax.get_legend_handles_labels()
+            ax.legend(handles[::-1], legend_labels[::-1], loc=legend_loc, frameon=False, handlelength=1.8,
+                      borderaxespad=0.3)
+            fig.tight_layout(pad=0.2)
+            save(fig, f"ycsb_heap_floor_{name}" + ("_log" if log else ""))
 
 
 def main():
-    print("Generating publication-quality figures for R2.O2(iii)...")
+    print("Generating figures for R2.O2(iii)...")
     ycsb_data, xbench_data, base_data, threshold_data = load_data()
+    with open(RESULTS_DIR / "xbench_breakdown.json") as f:
+        xbench = json.load(f)
+    with open(RESULTS_DIR / "ycsb_heap_floor.json") as f:
+        floor = json.load(f)
 
-    plot_memory_vs_heap(ycsb_data, xbench_data, base_data)
-    plot_duration_and_gc(ycsb_data, threshold_data)
-    plot_comparison_bars(ycsb_data, xbench_data)
-    breakdown_path = RESULTS_DIR / "ycsb_heap_breakdown.json"
-    if breakdown_path.exists():
-        with open(breakdown_path) as f:
-            plot_heap_breakdown(json.load(f))
+    with plt.rc_context(FIG_FONT):  # plot_style's 22 pt suits single small panels, not these
+        plot_xbench_vs_ycsb(ycsb_data, xbench)
+        plot_xbench_vs_ycsb(ycsb_data, xbench, log=True)
+        plot_heap_floor(floor, ycsb_data, xbench)
+        plot_heap_floor(floor, ycsb_data, xbench, log=True)
 
-    print("All figures successfully created in:", PLOTS_DIR)
+        if "--superseded" in sys.argv:
+            # figures of the 2026-10-26 version, replaced by the ones above
+            plot_duration_and_gc(ycsb_data, threshold_data)
+            plot_comparison_bars(ycsb_data, xbench_data)
+
+    print("All figures created in:", PDF_DIR, "and", PNG_DIR)
 
 
 if __name__ == "__main__":

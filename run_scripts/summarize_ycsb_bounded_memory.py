@@ -14,7 +14,8 @@ from pathlib import Path
 EXP_DIR = Path("/home/cc/Tectonic/data/revision/R2.O2_ycsb-bounded-memory")
 RESULTS_DIR = EXP_DIR / "results"
 WORKLOADS = ["a", "b", "c", "d", "e", "f"]
-HEAPS = ["16m", "32m", "64m", "128m", "256m", "512m", "1024m", "default"]
+HEAPS = ["6m", "8m", "16m", "32m", "64m", "128m", "256m", "512m", "1024m", "default"]
+COMPARED = ["6m", "8m", "16m", "32m", "default"]  # T10: YCSB settings set against X-Bench
 PHASES = ["load", "run"]
 
 
@@ -43,6 +44,95 @@ def table(header, rows):
 
 def pct(new, old):
     return f"{(new - old) / old * 100:+.1f}%"
+
+
+def pipeline(ycsb, w, heap):
+    """YCSB's two JVMs (load, then run) per trial: peak = the larger peak, time = the sum. Means."""
+    pairs = list(zip(ycsb[w][heap]["load_trials"], ycsb[w][heap]["run_trials"]))
+    assert all(l["trial"] == r["trial"] for l, r in pairs)
+    return (mean([max(l["peak_rss_mb"], r["peak_rss_mb"]) for l, r in pairs]),
+            mean([l["duration_s"] + r["duration_s"] for l, r in pairs]))
+
+
+def new_tables(ycsb, xbench_old, breakdown):
+    """T10-T13 (2026-10-27): X-Bench vs. YCSB with a capped heap, X-Bench's memory split, heap floor."""
+    md = []
+    xb_path, floor_path = RESULTS_DIR / "xbench_breakdown.json", RESULTS_DIR / "ycsb_heap_floor.json"
+    if not xb_path.exists():
+        return md
+    xb = load(xb_path.name)
+    xbm = {w: (mean([t["peak_rss_mb"] for t in xb[w]]), mean([t["duration_s"] for t in xb[w]])) for w in WORKLOADS}
+
+    for idx, what, unit in [(0, "peak memory", "MB"), (1, "generation time (load + run)", "s")]:
+        md += [f"## T10-{'memory' if idx == 0 else 'time'}: {what} ({unit}), X-Bench vs. YCSB per heap setting", "",
+               "X-Bench: `xbench_breakdown.json` (current binary, 5 trials). YCSB: per trial, the larger of the "
+               "load and run peaks (memory) or their sum (time), then the mean of 5 trials. Ratio = YCSB / X-Bench.", ""]
+        f = (lambda v: f"{v:.1f}") if idx == 0 else (lambda v: f"{v:.2f}")
+        rows, ratios = [], {h: [] for h in COMPARED}
+        for w in WORKLOADS:
+            row = [w.upper(), f(xbm[w][idx])]
+            for h in COMPARED:
+                v = pipeline(ycsb, w, h)[idx]
+                ratios[h].append(v / xbm[w][idx])
+                row += [f(v), f"{v / xbm[w][idx]:.2f}x"]
+            rows.append(row)
+        rows.append(["**mean A-F**", f"**{f(mean([xbm[w][idx] for w in WORKLOADS]))}**"]
+                    + sum([[f"**{f(mean([pipeline(ycsb, w, h)[idx] for w in WORKLOADS]))}**",
+                            f"{min(ratios[h]):.2f}-{max(ratios[h]):.2f}x"] for h in COMPARED], []))
+        md += [table(["Workload", "X-Bench"] + sum([[f"YCSB {h}", "ratio"] for h in COMPARED], []), rows), ""]
+
+    md += [f"## T11: X-Bench resident memory at peak RSS (`xbench_breakdown.json`, binary built {xb['binary_mtime']} UTC, "
+           f"HEAD {xb['git_head']}), 5 trials each", "",
+           "File-backed = the `tectonic-cli` binary, libc, libstdc++, ...; allocated = all anonymous memory "
+           "(X-Bench's data, buffers, stacks). Last column: the 2026-10-25 runs of T7 (older binary).", ""]
+    rows = []
+    for w in WORKLOADS:
+        tr = xb[w]
+        g = lambda k: mean([t["resident_at_peak"][k] for t in tr])
+        rows.append([w.upper(), f"{xbm[w][0]:.1f}", f"{g('file_backed_mb'):.1f}", f"{g('anon_mb'):.1f}",
+                     f"{g('total_mb'):.1f}", f"{xbm[w][1]:.2f}", f"{mean([t['output_size_mb'] for t in tr]):.0f}",
+                     ",".join(str(t["exit_code"]) for t in tr), f"{xbench_old[w]['mean_rss_mb']:.1f} / {xbench_old[w]['mean_duration_s']:.2f}"])
+    md += [table(["Workload", "Peak RSS", "file-backed", "allocated", "smaps total", "duration (s)", "output (MB)",
+                  "exit codes", "T7 RSS / duration"], rows), ""]
+
+    if breakdown:
+        md += ["## T12: what the peak is made of (Fig. `memory_breakdown`), mean of A-F x 5 trials", "",
+               "YCSB: the phase with the larger mean peak at that setting (`ycsb_heap_breakdown.json`). Java heap in "
+               "use = max live heap after a GC (all of the resident heap for a run without GC); headroom = the rest of "
+               "the resident Java heap. JVM internals = anonymous memory outside the Java heap.", ""]
+        xb_all = [t for w in WORKLOADS for t in xb[w]]
+        rows = [["X-Bench", "-", f"{mean([t['peak_rss_mb'] for t in xb_all]):.1f}",
+                 f"{mean([t['resident_at_peak']['file_backed_mb'] for t in xb_all]):.1f}", "-",
+                 f"{mean([t['resident_at_peak']['anon_mb'] for t in xb_all]):.1f}", "-", "-", "-"]]
+        for h in ["16m", "32m", "default"]:
+            best = max(PHASES, key=lambda p: mean([t["peak_rss_mb"] for w in WORKLOADS for t in breakdown[w][h][p]]))
+            tr = [t for w in WORKLOADS for t in breakdown[w][h][best]]
+            res = [t["resident_at_peak"]["java_heap_mb"] for t in tr]
+            live = [min(t["live_after_gc_max_mb"] if t["live_after_gc_max_mb"] is not None else r, r) for t, r in zip(tr, res)]
+            peaks = [t["peak_rss_mb"] for t in tr]
+            rows.append([f"YCSB {h}", best, f"{mean(peaks):.1f}",
+                         f"{mean([t['resident_at_peak']['file_backed_mb'] for t in tr]):.1f}",
+                         f"{mean([t['resident_at_peak']['other_anon_mb'] for t in tr]):.1f}", "-",
+                         f"{mean(live):.1f}", f"{mean(res) - mean(live):.1f}", f"{min(peaks):,.0f}-{max(peaks):,.0f}"])
+        md += [table(["Setting", "phase", "peak RSS", "code and libraries (file-backed)", "JVM internals",
+                      "X-Bench allocated", "Java heap in use", "Java heap headroom", "single runs (MB)"], rows), ""]
+
+    if floor_path.exists():
+        floor = load(floor_path.name)
+        md += ["## T13: heap floor, workload A load phase (`ycsb_heap_floor.json` for 4m-12m; main sweep for 16m, 32m, "
+               "default), 5 trials each", ""]
+        rows = []
+        for h in list(floor) + ["16m", "32m", "default"]:
+            tr = floor[h] if h in floor else ycsb["a"][h]["load_trials"]
+            ok = [t for t in tr if t.get("exit_code", 0) == 0]
+            oom = sum(1 for t in tr if t.get("out_of_memory"))
+            rows.append([h, f"{len(ok)}/{len(tr)}" + (f" ({oom} OutOfMemoryError)" if oom else ""),
+                         f"{mean([t['duration_s'] for t in ok]):.2f} (sd {sd([t['duration_s'] for t in ok]):.2f})" if ok else "-",
+                         f"{mean([t['gc_count'] for t in ok]):,.0f}" if ok else "-",
+                         f"{mean([t['gc_time_pct'] for t in ok]):.1f}%" if ok else "-",
+                         f"{mean([t['peak_rss_mb'] for t in ok]):.1f}" if ok else "-"])
+        md += [table(["-Xmx", "completed", "duration (s)", "GC count", "GC time", "peak RSS (MB)"], rows), ""]
+    return md
 
 
 def main():
@@ -85,7 +175,7 @@ def main():
     # T3: GC (YCSB's own counters: count and % of runtime)
     for phase in PHASES:
         md += [f"## T3-{phase}: YCSB {phase} phase, GC count and GC time (% of runtime), mean of 5 trials", ""]
-        gc_heaps = ["16m", "32m", "64m", "1024m", "default"]
+        gc_heaps = ["6m", "8m", "16m", "32m", "64m", "1024m", "default"]
         rows = []
         for w in WORKLOADS:
             rows.append([w.upper()] + [f"{cell(ycsb, w, h, phase, 'gc_count'):,.0f} / {cell(ycsb, w, h, phase, 'gc_time_pct'):.1f}%"
@@ -203,6 +293,7 @@ def main():
                 rows.append([phase, h, f"{b:.1f}", f"{a:.1f}", f"{s:.1f}"])
         md += [table(["Phase", "-Xmx", "main sweep", "instrumented runs", "smaps snapshot total"], rows), ""]
 
+    md += new_tables(ycsb, xbench, breakdown)
     (RESULTS_DIR / "tables.md").write_text("\n".join(md))
     print(f"Wrote {RESULTS_DIR / 'tables.md'}")
 

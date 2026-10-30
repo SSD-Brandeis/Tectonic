@@ -489,56 +489,11 @@ pub struct KeySelection {
     /// scaled, like YCSB's scrambled zipfian, which always draws from 10^10 items.
     #[serde(default)]
     pub scramble: bool,
-    /// With `zipf`, selects keys exactly like the zipfian request distribution of YCSB's
-    /// `CoreWorkload` instead of scattering exact Zipf ranks over the keys: ranks come from
-    /// `ZipfianGenerator` (the approximation of Gray et al., which puts more weight on ranks 2-9
-    /// than Zipf does), and are scrambled over one slot more than there are keys, redrawing the
-    /// empty slot, because `CoreWorkload` sizes its `ScrambledZipfianGenerator` with an inclusive
-    /// upper bound. Both change which keys are hot and how hot they are.
-    #[serde(default)]
-    pub ycsb_zipfian: bool,
-    #[serde(skip)]
-    ycsb_zetan: OnceLock<f64>,
-}
-
-/// `ScrambledZipfianGenerator.ZETAN`: zeta(10^10, 0.99), precomputed by YCSB.
-const YCSB_ZETAN: f64 = 26.46902820178302;
-
-/// One draw of YCSB's `ZipfianGenerator(0, n, s, zetan).nextValue()`, a rank in `[0, n]`.
-fn ycsb_zipfian_rank<R: Rng>(rng: &mut R, n: f64, s: f64, zetan: f64) -> u64 {
-    let items = n + 1.0;
-    let zeta2theta = 1.0 + 0.5f64.powf(s);
-    let alpha = 1.0 / (1.0 - s);
-    let eta = (1.0 - (2.0 / items).powf(1.0 - s)) / (1.0 - zeta2theta / zetan);
-    let u: f64 = rng.random();
-    let uz = u * zetan;
-    if uz < 1.0 {
-        return 0;
-    }
-    if uz < 1.0 + 0.5f64.powf(s) {
-        return 1;
-    }
-    return (items * (eta * u - eta + 1.0).powf(alpha)) as u64;
 }
 
 impl KeySelection {
     /// Returns the index in `[0, len)` of the selected key.
     pub fn select<R: Rng>(&self, rng: &mut R, len: usize) -> usize {
-        if let (true, Distribution::Zipf { n, s, .. }) = (self.ycsb_zipfian, &self.distribution) {
-            let zetan = *self.ycsb_zetan.get_or_init(|| {
-                if *n == 1e10 && *s == 0.99 {
-                    YCSB_ZETAN
-                } else {
-                    gen_harmonic(*n as u64 + 1, *s)
-                }
-            });
-            loop {
-                let slot = unbiased_index(ycsb_zipfian_rank(rng, *n, *s, zetan) as usize, len + 1);
-                if slot < len {
-                    return slot;
-                }
-            }
-        }
         return self.distribution.evaluate_index(rng, len);
     }
 }
@@ -548,8 +503,6 @@ impl Default for KeySelection {
         Self {
             distribution: Distribution::default_key_selection(),
             scramble: false,
-            ycsb_zipfian: false,
-            ycsb_zetan: OnceLock::new(),
         }
     }
 }
@@ -678,7 +631,7 @@ pub struct Modulo {
 /// proportional to `weights[i]`, plus the number (rounded down, modulo `len`) as the offset in it, e.g.
 /// key ranges of different hotness that share how keys are picked inside a range:
 /// Weights for `ranges`: either an explicit list of weights, or a distribution specification
-/// like `two_term_exponential` (Cao et al. FAST '20 prefix distribution) or `hotspot`.
+/// like `two_term_exponential` (Cao et al. FAST '20 prefix distribution).
 #[derive(serde::Deserialize, JsonSchema, Clone, Debug)]
 #[serde(untagged)]
 pub enum RangeWeights {
@@ -697,24 +650,8 @@ pub enum RangeDistribution {
         #[serde(default = "default_n_30")]
         n: usize,
         #[serde(default)]
-        shuffle_seed: Option<u64>,
-        #[serde(default)]
         exclude: Vec<usize>,
     },
-    #[serde(rename = "hotspot")]
-    Hotspot {
-        #[serde(default = "default_n_30")]
-        n: usize,
-        hot: Vec<HotRange>,
-        #[serde(default)]
-        exclude: Vec<usize>,
-    },
-}
-
-#[derive(serde::Deserialize, JsonSchema, Clone, Debug)]
-pub struct HotRange {
-    pub range: usize,
-    pub weight: f64,
 }
 
 fn default_n_30() -> usize {
@@ -776,7 +713,7 @@ impl RangeWeights {
         match self {
             RangeWeights::Explicit(w) => w.clone(),
             RangeWeights::Distribution(d) => match **d {
-                RangeDistribution::TwoTermExponential { a, b, c, d: d_param, n, shuffle_seed, ref exclude } => {
+                RangeDistribution::TwoTermExponential { a, b, c, d: d_param, n, ref exclude } => {
                     let mut amplify = 0i64;
                     let mut keyrange_access = Vec::with_capacity(n);
                     let mut total_access = 0i64;
@@ -793,8 +730,7 @@ impl RangeWeights {
                         keyrange_access.push(access);
                         total_access += access;
                     }
-                    let seed = shuffle_seed.unwrap_or(total_access as u64);
-                    let mut mt = Mt19937_64::new(seed);
+                    let mut mt = Mt19937_64::new(total_access as u64);
                     for i in 0..n {
                         let pos = (mt.next_u64() % n as u64) as usize;
                         keyrange_access.swap(i, pos);
@@ -809,39 +745,6 @@ impl RangeWeights {
                         vec![1.0 / n as f64; n]
                     } else {
                         keyrange_access.iter().map(|&x| x as f64 / sum).collect()
-                    }
-                }
-                RangeDistribution::Hotspot { n, ref hot, ref exclude } => {
-                    let mut weights = vec![0.0; n];
-                    let mut hot_sum = 0.0;
-                    let mut is_hot = vec![false; n];
-                    for h in hot {
-                        if h.range < n {
-                            weights[h.range] = h.weight;
-                            hot_sum += h.weight;
-                            is_hot[h.range] = true;
-                        }
-                    }
-                    for &ex in exclude {
-                        if ex < n {
-                            weights[ex] = 0.0;
-                            is_hot[ex] = true;
-                        }
-                    }
-                    let rem_count = is_hot.iter().filter(|&&h| !h).count();
-                    if rem_count > 0 && hot_sum < 1.0 {
-                        let rem_w = (1.0 - hot_sum) / rem_count as f64;
-                        for i in 0..n {
-                            if !is_hot[i] {
-                                weights[i] = rem_w;
-                            }
-                        }
-                    }
-                    let total: f64 = weights.iter().sum();
-                    if total <= 0.0 {
-                        vec![1.0 / n as f64; n]
-                    } else {
-                        weights.iter().map(|&w| w / total).collect()
                     }
                 }
             },
@@ -1272,28 +1175,22 @@ impl StringExpr {
     }
 
     /// Generates a key range spanning `span` of the first `number` segment: the start key and the
-    /// same key with that number increased by `span`. Start keys are redrawn while the end number
-    /// would exceed `max_end`. Returns None if the expression has no `number` segment.
+    /// same key with that number increased by `span`. Returns None if the expression has no
+    /// `number` segment.
     pub fn generate_window<R: Rng + Clone>(
         &self,
         rng: &mut R,
         character_set_parent: Option<CharacterSet>,
         thread_id: Option<usize>,
         span: f64,
-        max_end: Option<f64>,
     ) -> Option<(Key, Key)> {
-        loop {
-            // Rendering the end key from the same random state repeats every other segment.
-            let mut replay = rng.clone();
-            let mut number = None;
-            let start = self.generate_shifted(rng, character_set_parent, thread_id, 0.0, &mut number);
-            let number = number?;
-            if max_end.is_some_and(|max_end| number + span > max_end) {
-                continue;
-            }
-            let end = self.generate_shifted(&mut replay, character_set_parent, thread_id, span, &mut None);
-            return Some((start, end));
-        }
+        // Rendering the end key from the same random state repeats every other segment.
+        let mut replay = rng.clone();
+        let mut number = None;
+        let start = self.generate_shifted(rng, character_set_parent, thread_id, 0.0, &mut number);
+        number?;
+        let end = self.generate_shifted(&mut replay, character_set_parent, thread_id, span, &mut None);
+        Some((start, end))
     }
 
     /// `generate` with the first `number` segment increased by `shift`; `number` receives the
@@ -1653,8 +1550,6 @@ pub struct UntrackedRangeQueries {
     /// time window over timestamp keys. Written with a start and an end key. Mutually exclusive with
     /// selectivity and scan_length.
     pub span: Option<NumberExpr>,
-    /// With `span`: windows must end at or below this value; start keys are redrawn until they do.
-    pub span_max_end: Option<f64>,
     #[serde(default)]
     pub character_set: Option<CharacterSet>,
 }
@@ -2168,11 +2063,6 @@ mod tests {
         let n = 50_000;
         let in_hot_29 = (0..n).filter(|_| exp_ranges.evaluate(&mut rng) >= 29_000.0).count();
         assert!((in_hot_29 as f64 / n as f64 - 0.8066).abs() < 0.01, "{in_hot_29}");
-
-        // hotspot mixture: range 29 at 0.80, range 23 at 0.06, others uniform
-        let hot_ranges = number(r#"{"ranges": {"len": 1000, "weights": {"hotspot": {"n": 30, "hot": [{"range": 29, "weight": 0.80}, {"range": 23, "weight": 0.06}]}}, "value": 0}}"#);
-        let in_hot_29 = (0..n).filter(|_| hot_ranges.evaluate(&mut rng) >= 29_000.0).count();
-        assert!((in_hot_29 as f64 / n as f64 - 0.80).abs() < 0.01, "{in_hot_29}");
     }
 
     #[test]
@@ -2352,7 +2242,7 @@ mod tests {
     }
 
     #[test]
-    fn windows_shift_only_the_first_number_and_respect_max_end() {
+    fn windows_shift_only_the_first_number() {
         let mut rng = rng();
         let expr = string_expr(
             r#"{"segmented": {"separator": ":", "segments": [
@@ -2361,35 +2251,14 @@ mod tests {
                 {"number": {"value": {"uniform": {"min": 0, "max": 100}}, "width": 3}}]}}"#,
         );
         for _ in 0..1000 {
-            let (start, end) = expr.generate_window(&mut rng, None, None, 300.0, Some(2000.0)).unwrap();
+            let (start, end) = expr.generate_window(&mut rng, None, None, 300.0).unwrap();
             let (start, end) = (std::str::from_utf8(&start).unwrap(), std::str::from_utf8(&end).unwrap());
             let s: u64 = start[..4].parse().unwrap();
             let e: u64 = end[..4].parse().unwrap();
             assert_eq!(e, s + 300);
-            assert!(e <= 2000);
             assert_eq!(start[4..], end[4..], "every other segment repeats");
         }
         let no_number = string_expr(r#"{"uniform": {"len": 6}}"#);
-        assert!(no_number.generate_window(&mut rng, None, None, 1.0, None).is_none());
-    }
-
-    #[test]
-    fn ycsb_zipfian_matches_ycsbs_rank_frequencies() {
-        // Frequencies of ranks 0-4 of YCSB's ZipfianGenerator(0, 10^10, 0.99, ZETAN), measured from
-        // 2*10^7 draws of YCSB's Java implementation.
-        let ycsb = [0.03778, 0.01903, 0.01532, 0.01090, 0.00848];
-        let mut rng = rng();
-        let n = 2_000_000;
-        let mut counts = [0usize; 5];
-        for _ in 0..n {
-            let rank = ycsb_zipfian_rank(&mut rng, 1e10, 0.99, YCSB_ZETAN) as usize;
-            if rank < 5 {
-                counts[rank] += 1;
-            }
-        }
-        for (rank, p) in ycsb.iter().enumerate() {
-            let freq = counts[rank] as f64 / n as f64;
-            assert!((freq - p).abs() < 0.0006, "rank {rank}: {freq} vs YCSB {p}");
-        }
+        assert!(no_number.generate_window(&mut rng, None, None, 1.0).is_none());
     }
 }

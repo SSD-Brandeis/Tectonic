@@ -11,12 +11,26 @@
               "segmented": {
                 "separator": "",
                 "segments": [
-                  {"number": {"value": {"uniform": {"min": 0, "max": 5000000}}, "width": 16}},
+                  {
+                    "number": {
+                      "value": {
+                        "uniform": {
+                          "min": 0,
+                          "max": 5000000
+                        }
+                      },
+                      "width": 16
+                    }
+                  },
                   "00000000000000000000000000000000"
                 ]
               }
             },
-            "val": {"uniform": {"len": 43}}
+            "val": {
+              "uniform": {
+                "len": 43
+              }
+            }
           }
         },
         {
@@ -35,11 +49,30 @@
                           "value": {
                             "ranges": {
                               "len": 166666,
-                              "weights": {"two_term_exponential": {"a": 14.18, "b": -2.917, "c": 0.0164, "d": -0.08082, "n": 30}},
+                              "weights": {
+                                "two_term_exponential": {
+                                  "a": 14.18,
+                                  "b": -2.917,
+                                  "c": 0.0164,
+                                  "d": -0.08082,
+                                  "n": 30
+                                }
+                              },
                               "value": {
                                 "scatter": {
                                   "len": 166666,
-                                  "value": {"pool": {"size": 166666, "seed": 1, "value": {"weibull": {"scale": 80000000, "shape": 0.33}}}}
+                                  "value": {
+                                    "pool": {
+                                      "size": 166666,
+                                      "seed": 1,
+                                      "value": {
+                                        "weibull": {
+                                          "scale": 80000000,
+                                          "shape": 0.33
+                                        }
+                                      }
+                                    }
+                                  }
                                 }
                               }
                             }
@@ -69,11 +102,30 @@
                           "value": {
                             "ranges": {
                               "len": 166666,
-                              "weights": {"two_term_exponential": {"a": 14.18, "b": -2.917, "c": 0.0164, "d": -0.08082, "n": 30}},
+                              "weights": {
+                                "two_term_exponential": {
+                                  "a": 14.18,
+                                  "b": -2.917,
+                                  "c": 0.0164,
+                                  "d": -0.08082,
+                                  "n": 30
+                                }
+                              },
                               "value": {
                                 "scatter": {
                                   "len": 166666,
-                                  "value": {"pool": {"size": 78400, "seed": 1, "value": {"weibull": {"scale": 80000000, "shape": 0.33}}}}
+                                  "value": {
+                                    "pool": {
+                                      "size": 78400,
+                                      "seed": 1,
+                                      "value": {
+                                        "weibull": {
+                                          "scale": 80000000,
+                                          "shape": 0.33
+                                        }
+                                      }
+                                    }
+                                  }
                                 }
                               }
                             }
@@ -95,8 +147,20 @@
                     "pick_seed": 2,
                     "value": {
                       "weighted": [
-                        {"weight": 0.3124, "value": 10},
-                        {"weight": 0.6876, "value": {"generalized_pareto": {"location": 10.979, "scale": 28.224, "shape": 0.2547}}}
+                        {
+                          "weight": 0.3124,
+                          "value": 10
+                        },
+                        {
+                          "weight": 0.6876,
+                          "value": {
+                            "generalized_pareto": {
+                              "location": 10.979,
+                              "scale": 28.224,
+                              "shape": 0.2547
+                            }
+                          }
+                        }
                       ]
                     }
                   }
@@ -124,7 +188,18 @@
                                   "scatter": {
                                     "start": 4833314,
                                     "len": 166666,
-                                    "value": {"pool": {"size": 23600, "seed": 1, "value": {"weibull": {"scale": 80000000, "shape": 0.33}}}}
+                                    "value": {
+                                      "pool": {
+                                        "size": 23600,
+                                        "seed": 1,
+                                        "value": {
+                                          "weibull": {
+                                            "scale": 80000000,
+                                            "shape": 0.33
+                                          }
+                                        }
+                                      }
+                                    }
                                   }
                                 }
                               }
@@ -140,12 +215,32 @@
                                   "ranges": {
                                     "len": 166666,
                                     "weights": {
-                                      "two_term_exponential": {"a": 14.18, "b": -2.917, "c": 0.0164, "d": -0.08082, "n": 30, "exclude": [29]}
+                                      "two_term_exponential": {
+                                        "a": 14.18,
+                                        "b": -2.917,
+                                        "c": 0.0164,
+                                        "d": -0.08082,
+                                        "n": 30,
+                                        "exclude": [
+                                          29
+                                        ]
+                                      }
                                     },
                                     "value": {
                                       "scatter": {
                                         "len": 166666,
-                                        "value": {"pool": {"size": 23600, "seed": 1, "value": {"weibull": {"scale": 80000000, "shape": 0.33}}}}
+                                        "value": {
+                                          "pool": {
+                                            "size": 23600,
+                                            "seed": 1,
+                                            "value": {
+                                              "weibull": {
+                                                "scale": 80000000,
+                                                "shape": 0.33
+                                              }
+                                            }
+                                          }
+                                        }
                                       }
                                     }
                                   }
@@ -174,7 +269,13 @@
                       "value": {
                         "modulo": {
                           "len": 10000,
-                          "value": {"generalized_pareto": {"location": 1.021, "scale": 13.222, "shape": 2.6884}}
+                          "value": {
+                            "generalized_pareto": {
+                              "location": 1.021,
+                              "scale": 13.222,
+                              "shape": 2.6884
+                            }
+                          }
                         }
                       }
                     }
@@ -186,7 +287,14 @@
                     "pool": {
                       "size": 27000,
                       "pick_seed": 5,
-                      "value": {"generalized_pareto": {"location": 1.242, "scale": 16.125, "shape": 3.0658, "max": 6408}}
+                      "value": {
+                        "generalized_pareto": {
+                          "location": 1.242,
+                          "scale": 16.125,
+                          "shape": 3.0658,
+                          "max": 6408
+                        }
+                      }
                     }
                   }
                 }

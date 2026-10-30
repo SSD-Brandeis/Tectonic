@@ -28,6 +28,7 @@ def to_small_caps(text):
     s = re.sub(r'\bseconds\b', 's', s)
     s = re.sub(r'\bmb\b', 'MB', s)
     s = re.sub(r'\bgb\b', 'GB', s)
+    s = re.sub(r'\bkops\b', 'kOPS', s)
     return s
 
 def format_label(text):

@@ -310,8 +310,8 @@ SPEC_DIRS = {"ivs": f"{ROOT_DIR}/example-specs/ycsb-ivs", "ts": f"{ROOT_DIR}/exa
 
 YCSB_KEY = {"segmented": {"separator": "", "segments": [
     "usertable:user", {"uniform": {"len": 19, "character_set": "numeric"}}]}}
-# YCSB CoreWorkload's zipfian request distribution (scrambled, ZipfianGenerator ranks over 10^10 items)
-YCSB_SCRAMBLED_ZIPFIAN = {"scramble": True, "ycsb_zipfian": True, "zipf": {"s": 0.99, "n": 10000000000}}
+# YCSB CoreWorkload's zipfian request distribution: scrambled, exact Zipf ranks over 10^10 items
+YCSB_SCRAMBLED_ZIPFIAN = {"scramble": True, "zipf": {"s": 0.99, "n": 10000000000}}
 UNIFORM_SELECTION = {"uniform": {"min": 0, "max": 1}}
 
 
@@ -422,7 +422,6 @@ def ts_spec(name, props, value_len):
         "op_count": range_ops,
         "key": {"segmented": {"separator": "", "segments": [prefix, uniform_ts]}},
         "span": {"uniform": {"min": int(props["minscanlength"]), "max": int(props["maxscanlength"])}},
-        "span_max_end": insertend,
     }
     return {"sections": [{"groups": [
         {"name": "load", "inserts": {"op_count": recordcount, "key": point_key(load_ts), "val": val}},

@@ -538,24 +538,6 @@
         "op_count"
       ]
     },
-    "HotRange": {
-      "type": "object",
-      "properties": {
-        "range": {
-          "type": "integer",
-          "format": "uint",
-          "minimum": 0
-        },
-        "weight": {
-          "type": "number",
-          "format": "double"
-        }
-      },
-      "required": [
-        "range",
-        "weight"
-      ]
-    },
     "Inserts": {
       "description": "Inserts specification.",
       "type": "object",
@@ -607,11 +589,6 @@
       "properties": {
         "scramble": {
           "description": "Makes range starts, like the keys of other operations, hash over all keys as in YCSB, so\nthat a rank always maps to the same start key; otherwise range starts are selected among\nthe keys from which the whole range fits. Also keeps a `zipf`'s `n` when the spec is\nscaled, like YCSB's scrambled zipfian, which always draws from 10^10 items.",
-          "type": "boolean",
-          "default": false
-        },
-        "ycsb_zipfian": {
-          "description": "With `zipf`, selects keys exactly like the zipfian request distribution of YCSB's\n`CoreWorkload` instead of scattering exact Zipf ranks over the keys: ranks come from\n`ZipfianGenerator` (the approximation of Gray et al., which puts more weight on ranks 2-9\nthan Zipf does), and are scrambled over one slot more than there are keys, redrawing the\nempty slot, because `CoreWorkload` sizes its `ScrambledZipfianGenerator` with an inclusive\nupper bound. Both change which keys are hot and how hot they are.",
           "type": "boolean",
           "default": false
         }
@@ -1202,15 +1179,6 @@
                   "format": "uint",
                   "default": 30,
                   "minimum": 0
-                },
-                "shuffle_seed": {
-                  "type": [
-                    "integer",
-                    "null"
-                  ],
-                  "format": "uint64",
-                  "default": null,
-                  "minimum": 0
                 }
               },
               "required": [
@@ -1224,44 +1192,6 @@
           "additionalProperties": false,
           "required": [
             "two_term_exponential"
-          ]
-        },
-        {
-          "type": "object",
-          "properties": {
-            "hotspot": {
-              "type": "object",
-              "properties": {
-                "exclude": {
-                  "type": "array",
-                  "default": [],
-                  "items": {
-                    "type": "integer",
-                    "format": "uint",
-                    "minimum": 0
-                  }
-                },
-                "hot": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/$defs/HotRange"
-                  }
-                },
-                "n": {
-                  "type": "integer",
-                  "format": "uint",
-                  "default": 30,
-                  "minimum": 0
-                }
-              },
-              "required": [
-                "hot"
-              ]
-            }
-          },
-          "additionalProperties": false,
-          "required": [
-            "hotspot"
           ]
         }
       ]
@@ -1341,7 +1271,7 @@
       ]
     },
     "RangeWeights": {
-      "description": "A key space cut into consecutive ranges of `len` numbers: range `i`, picked with probability\nproportional to `weights[i]`, plus the number (rounded down, modulo `len`) as the offset in it, e.g.\nkey ranges of different hotness that share how keys are picked inside a range:\nWeights for `ranges`: either an explicit list of weights, or a distribution specification\nlike `two_term_exponential` (Cao et al. FAST '20 prefix distribution) or `hotspot`.",
+      "description": "A key space cut into consecutive ranges of `len` numbers: range `i`, picked with probability\nproportional to `weights[i]`, plus the number (rounded down, modulo `len`) as the offset in it, e.g.\nkey ranges of different hotness that share how keys are picked inside a range:\nWeights for `ranges`: either an explicit list of weights, or a distribution specification\nlike `two_term_exponential` (Cao et al. FAST '20 prefix distribution).",
       "anyOf": [
         {
           "type": "array",
@@ -1740,14 +1670,6 @@
               "type": "null"
             }
           ]
-        },
-        "span_max_end": {
-          "description": "With `span`: windows must end at or below this value; start keys are redrawn until they do.",
-          "type": [
-            "number",
-            "null"
-          ],
-          "format": "double"
         }
       },
       "required": [

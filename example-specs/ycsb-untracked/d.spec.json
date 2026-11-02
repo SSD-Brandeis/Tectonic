@@ -1,0 +1,3245 @@
+{
+  "$schema": "../../workload_schema.json",
+  "sections": [
+    {
+      "groups": [
+        {
+          "name": "Load Phase",
+          "enable_granular_stats": true,
+          "inserts": {
+            "op_count": 1000000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "counter": {
+                              "start": 0
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 1090
+              }
+            }
+          }
+        },
+        {
+          "name": "Execution Phase 1/50",
+          "enable_granular_stats": true,
+          "inserts": {
+            "op_count": 1000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "counter": {
+                              "start": 1000000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 1090
+              }
+            }
+          },
+          "untracked_point_queries": {
+            "op_count": 19000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "latest": {
+                              "s": 0.99,
+                              "n": 1000000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            }
+          }
+        },
+        {
+          "name": "Execution Phase 2/50",
+          "enable_granular_stats": true,
+          "inserts": {
+            "op_count": 1000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "counter": {
+                              "start": 1001000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 1090
+              }
+            }
+          },
+          "untracked_point_queries": {
+            "op_count": 19000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "latest": {
+                              "s": 0.99,
+                              "n": 1001000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            }
+          }
+        },
+        {
+          "name": "Execution Phase 3/50",
+          "enable_granular_stats": true,
+          "inserts": {
+            "op_count": 1000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "counter": {
+                              "start": 1002000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 1090
+              }
+            }
+          },
+          "untracked_point_queries": {
+            "op_count": 19000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "latest": {
+                              "s": 0.99,
+                              "n": 1002000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            }
+          }
+        },
+        {
+          "name": "Execution Phase 4/50",
+          "enable_granular_stats": true,
+          "inserts": {
+            "op_count": 1000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "counter": {
+                              "start": 1003000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 1090
+              }
+            }
+          },
+          "untracked_point_queries": {
+            "op_count": 19000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "latest": {
+                              "s": 0.99,
+                              "n": 1003000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            }
+          }
+        },
+        {
+          "name": "Execution Phase 5/50",
+          "enable_granular_stats": true,
+          "inserts": {
+            "op_count": 1000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "counter": {
+                              "start": 1004000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 1090
+              }
+            }
+          },
+          "untracked_point_queries": {
+            "op_count": 19000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "latest": {
+                              "s": 0.99,
+                              "n": 1004000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            }
+          }
+        },
+        {
+          "name": "Execution Phase 6/50",
+          "enable_granular_stats": true,
+          "inserts": {
+            "op_count": 1000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "counter": {
+                              "start": 1005000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 1090
+              }
+            }
+          },
+          "untracked_point_queries": {
+            "op_count": 19000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "latest": {
+                              "s": 0.99,
+                              "n": 1005000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            }
+          }
+        },
+        {
+          "name": "Execution Phase 7/50",
+          "enable_granular_stats": true,
+          "inserts": {
+            "op_count": 1000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "counter": {
+                              "start": 1006000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 1090
+              }
+            }
+          },
+          "untracked_point_queries": {
+            "op_count": 19000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "latest": {
+                              "s": 0.99,
+                              "n": 1006000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            }
+          }
+        },
+        {
+          "name": "Execution Phase 8/50",
+          "enable_granular_stats": true,
+          "inserts": {
+            "op_count": 1000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "counter": {
+                              "start": 1007000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 1090
+              }
+            }
+          },
+          "untracked_point_queries": {
+            "op_count": 19000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "latest": {
+                              "s": 0.99,
+                              "n": 1007000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            }
+          }
+        },
+        {
+          "name": "Execution Phase 9/50",
+          "enable_granular_stats": true,
+          "inserts": {
+            "op_count": 1000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "counter": {
+                              "start": 1008000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 1090
+              }
+            }
+          },
+          "untracked_point_queries": {
+            "op_count": 19000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "latest": {
+                              "s": 0.99,
+                              "n": 1008000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            }
+          }
+        },
+        {
+          "name": "Execution Phase 10/50",
+          "enable_granular_stats": true,
+          "inserts": {
+            "op_count": 1000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "counter": {
+                              "start": 1009000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 1090
+              }
+            }
+          },
+          "untracked_point_queries": {
+            "op_count": 19000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "latest": {
+                              "s": 0.99,
+                              "n": 1009000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            }
+          }
+        },
+        {
+          "name": "Execution Phase 11/50",
+          "enable_granular_stats": true,
+          "inserts": {
+            "op_count": 1000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "counter": {
+                              "start": 1010000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 1090
+              }
+            }
+          },
+          "untracked_point_queries": {
+            "op_count": 19000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "latest": {
+                              "s": 0.99,
+                              "n": 1010000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            }
+          }
+        },
+        {
+          "name": "Execution Phase 12/50",
+          "enable_granular_stats": true,
+          "inserts": {
+            "op_count": 1000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "counter": {
+                              "start": 1011000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 1090
+              }
+            }
+          },
+          "untracked_point_queries": {
+            "op_count": 19000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "latest": {
+                              "s": 0.99,
+                              "n": 1011000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            }
+          }
+        },
+        {
+          "name": "Execution Phase 13/50",
+          "enable_granular_stats": true,
+          "inserts": {
+            "op_count": 1000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "counter": {
+                              "start": 1012000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 1090
+              }
+            }
+          },
+          "untracked_point_queries": {
+            "op_count": 19000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "latest": {
+                              "s": 0.99,
+                              "n": 1012000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            }
+          }
+        },
+        {
+          "name": "Execution Phase 14/50",
+          "enable_granular_stats": true,
+          "inserts": {
+            "op_count": 1000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "counter": {
+                              "start": 1013000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 1090
+              }
+            }
+          },
+          "untracked_point_queries": {
+            "op_count": 19000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "latest": {
+                              "s": 0.99,
+                              "n": 1013000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            }
+          }
+        },
+        {
+          "name": "Execution Phase 15/50",
+          "enable_granular_stats": true,
+          "inserts": {
+            "op_count": 1000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "counter": {
+                              "start": 1014000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 1090
+              }
+            }
+          },
+          "untracked_point_queries": {
+            "op_count": 19000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "latest": {
+                              "s": 0.99,
+                              "n": 1014000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            }
+          }
+        },
+        {
+          "name": "Execution Phase 16/50",
+          "enable_granular_stats": true,
+          "inserts": {
+            "op_count": 1000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "counter": {
+                              "start": 1015000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 1090
+              }
+            }
+          },
+          "untracked_point_queries": {
+            "op_count": 19000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "latest": {
+                              "s": 0.99,
+                              "n": 1015000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            }
+          }
+        },
+        {
+          "name": "Execution Phase 17/50",
+          "enable_granular_stats": true,
+          "inserts": {
+            "op_count": 1000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "counter": {
+                              "start": 1016000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 1090
+              }
+            }
+          },
+          "untracked_point_queries": {
+            "op_count": 19000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "latest": {
+                              "s": 0.99,
+                              "n": 1016000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            }
+          }
+        },
+        {
+          "name": "Execution Phase 18/50",
+          "enable_granular_stats": true,
+          "inserts": {
+            "op_count": 1000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "counter": {
+                              "start": 1017000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 1090
+              }
+            }
+          },
+          "untracked_point_queries": {
+            "op_count": 19000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "latest": {
+                              "s": 0.99,
+                              "n": 1017000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            }
+          }
+        },
+        {
+          "name": "Execution Phase 19/50",
+          "enable_granular_stats": true,
+          "inserts": {
+            "op_count": 1000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "counter": {
+                              "start": 1018000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 1090
+              }
+            }
+          },
+          "untracked_point_queries": {
+            "op_count": 19000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "latest": {
+                              "s": 0.99,
+                              "n": 1018000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            }
+          }
+        },
+        {
+          "name": "Execution Phase 20/50",
+          "enable_granular_stats": true,
+          "inserts": {
+            "op_count": 1000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "counter": {
+                              "start": 1019000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 1090
+              }
+            }
+          },
+          "untracked_point_queries": {
+            "op_count": 19000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "latest": {
+                              "s": 0.99,
+                              "n": 1019000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            }
+          }
+        },
+        {
+          "name": "Execution Phase 21/50",
+          "enable_granular_stats": true,
+          "inserts": {
+            "op_count": 1000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "counter": {
+                              "start": 1020000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 1090
+              }
+            }
+          },
+          "untracked_point_queries": {
+            "op_count": 19000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "latest": {
+                              "s": 0.99,
+                              "n": 1020000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            }
+          }
+        },
+        {
+          "name": "Execution Phase 22/50",
+          "enable_granular_stats": true,
+          "inserts": {
+            "op_count": 1000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "counter": {
+                              "start": 1021000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 1090
+              }
+            }
+          },
+          "untracked_point_queries": {
+            "op_count": 19000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "latest": {
+                              "s": 0.99,
+                              "n": 1021000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            }
+          }
+        },
+        {
+          "name": "Execution Phase 23/50",
+          "enable_granular_stats": true,
+          "inserts": {
+            "op_count": 1000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "counter": {
+                              "start": 1022000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 1090
+              }
+            }
+          },
+          "untracked_point_queries": {
+            "op_count": 19000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "latest": {
+                              "s": 0.99,
+                              "n": 1022000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            }
+          }
+        },
+        {
+          "name": "Execution Phase 24/50",
+          "enable_granular_stats": true,
+          "inserts": {
+            "op_count": 1000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "counter": {
+                              "start": 1023000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 1090
+              }
+            }
+          },
+          "untracked_point_queries": {
+            "op_count": 19000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "latest": {
+                              "s": 0.99,
+                              "n": 1023000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            }
+          }
+        },
+        {
+          "name": "Execution Phase 25/50",
+          "enable_granular_stats": true,
+          "inserts": {
+            "op_count": 1000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "counter": {
+                              "start": 1024000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 1090
+              }
+            }
+          },
+          "untracked_point_queries": {
+            "op_count": 19000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "latest": {
+                              "s": 0.99,
+                              "n": 1024000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            }
+          }
+        },
+        {
+          "name": "Execution Phase 26/50",
+          "enable_granular_stats": true,
+          "inserts": {
+            "op_count": 1000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "counter": {
+                              "start": 1025000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 1090
+              }
+            }
+          },
+          "untracked_point_queries": {
+            "op_count": 19000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "latest": {
+                              "s": 0.99,
+                              "n": 1025000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            }
+          }
+        },
+        {
+          "name": "Execution Phase 27/50",
+          "enable_granular_stats": true,
+          "inserts": {
+            "op_count": 1000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "counter": {
+                              "start": 1026000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 1090
+              }
+            }
+          },
+          "untracked_point_queries": {
+            "op_count": 19000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "latest": {
+                              "s": 0.99,
+                              "n": 1026000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            }
+          }
+        },
+        {
+          "name": "Execution Phase 28/50",
+          "enable_granular_stats": true,
+          "inserts": {
+            "op_count": 1000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "counter": {
+                              "start": 1027000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 1090
+              }
+            }
+          },
+          "untracked_point_queries": {
+            "op_count": 19000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "latest": {
+                              "s": 0.99,
+                              "n": 1027000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            }
+          }
+        },
+        {
+          "name": "Execution Phase 29/50",
+          "enable_granular_stats": true,
+          "inserts": {
+            "op_count": 1000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "counter": {
+                              "start": 1028000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 1090
+              }
+            }
+          },
+          "untracked_point_queries": {
+            "op_count": 19000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "latest": {
+                              "s": 0.99,
+                              "n": 1028000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            }
+          }
+        },
+        {
+          "name": "Execution Phase 30/50",
+          "enable_granular_stats": true,
+          "inserts": {
+            "op_count": 1000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "counter": {
+                              "start": 1029000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 1090
+              }
+            }
+          },
+          "untracked_point_queries": {
+            "op_count": 19000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "latest": {
+                              "s": 0.99,
+                              "n": 1029000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            }
+          }
+        },
+        {
+          "name": "Execution Phase 31/50",
+          "enable_granular_stats": true,
+          "inserts": {
+            "op_count": 1000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "counter": {
+                              "start": 1030000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 1090
+              }
+            }
+          },
+          "untracked_point_queries": {
+            "op_count": 19000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "latest": {
+                              "s": 0.99,
+                              "n": 1030000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            }
+          }
+        },
+        {
+          "name": "Execution Phase 32/50",
+          "enable_granular_stats": true,
+          "inserts": {
+            "op_count": 1000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "counter": {
+                              "start": 1031000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 1090
+              }
+            }
+          },
+          "untracked_point_queries": {
+            "op_count": 19000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "latest": {
+                              "s": 0.99,
+                              "n": 1031000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            }
+          }
+        },
+        {
+          "name": "Execution Phase 33/50",
+          "enable_granular_stats": true,
+          "inserts": {
+            "op_count": 1000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "counter": {
+                              "start": 1032000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 1090
+              }
+            }
+          },
+          "untracked_point_queries": {
+            "op_count": 19000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "latest": {
+                              "s": 0.99,
+                              "n": 1032000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            }
+          }
+        },
+        {
+          "name": "Execution Phase 34/50",
+          "enable_granular_stats": true,
+          "inserts": {
+            "op_count": 1000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "counter": {
+                              "start": 1033000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 1090
+              }
+            }
+          },
+          "untracked_point_queries": {
+            "op_count": 19000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "latest": {
+                              "s": 0.99,
+                              "n": 1033000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            }
+          }
+        },
+        {
+          "name": "Execution Phase 35/50",
+          "enable_granular_stats": true,
+          "inserts": {
+            "op_count": 1000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "counter": {
+                              "start": 1034000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 1090
+              }
+            }
+          },
+          "untracked_point_queries": {
+            "op_count": 19000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "latest": {
+                              "s": 0.99,
+                              "n": 1034000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            }
+          }
+        },
+        {
+          "name": "Execution Phase 36/50",
+          "enable_granular_stats": true,
+          "inserts": {
+            "op_count": 1000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "counter": {
+                              "start": 1035000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 1090
+              }
+            }
+          },
+          "untracked_point_queries": {
+            "op_count": 19000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "latest": {
+                              "s": 0.99,
+                              "n": 1035000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            }
+          }
+        },
+        {
+          "name": "Execution Phase 37/50",
+          "enable_granular_stats": true,
+          "inserts": {
+            "op_count": 1000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "counter": {
+                              "start": 1036000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 1090
+              }
+            }
+          },
+          "untracked_point_queries": {
+            "op_count": 19000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "latest": {
+                              "s": 0.99,
+                              "n": 1036000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            }
+          }
+        },
+        {
+          "name": "Execution Phase 38/50",
+          "enable_granular_stats": true,
+          "inserts": {
+            "op_count": 1000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "counter": {
+                              "start": 1037000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 1090
+              }
+            }
+          },
+          "untracked_point_queries": {
+            "op_count": 19000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "latest": {
+                              "s": 0.99,
+                              "n": 1037000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            }
+          }
+        },
+        {
+          "name": "Execution Phase 39/50",
+          "enable_granular_stats": true,
+          "inserts": {
+            "op_count": 1000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "counter": {
+                              "start": 1038000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 1090
+              }
+            }
+          },
+          "untracked_point_queries": {
+            "op_count": 19000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "latest": {
+                              "s": 0.99,
+                              "n": 1038000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            }
+          }
+        },
+        {
+          "name": "Execution Phase 40/50",
+          "enable_granular_stats": true,
+          "inserts": {
+            "op_count": 1000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "counter": {
+                              "start": 1039000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 1090
+              }
+            }
+          },
+          "untracked_point_queries": {
+            "op_count": 19000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "latest": {
+                              "s": 0.99,
+                              "n": 1039000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            }
+          }
+        },
+        {
+          "name": "Execution Phase 41/50",
+          "enable_granular_stats": true,
+          "inserts": {
+            "op_count": 1000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "counter": {
+                              "start": 1040000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 1090
+              }
+            }
+          },
+          "untracked_point_queries": {
+            "op_count": 19000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "latest": {
+                              "s": 0.99,
+                              "n": 1040000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            }
+          }
+        },
+        {
+          "name": "Execution Phase 42/50",
+          "enable_granular_stats": true,
+          "inserts": {
+            "op_count": 1000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "counter": {
+                              "start": 1041000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 1090
+              }
+            }
+          },
+          "untracked_point_queries": {
+            "op_count": 19000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "latest": {
+                              "s": 0.99,
+                              "n": 1041000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            }
+          }
+        },
+        {
+          "name": "Execution Phase 43/50",
+          "enable_granular_stats": true,
+          "inserts": {
+            "op_count": 1000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "counter": {
+                              "start": 1042000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 1090
+              }
+            }
+          },
+          "untracked_point_queries": {
+            "op_count": 19000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "latest": {
+                              "s": 0.99,
+                              "n": 1042000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            }
+          }
+        },
+        {
+          "name": "Execution Phase 44/50",
+          "enable_granular_stats": true,
+          "inserts": {
+            "op_count": 1000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "counter": {
+                              "start": 1043000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 1090
+              }
+            }
+          },
+          "untracked_point_queries": {
+            "op_count": 19000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "latest": {
+                              "s": 0.99,
+                              "n": 1043000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            }
+          }
+        },
+        {
+          "name": "Execution Phase 45/50",
+          "enable_granular_stats": true,
+          "inserts": {
+            "op_count": 1000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "counter": {
+                              "start": 1044000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 1090
+              }
+            }
+          },
+          "untracked_point_queries": {
+            "op_count": 19000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "latest": {
+                              "s": 0.99,
+                              "n": 1044000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            }
+          }
+        },
+        {
+          "name": "Execution Phase 46/50",
+          "enable_granular_stats": true,
+          "inserts": {
+            "op_count": 1000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "counter": {
+                              "start": 1045000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 1090
+              }
+            }
+          },
+          "untracked_point_queries": {
+            "op_count": 19000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "latest": {
+                              "s": 0.99,
+                              "n": 1045000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            }
+          }
+        },
+        {
+          "name": "Execution Phase 47/50",
+          "enable_granular_stats": true,
+          "inserts": {
+            "op_count": 1000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "counter": {
+                              "start": 1046000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 1090
+              }
+            }
+          },
+          "untracked_point_queries": {
+            "op_count": 19000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "latest": {
+                              "s": 0.99,
+                              "n": 1046000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            }
+          }
+        },
+        {
+          "name": "Execution Phase 48/50",
+          "enable_granular_stats": true,
+          "inserts": {
+            "op_count": 1000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "counter": {
+                              "start": 1047000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 1090
+              }
+            }
+          },
+          "untracked_point_queries": {
+            "op_count": 19000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "latest": {
+                              "s": 0.99,
+                              "n": 1047000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            }
+          }
+        },
+        {
+          "name": "Execution Phase 49/50",
+          "enable_granular_stats": true,
+          "inserts": {
+            "op_count": 1000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "counter": {
+                              "start": 1048000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 1090
+              }
+            }
+          },
+          "untracked_point_queries": {
+            "op_count": 19000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "latest": {
+                              "s": 0.99,
+                              "n": 1048000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            }
+          }
+        },
+        {
+          "name": "Execution Phase 50/50",
+          "enable_granular_stats": true,
+          "inserts": {
+            "op_count": 1000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "counter": {
+                              "start": 1049000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 1090
+              }
+            }
+          },
+          "untracked_point_queries": {
+            "op_count": 19000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "latest": {
+                              "s": 0.99,
+                              "n": 1049000
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

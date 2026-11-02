@@ -4,30 +4,36 @@
     {
       "groups": [
         {
+          "name": "Execution Phase",
+          "enable_granular_stats": true,
           "inserts": {
             "op_count": 950000,
+            "val": {
+              "uniform": {
+                "len": 512
+              }
+            },
             "key": {
               "segmented": {
                 "separator": "",
                 "segments": [
                   {
-                    "hot_range": {
-                      "len": 2,
-                      "probability": 0.7,
-                      "amount": 10
+                    "number": {
+                      "value": {
+                        "zipf": {
+                          "n": 3844,
+                          "s": 1
+                        }
+                      },
+                      "width": 4
                     }
                   },
                   {
                     "uniform": {
-                      "len": 510
+                      "len": 508
                     }
                   }
                 ]
-              }
-            },
-            "val": {
-              "uniform": {
-                "len": 512
               }
             }
           },

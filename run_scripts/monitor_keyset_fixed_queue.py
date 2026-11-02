@@ -13,10 +13,14 @@ died with one.
 --rebalance: a machine with no runner whose own queue still has unstarted jobs gets its runner
 restarted; a machine with nothing left to do takes the last unstarted fixed (`vec`) job of the
 machine with the most unstarted jobs (the line there becomes a comment) and starts its runner.
-Algorithm 1 baselines stay on their machine, next to their fixed run. A failed job is not retried.
+Algorithm 1 baselines stay on their machine, and so do fixed jobs whose workload has Algorithm 1 runs queued there. A failed job is not retried.
 One run per machine is never broken: the runner holds a lock and runs one job at a time.
 
-Usage: python3 run_scripts/monitor_keyset_fixed_queue.py [--rebalance]
+--exp kvbench: the KV-Bench runs (VecHashSetKeySet vs. Algorithm 1, 2026-10-31) on fixedkeyset-2 instead,
+in their own folder and tmux session.
+--exp ycsb: the YCSB runs (EmptyKeySet vs. Algorithm 1, 2026-10-31) on fixedkeyset-2, likewise.
+
+Usage: python3 run_scripts/monitor_keyset_fixed_queue.py [--exp kvbench|ycsb] [--rebalance]
 """
 import re
 import sys
@@ -24,12 +28,29 @@ import json
 import subprocess
 
 EXP = "data/revision/R1.O8-R2.O2_keyset-selection/table4-fixed-to-completion-multimachine"
-LOCAL = f"/home/cc/Tectonic/{EXP}"
-REMOTE = f"/home/cc/Tectonic/{EXP}"
 # ssh alias -> hostname (the queue and result files are named after the hostname)
 MACHINES = {"revision_2": "revision-2", "fixedkeyset1": "fixedkeyset-1", "fixedkeyset2": "fixedkeyset-2"}
-RUNNER = ("cd /home/cc/Tectonic && tmux new-session -d -s keyset-fixed "
-          f"\"python3 -u run_scripts/run_keyset_fixed_queue.py 2>&1 | tee -a {REMOTE}/logs/console.$(hostname).out\"")
+SESSION = "keyset-fixed"
+if "--exp" in sys.argv and sys.argv[sys.argv.index("--exp") + 1] == "kvbench":
+    EXP = "data/revision/R1.O8-R2.O2_keyset-selection/kvbench-fixed-vec-hashset"
+    MACHINES = {"fixedkeyset2": "fixedkeyset-2"}
+    SESSION = "keyset-kvbench"
+if "--exp" in sys.argv and sys.argv[sys.argv.index("--exp") + 1] == "kvbench-paper":  # 2026-11-02: paper specs, 1/20
+    EXP = "data/revision/R1.O8-R2.O2_keyset-selection/kvbench-paper-1-20-fixed-vec-hashset"
+    MACHINES = {"fixedkeyset2": "fixedkeyset-2"}
+    SESSION = "keyset-kvbench-paper"
+if "--exp" in sys.argv and sys.argv[sys.argv.index("--exp") + 1] == "kvbench-paper-full":  # 2026-11-02: paper specs, full
+    EXP = "data/revision/R1.O8-R2.O2_keyset-selection/kvbench-paper-full-fixed-vec-hashset"
+    MACHINES = {"fixedkeyset2": "fixedkeyset-2"}
+    SESSION = "keyset-kvbench-full"
+if "--exp" in sys.argv and sys.argv[sys.argv.index("--exp") + 1] == "ycsb":
+    EXP = "data/revision/R1.O8-R2.O2_keyset-selection/ycsb-fixed-empty"
+    MACHINES = {"fixedkeyset2": "fixedkeyset-2"}
+    SESSION = "keyset-ycsb"
+LOCAL = f"/home/cc/Tectonic/{EXP}"
+REMOTE = f"/home/cc/Tectonic/{EXP}"
+RUNNER = (f"cd /home/cc/Tectonic && tmux new-session -d -s {SESSION} "
+          f"\"python3 -u run_scripts/run_keyset_fixed_queue.py --out-dir {REMOTE} 2>&1 | tee -a {REMOTE}/logs/console.$(hostname).out\"")
 
 
 def ssh(alias, cmd, check=True):
@@ -54,7 +75,7 @@ def state(alias, host):
     done = {(r["workload"], r["keyset"], str(r["trial"])): r for r in runs}
     with open(f"{LOCAL}/logs/console.{host}.out") as f:
         console = f.read()
-    alive = ssh(alias, "tmux has-session -t keyset-fixed 2>/dev/null && echo yes || echo no").strip() == "yes"
+    alive = ssh(alias, f"tmux has-session -t {SESSION} 2>/dev/null && echo yes || echo no").strip() == "yes"
     started = re.findall(r"\] (\S+) (\S+) trial (\d+): /usr/bin/time", console)
     current = started[-1] if alive and started and started[-1] not in done else None
     failed = None
@@ -88,6 +109,13 @@ def move(src, dst, job):
     ssh(dst["alias"], f"echo '{line}  # moved from {src['host']} by the monitor' >> {REMOTE}/queue/{dst['host']}.txt")
 
 
+def movable(s):
+    """Unstarted fixed (`vec`) jobs of a machine that may move: not those whose workload also has Algorithm 1
+    runs queued there, which must stay next to them on one machine."""
+    queued = {(w, k) for w, k, _ in parse_queue(open(f"{LOCAL}/queue/{s['host']}.txt").read())}
+    return [j for j in s["pending"] if j[1] == "vec" and (j[0], "adaptive") not in queued]
+
+
 def main():
     rebalance = "--rebalance" in sys.argv
     states = [state(a, h) for a, h in MACHINES.items()]
@@ -107,11 +135,11 @@ def main():
         if s["alive"] or s["failed"]:
             continue
         if not s["pending"]:
-            donors = sorted((d for d in states if d is not s and [j for j in d["pending"] if j[1] == "vec"]),
+            donors = sorted((d for d in states if d is not s and movable(d)),
                             key=lambda d: len(d["pending"]), reverse=True)
             if not donors:
                 continue
-            job = [j for j in donors[0]["pending"] if j[1] == "vec"][-1]
+            job = movable(donors[0])[-1]
             move(donors[0], s, job)
             donors[0]["pending"].remove(job)
             print(f"moved {' '.join(job)}: {donors[0]['host']} -> {s['host']}")

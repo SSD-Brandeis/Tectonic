@@ -1,0 +1,122 @@
+{
+  "$schema": "../../workload_schema.json",
+  "sections": [
+    {
+      "groups": [
+        {
+          "name": "Load Phase",
+          "enable_granular_stats": true,
+          "inserts": {
+            "op_count": 1000000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "counter": {
+                              "start": 0
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 1090
+              }
+            }
+          }
+        },
+        {
+          "name": "Execution Phase",
+          "enable_granular_stats": true,
+          "untracked_point_queries": {
+            "op_count": 950000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "scatter": {
+                              "start": 0,
+                              "len": 1000000,
+                              "value": {
+                                "zipf": {
+                                  "s": 0.99,
+                                  "n": 10000000000
+                                }
+                              }
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            }
+          },
+          "untracked_updates": {
+            "op_count": 50000,
+            "key": {
+              "segmented": {
+                "segments": [
+                  "usertable:user",
+                  {
+                    "number": {
+                      "value": {
+                        "scatter": {
+                          "start": 0,
+                          "len": 1000000000000000,
+                          "value": {
+                            "scatter": {
+                              "start": 0,
+                              "len": 1000000,
+                              "value": {
+                                "zipf": {
+                                  "s": 0.99,
+                                  "n": 10000000000
+                                }
+                              }
+                            }
+                          }
+                        }
+                      },
+                      "width": 19
+                    }
+                  }
+                ],
+                "separator": ""
+              }
+            },
+            "val": {
+              "uniform": {
+                "len": 109
+              }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

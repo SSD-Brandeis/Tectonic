@@ -6,7 +6,7 @@ edition = "2024"
 [features]
 default = ["rocksdb", "redis", "scylla"]
 cassandra = ["dep:cassandra-cpp"]
-rocksdb = ["dep:rocksdb"]
+rocksdb = ["dep:rocksdb", "dep:librocksdb-sys"]
 redis = ["dep:redis"]
 scylla = ["dep:scylla"]
 
@@ -18,5 +18,10 @@ indicatif = "0.18.4"
 tokio = { version = "1.50.0", features = ["full"] }
 cassandra-cpp = { version = "3.0.2", optional = true }
 rocksdb = { version = "0.24.0", optional = true }
+# Only for its build metadata (RocksDB headers for the IOStatsContext shim, build.rs); the version rocksdb uses.
+librocksdb-sys = { version = "0.17.3", optional = true }
 redis = { version = "1.2.0", optional = true }
 scylla = { version = "1.5.0", optional = true }
+
+[build-dependencies]
+cc = "1.2"

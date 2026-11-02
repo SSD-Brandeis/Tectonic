@@ -8,7 +8,8 @@ Fig. 12 of the paper and like the R1.O7 plots (plot_r1o7_fig12_style.py: same pa
       trace for every second (one iostat sample per second, no smoothing);
   (B) latency per operation type: p0, p25, p50, p75, p99 of the whole run (mean over the trials);
   (C) bytes RocksDB read and wrote (GB), from its statistics (mean over the trials):
-      read  = rocksdb.bytes.read + rocksdb.db.iter.bytes.read + rocksdb.compact.read.bytes
+      read  = rocksdb.non.last.level.read.bytes + rocksdb.last.level.read.bytes
+              (the bytes read from the SST files, compactions included, as (A) measures; 2026-11-02)
       write = rocksdb.wal.bytes + rocksdb.flush.write.bytes + rocksdb.compact.write.bytes
 Two extra panels per operation type (get, put, scan) and for all operations together:
   operation count, as the executor counted it (the same in every trial), and
@@ -38,6 +39,8 @@ sys.path.append(str(Path(__file__).resolve().parent))
 import plot_style
 
 OUT_DIR = "/home/cc/Tectonic/data/revision/R1.O9-R2.O1_mixgraph"
+if "--direct-io" in sys.argv:  # the rerun with RocksDB's direct I/O (2026-10-31): its execution.json and plots
+    OUT_DIR = f"{OUT_DIR}/direct-io-enabled"
 EXEC_PATH = f"{OUT_DIR}/results/execution.json"
 PLOT_DIR = f"{OUT_DIR}/plots"
 
@@ -48,7 +51,7 @@ OP_LABELS = {"Point Query": "get", "Insert": "put", "Range Query": "scan"}
 PERCENTILES = (("whislo", "Minimum Latency"), ("q1", "25th Percentile Latency"),
                ("med", "50th Percentile Latency"), ("q3", "75th Percentile Latency"),
                ("whishi", "99th Percentile Latency"))
-READ_TICKERS = ("rocksdb.bytes.read", "rocksdb.db.iter.bytes.read", "rocksdb.compact.read.bytes")
+READ_TICKERS = ("rocksdb.non.last.level.read.bytes", "rocksdb.last.level.read.bytes")
 WRITE_TICKERS = ("rocksdb.wal.bytes", "rocksdb.flush.write.bytes", "rocksdb.compact.write.bytes")
 BYTE_TO_GB = 1024 ** 3
 FIGSIZE = (5, 3.6)
@@ -82,7 +85,7 @@ def panel_throughput(ax, trials, log=False):
     if log:  # the y-axis starts strictly at 10^0 MB; seconds that move less than 1 MB fall below it
         ax.set_yscale("log")
     plot_style.apply_plot_style(ax)
-    ax.set_xlim(left=-0.03 * n)
+    plot_style.set_even_xticks(ax, n)
     if log:
         ax.set_ylim(bottom=1.0)
 
@@ -118,12 +121,12 @@ def panel_latency(ax, trials):
 def panel_data_movement(ax, trials):
     categories = ["read", "write"]
     x = np.arange(len(categories)) * 0.75
-    all_vals = []
+    all_vals, bars = [], []
     for j, (side, style, name) in enumerate(SIDES):
         vals = [statistics.mean(sum(t["rocksdb_statistics"][k] for k in tickers) for t in trials[side]) / BYTE_TO_GB
                 for tickers in (READ_TICKERS, WRITE_TICKERS)]
         all_vals += vals
-        ax.bar(x + (j - 0.5) * WIDTH, vals, WIDTH, label=name, **plot_style.BAR_STYLES[style])
+        bars += ax.bar(x + (j - 0.5) * WIDTH, vals, WIDTH, label=name, **plot_style.BAR_STYLES[style])
     ax.set_xticks(x)
     ax.set_xticklabels(categories)
     ax.set_xlim(x[0] - WIDTH - 0.12, x[-1] + WIDTH + 0.12)
@@ -135,6 +138,7 @@ def panel_data_movement(ax, trials):
     plot_style.apply_plot_style(ax)
     if log:
         ax.set_ylim(bottom=1.0)
+    plot_style.label_bar_values(ax, bars)  # the absolute GB of every bar
 
 
 def panel_per_operation(ax, trials, value, ylabel):

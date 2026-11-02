@@ -31,20 +31,14 @@
               }
             },
             "selection": {
-              "beta": {
-                "alpha": 0.1,
-                "beta": 5
+              "zipf": {
+                "n": 1000000,
+                "s": 1
               }
             }
           },
           "point_queries": {
-            "op_count": 250000,
-            "selection": {
-              "beta": {
-                "alpha": 0.1,
-                "beta": 5
-              }
-            }
+            "op_count": 250000
           },
           "empty_point_queries": {
             "op_count": 250000,

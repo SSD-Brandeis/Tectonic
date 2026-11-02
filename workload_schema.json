@@ -38,6 +38,18 @@
         "numeric"
       ]
     },
+    "CounterNumber": {
+      "description": "Consecutive numbers `start`, `start + step`, ..., one per evaluation, e.g. the key numbers of a YCSB\nload, which YCSB turns into keys with a hash, written as a `scatter` of the counter:\n`{ \"scatter\": { \"len\": 1000000000000000, \"value\": { \"counter\": { \"start\": 0 } } } }`. Copies of the\nexpression share the counter.",
+      "type": "object",
+      "properties": {
+        "counter": {
+          "$ref": "#/$defs/NumberCounter"
+        }
+      },
+      "required": [
+        "counter"
+      ]
+    },
     "DefaultDistributions": {
       "type": "object",
       "properties": {
@@ -949,6 +961,23 @@
         "modulo"
       ]
     },
+    "NumberCounter": {
+      "type": "object",
+      "properties": {
+        "start": {
+          "type": "integer",
+          "format": "uint64",
+          "default": 0,
+          "minimum": 0
+        },
+        "step": {
+          "type": "integer",
+          "format": "uint64",
+          "default": 1,
+          "minimum": 0
+        }
+      }
+    },
     "NumberExpr": {
       "anyOf": [
         {
@@ -972,6 +1001,9 @@
         },
         {
           "$ref": "#/$defs/PoolNumber"
+        },
+        {
+          "$ref": "#/$defs/CounterNumber"
         }
       ]
     },
@@ -1676,6 +1708,51 @@
         "op_count"
       ]
     },
+    "UntrackedUpdates": {
+      "description": "Untracked update (or read-modify-write) specification: the key comes from `key`, not from the valid\nkeys, e.g. YCSB, which computes the key of an update from a key number instead of storing keys.",
+      "type": "object",
+      "properties": {
+        "character_set": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CharacterSet"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "key": {
+          "description": "Key",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StringExpr"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "op_count": {
+          "description": "Number of untracked updates",
+          "$ref": "#/$defs/NumberExpr"
+        },
+        "val": {
+          "description": "Value",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StringExpr"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "op_count"
+      ]
+    },
     "Updates": {
       "description": "Updates specification.",
       "type": "object",
@@ -1931,6 +2008,27 @@
           "anyOf": [
             {
               "$ref": "#/$defs/UntrackedRangeQueries"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "untracked_read_modify_writes": {
+          "description": "A read of the key followed by an update of the same key, as YCSB's read-modify-write.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/UntrackedUpdates"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "untracked_updates": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/UntrackedUpdates"
             },
             {
               "type": "null"

@@ -973,10 +973,16 @@ EXEC_SIDES = ("dbbench", "xbench", "ycsb")
 RUN_WINDOWS = 10
 TRIALS = 5
 EXEC_DIR = f"{OUT_DIR}/execute"
-DBSTATE_DIR = f"{OUT_DIR}/db_state"
-ROCKSDB_DIR = f"{OUT_DIR}/rocksdb_data"
+# --direct-io (2026-10-31, decided with the authors): execute and report again with RocksDB's direct I/O
+# (`-c direct_io=1`: use_direct_reads and use_direct_io_for_flush_and_compaction, as the paper's db_bench
+# commands), on the same traces in execute/; results, database states, log and report go to direct-io-enabled/
+DIRECT_IO = "--direct-io" in sys.argv
+RUN_DIR = f"{OUT_DIR}/direct-io-enabled" if DIRECT_IO else OUT_DIR
+DBSTATE_DIR = f"{RUN_DIR}/db_state"
+ROCKSDB_DIR = f"{RUN_DIR}/rocksdb_data"
 SHM_TRACE = "/dev/shm/mixgraph_trace.txt"
-EXEC_PATH = f"{RESULTS_DIR}/execution.json"
+EXEC_PATH = f"{RUN_DIR}/results/execution.json"
+EXECUTOR_CONFIG = ";direct_io=1" if DIRECT_IO else ""
 
 
 def markers(load_ops, n):
@@ -1069,7 +1075,7 @@ def execute_trial(side, trace, trial):
     shutil.copyfile(trace, SHM_TRACE)
     r1o7.drop_caches()
     cmd = [TECTONIC_CLI, "execute", "-i", SHM_TRACE, "-d", "rocksdb", "-p", ROCKSDB_DIR, "-t", "1",
-           "-c", f"scan_log={out_dir}/range_query_keys.txt;statistics=1"]
+           "-c", f"scan_log={out_dir}/range_query_keys.txt;statistics=1{EXECUTOR_CONFIG}"]
     log(f"  $ {' '.join(cmd)}   (trace: {trace})")
     iostat = r1o7.Iostat(r1o7.IOSTAT_DEVICE)
     t0 = time.perf_counter()
@@ -1133,7 +1139,7 @@ def stage_execute(args):
 # =============================================================================
 #  REPORT
 # =============================================================================
-REPORT_PATH = f"{OUT_DIR}/report.md"
+REPORT_PATH = f"{RUN_DIR}/report.md"
 LAT = (("p50", "50th Percentile Latency"), ("p99", "99th Percentile Latency"), ("mean", "Average Latency"))
 
 
@@ -1270,9 +1276,15 @@ def main():
     global _log_fh
     ap = argparse.ArgumentParser()
     ap.add_argument("--stage", choices=["dbbench", "dbbench-scanlog", "scan-lengths", "characterize", "spec", "xbench", "distance", "ycsb", "traces", "execute", "report"], default="dbbench")
+    ap.add_argument("--direct-io", action="store_true",
+                    help="execute / report with RocksDB's direct I/O, into direct-io-enabled/")
     args = ap.parse_args()
-    os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
-    _log_fh = open(LOG_PATH, "a")
+    if args.direct_io and args.stage not in ("execute", "report"):
+        fail("--direct-io is for the execute and report stages: the traces are the existing ones")
+    log_path = f"{RUN_DIR}/logs/run.log" if args.direct_io else LOG_PATH
+    os.makedirs(os.path.dirname(log_path), exist_ok=True)
+    os.makedirs(f"{RUN_DIR}/results", exist_ok=True)
+    _log_fh = open(log_path, "a")
     log(f"\n{'=' * 70}\n  run_mixgraph_fidelity.py  stage={args.stage}  {time.strftime('%Y-%m-%d %H:%M:%S')}\n{'=' * 70}")
     if args.stage == "dbbench":
         stage_dbbench(args)

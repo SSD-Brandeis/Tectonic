@@ -1,0 +1,47 @@
+{
+  "$schema": "../../workload_schema.json",
+  "sections": [
+    {
+      "groups": [
+        {
+          "name": "Execution Phase",
+          "enable_granular_stats": true,
+          "inserts": {
+            "op_count": 47500,
+            "val": {
+              "uniform": {
+                "len": 512
+              }
+            },
+            "key": {
+              "segmented": {
+                "separator": "",
+                "segments": [
+                  {
+                    "number": {
+                      "value": {
+                        "zipf": {
+                          "n": 3844,
+                          "s": 1
+                        }
+                      },
+                      "width": 4
+                    }
+                  },
+                  {
+                    "uniform": {
+                      "len": 508
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "point_queries": {
+            "op_count": 2500
+          }
+        }
+      ]
+    }
+  ]
+}

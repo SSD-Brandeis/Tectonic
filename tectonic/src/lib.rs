@@ -494,6 +494,8 @@ enum Op {
     UntrackedPointQuery,
     UntrackedPointDelete,
     UntrackedRangeQuery,
+    UntrackedUpdate,
+    UntrackedReadModifyWrite,
 }
 
 // TODO: Allow for different sections to use different keysets
@@ -927,6 +929,14 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
             .untracked_range_queries
             .as_ref()
             .map_or(0, |drs| drs.op_count.evaluate(rng_ref) as usize);
+        let untracked_update_count = group
+            .untracked_updates
+            .as_ref()
+            .map_or(0, |us| us.op_count.evaluate(rng_ref) as usize);
+        let untracked_read_modify_write_count = group
+            .untracked_read_modify_writes
+            .as_ref()
+            .map_or(0, |rmws| rmws.op_count.evaluate(rng_ref) as usize);
 
         debug!(
             ?unique_insert_count,
@@ -1077,6 +1087,8 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
         markers.add_op_count(Op::UntrackedPointQuery, untracked_point_query_count);
         markers.add_op_count(Op::UntrackedPointDelete, untracked_point_delete_count);
         markers.add_op_count(Op::UntrackedRangeQuery, untracked_range_query_count);
+        markers.add_op_count(Op::UntrackedUpdate, untracked_update_count);
+        markers.add_op_count(Op::UntrackedReadModifyWrite, untracked_read_modify_write_count);
         markers.prepare_iter();
         let total_markers = markers.total;
 
@@ -1128,6 +1140,30 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
             Vec::new()
         };
         pregen_untracked_range_queries.reverse();
+
+        let mut pregen_untracked_updates = if let Some(bus) = &group.untracked_updates {
+            pregenerate_keys_parallel(
+                bus.key.as_ref().or(key).unwrap_or(&default_fallback),
+                bus.character_set.or(character_set),
+                untracked_update_count,
+                thread_id,
+            )
+        } else {
+            Vec::new()
+        };
+        pregen_untracked_updates.reverse();
+
+        let mut pregen_untracked_read_modify_writes = if let Some(brmws) = &group.untracked_read_modify_writes {
+            pregenerate_keys_parallel(
+                brmws.key.as_ref().or(key).unwrap_or(&default_fallback),
+                brmws.character_set.or(character_set),
+                untracked_read_modify_write_count,
+                thread_id,
+            )
+        } else {
+            Vec::new()
+        };
+        pregen_untracked_read_modify_writes.reverse();
 
         eprintln!("[Generating] Section {} | Group {}", section_num, group_num);
         let progress_bar = ProgressBar::with_draw_target(
@@ -1550,6 +1586,51 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
                         trace!(?marker, ?duration);
                     }
                 }
+                Op::UntrackedUpdate => {
+                    let start = Instant::now();
+                    let us = group.untracked_updates.as_ref().ok_or_else(|| {
+                        anyhow!("Untracked update marker can only appear when untracked_updates is not None")
+                    })?;
+                    let key = pregen_untracked_updates.pop().expect("pregenerated untracked update key");
+                    operation_handler.handle_update(
+                        rng_ref,
+                        &key,
+                        us.val
+                            .as_ref()
+                            .or(val)
+                            .expect("No value or default value set for untracked updates"),
+                        us.character_set.or(character_set),
+                    )?;
+                    let duration = Instant::now().duration_since(start);
+                    operation_timings.time_update += duration;
+                    if duration > Duration::from_millis(1) {
+                        trace!(?marker, ?duration);
+                    }
+                }
+                Op::UntrackedReadModifyWrite => {
+                    let start = Instant::now();
+                    let rmws = group.untracked_read_modify_writes.as_ref().ok_or_else(|| {
+                        anyhow!("Untracked read-modify-write marker can only appear when untracked_read_modify_writes is not None")
+                    })?;
+                    let key = pregen_untracked_read_modify_writes
+                        .pop()
+                        .expect("pregenerated untracked read-modify-write key");
+                    operation_handler.handle_untracked_point_query(&key)?;
+                    operation_handler.handle_update(
+                        rng_ref,
+                        &key,
+                        rmws.val
+                            .as_ref()
+                            .or(val)
+                            .expect("No value or default value set for untracked read-modify-writes"),
+                        rmws.character_set.or(character_set),
+                    )?;
+                    let duration = Instant::now().duration_since(start);
+                    operation_timings.time_merge += duration;
+                    if duration > Duration::from_millis(1) {
+                        trace!(?marker, ?duration);
+                    }
+                }
             }
         }
 
@@ -1842,7 +1923,9 @@ fn scale_spec(workload_spec: &mut WorkloadSpec, factor: f64) {
                     range_queries,
                     untracked_point_queries,
                     untracked_point_deletes,
-                    untracked_range_queries
+                    untracked_range_queries,
+                    untracked_updates,
+                    untracked_read_modify_writes
                 ]
             );
         }

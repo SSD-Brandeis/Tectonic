@@ -580,9 +580,11 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "cassandra-cpp",
+ "cc",
  "enum_dispatch",
  "hdrhistogram",
  "indicatif",
+ "librocksdb-sys",
  "redis",
  "rocksdb",
  "scylla",

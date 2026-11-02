@@ -535,6 +535,27 @@ pub enum NumberExpr {
     Modulo(ModuloNumber),
     Ranges(RangesNumber),
     Pool(PoolNumber),
+    Counter(CounterNumber),
+}
+
+/// Consecutive numbers `start`, `start + step`, ..., one per evaluation, e.g. the key numbers of a YCSB
+/// load, which YCSB turns into keys with a hash, written as a `scatter` of the counter:
+/// `{ "scatter": { "len": 1000000000000000, "value": { "counter": { "start": 0 } } } }`. Copies of the
+/// expression share the counter.
+#[derive(serde::Deserialize, JsonSchema, Clone, Debug)]
+pub struct CounterNumber {
+    pub counter: NumberCounter,
+}
+
+#[derive(serde::Deserialize, JsonSchema, Clone, Debug)]
+pub struct NumberCounter {
+    #[serde(default)]
+    pub start: u64,
+    #[serde(default = "default_counter_step")]
+    pub step: u64,
+    /// The number of values taken so far.
+    #[serde(skip)]
+    taken: Arc<AtomicU64>,
 }
 
 /// One of the values, picked with probability proportional to its weight, e.g. an empirical
@@ -598,19 +619,28 @@ pub struct Scatter {
     pub start: u64,
     pub len: u64,
     pub value: Box<NumberExpr>,
+    /// `a` of `apply`, computed once (2026-11-02: it was computed, with a gcd loop, for every number)
+    #[serde(skip)]
+    multiplier: std::sync::OnceLock<u64>,
 }
 
 impl Scatter {
-    /// `x mod len` -> `start + (x * a) mod len`, `a` the integer nearest `len` / golden ratio that is
-    /// coprime with `len`: one-to-one on `[0, len)`, and consecutive numbers land far apart.
-    fn apply(&self, x: f64) -> f64 {
-        let len = self.len.max(1);
+    /// The integer nearest `len` / golden ratio that is coprime with `len` (at least 1).
+    fn compute_multiplier(len: u64) -> u64 {
         let mut a = ((len as f64) * 0.618_033_988_749_894_9).round() as u64;
         while a > 1 && gcd(a, len) != 1 {
             a -= 1;
         }
+        a.max(1)
+    }
+
+    /// `x mod len` -> `start + (x * a) mod len`, `a` the integer nearest `len` / golden ratio that is
+    /// coprime with `len`: one-to-one on `[0, len)`, and consecutive numbers land far apart.
+    fn apply(&self, x: f64) -> f64 {
+        let len = self.len.max(1);
+        let a = *self.multiplier.get_or_init(|| Self::compute_multiplier(len));
         let x = (x.floor() as u64) % len;
-        (self.start + ((x as u128 * a.max(1) as u128) % len as u128) as u64) as f64
+        (self.start + ((x as u128 * a as u128) % len as u128) as u64) as f64
     }
 }
 
@@ -856,6 +886,9 @@ impl NumberExpr {
             }
             Self::Ranges(RangesNumber { ranges }) => ranges.sample(rng),
             Self::Pool(PoolNumber { pool }) => pool.sample(rng),
+            Self::Counter(CounterNumber { counter }) => {
+                (counter.start + counter.step * counter.taken.fetch_add(1, Ordering::Relaxed)) as f64
+            }
         }
     }
 
@@ -872,6 +905,7 @@ impl NumberExpr {
             }
             Self::Ranges(RangesNumber { ranges }) => ranges.mean(),
             Self::Pool(PoolNumber { pool }) => pool.value.expected_value(),
+            Self::Counter(CounterNumber { counter }) => counter.start as f64,
         }
     }
 
@@ -889,6 +923,7 @@ impl NumberExpr {
             Self::Modulo(ModuloNumber { modulo }) => modulo.value.scale(factor),
             Self::Ranges(RangesNumber { ranges }) => ranges.value.scale(factor),
             Self::Pool(PoolNumber { pool }) => pool.value.scale(factor),
+            Self::Counter(CounterNumber { counter }) => counter.start = (counter.start as f64 * factor) as u64,
         }
     }
 }
@@ -1535,6 +1570,20 @@ pub struct UntrackedPointQueries {
 }
 
 #[derive(serde::Deserialize, JsonSchema, Clone, Debug)]
+/// Untracked update (or read-modify-write) specification: the key comes from `key`, not from the valid
+/// keys, e.g. YCSB, which computes the key of an update from a key number instead of storing keys.
+pub struct UntrackedUpdates {
+    /// Number of untracked updates
+    pub op_count: NumberExpr,
+    /// Key
+    pub key: Option<StringExpr>,
+    /// Value
+    pub val: Option<StringExpr>,
+    #[serde(default)]
+    pub character_set: Option<CharacterSet>,
+}
+
+#[derive(serde::Deserialize, JsonSchema, Clone, Debug)]
 pub struct UntrackedRangeQueries {
     /// Number of untracked range queries
     pub op_count: NumberExpr,
@@ -1615,7 +1664,8 @@ impl_scalable_regular!(
     EmptyPointDeletes,
     EmptyPointQueries,
     UntrackedPointQueries,
-    UntrackedRangeQueries
+    UntrackedRangeQueries,
+    UntrackedUpdates
 );
 
 impl_scalable_with_selection!(
@@ -1655,6 +1705,9 @@ pub struct WorkloadSpecGroup {
     pub untracked_point_deletes: Option<UntrackedPointQueries>,
     #[serde(alias = "blind_range_queries")]
     pub untracked_range_queries: Option<UntrackedRangeQueries>,
+    pub untracked_updates: Option<UntrackedUpdates>,
+    /// A read of the key followed by an update of the same key, as YCSB's read-modify-write.
+    pub untracked_read_modify_writes: Option<UntrackedUpdates>,
 
     /// Defaults for the group
     pub defaults: Option<Defaults>,
@@ -1994,6 +2047,31 @@ mod tests {
                 for _ in 0..1000 {
                     assert!(sel.select(&mut rng, len) < len, "{json}");
                 }
+            }
+        }
+    }
+
+    #[test]
+    fn scatter_cached_multiplier_matches_the_per_call_formula() {
+        // the formula of `Scatter::apply` before 2026-11-02, which computed `a` on every call
+        fn reference(start: u64, len: u64, x: f64) -> f64 {
+            let len = len.max(1);
+            let mut a = ((len as f64) * 0.618_033_988_749_894_9).round() as u64;
+            while a > 1 && gcd(a, len) != 1 {
+                a -= 1;
+            }
+            let x = (x.floor() as u64) % len;
+            (start + ((x as u128 * a.max(1) as u128) % len as u128) as u64) as f64
+        }
+        let mut rng = Xoshiro256Plus::seed_from_u64(7);
+        for (start, len) in [(0, 1_000_000_000_000_000), (0, 1_000_000), (1000, 97), (0, 1), (0, 2), (5, 3844),
+                             (0, 1u64 << 52), (0, 999_983)] {
+            let s = Scatter { start, len, value: Box::new(NumberExpr::Constant(0.0)), multiplier: Default::default() };
+            let mut xs: Vec<f64> = (0..2000).map(|i| i as f64).collect();
+            xs.extend((0..20000).map(|_| (rng.random::<u64>() >> 11) as f64));
+            xs.extend([len as f64 - 1.0, len as f64, 2.0 * len as f64 + 3.0, 3.7, 1e15 - 1.0]);
+            for x in xs {
+                assert_eq!(s.apply(x).to_bits(), reference(start, len, x).to_bits(), "start {start} len {len} x {x}");
             }
         }
     }

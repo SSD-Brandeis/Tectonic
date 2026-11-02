@@ -183,6 +183,44 @@ def apply_plot_style(ax, title=None, xlabel=None, ylabel=None):
         spine.set_linewidth(1.0)
     ax.tick_params(colors="black", which="both", direction="out")
 
+def set_even_xticks(ax, x_max, min_ticks=3, max_ticks=6, pad=0.03):
+    """
+    Evenly spaced x ticks from 0 to the first tick at or past x_max, and an axis that ends on that
+    tick: the step (1, 2, 2.5, 3, 4 or 5 times a power of 10) that wastes the least room after
+    x_max with min_ticks..max_ticks ticks, fewer ticks on a tie. Both ends get the same pad.
+    """
+    import math
+    best = None
+    for exp in range(int(math.floor(math.log10(max(x_max, 1)))) - 2, int(math.log10(max(x_max, 1))) + 2):
+        for mult in (1, 2, 2.5, 3, 4, 5):
+            step = mult * 10 ** exp
+            n_steps = math.ceil(x_max / step - 1e-9)
+            if min_ticks <= n_steps + 1 <= max_ticks:
+                key = (n_steps * step, n_steps)
+                if best is None or key < best[0]:
+                    best = (key, step, n_steps)
+    _, step, n_steps = best
+    end = n_steps * step
+    ax.set_xticks([i * step for i in range(n_steps + 1)])
+    ax.set_xlim(-pad * end, (1 + pad) * end)
+
+def label_bar_values(ax, bars, fontsize=14, headroom=0.68):
+    """
+    Writes each bar's value (3 significant digits) above it, rotated, and raises the top of the y-axis so the
+    tallest bar ends at `headroom` of the axis height (on a log axis, of its decades).
+    """
+    import math
+    heights = [b.get_height() for b in bars]
+    for b, h in zip(bars, heights):
+        ax.annotate(f"{h:#.3g}".rstrip("."), (b.get_x() + b.get_width() / 2, h), xytext=(0, 3),
+                    textcoords="offset points", ha="center", va="bottom", rotation=90, fontsize=fontsize)
+    bottom = ax.get_ylim()[0]
+    if ax.get_yscale() == "log":
+        lo, hi = math.log10(bottom), math.log10(max(heights))
+        ax.set_ylim(bottom, 10 ** (lo + (hi - lo) / headroom))
+    else:
+        ax.set_ylim(bottom, max(heights) / headroom)
+
 def save_legend(fig_or_ax, path_without_ext):
     """
     Extracts the legend from the figure or axis, saves it to a separate PDF file,

@@ -22,6 +22,11 @@ Stages (checkpointed, run with --stage <name>, or all in this order):
                 written, end-of-run database state
   report        report.md from all of the above
 
+--direct-io (2026-10-31, decided with the authors): execute and report again with RocksDB's direct I/O
+(`-c direct_io=1`: use_direct_reads and use_direct_io_for_flush_and_compaction), on the same traces. The
+results, database states, log and report go to direct-io-enabled/; the traces, generation.json and the trace
+analysis are read from the folder above, which is not changed.
+
 Output: data/revision/R1.O7_ycsb-derivatives/ (see its README.md).
 """
 import os
@@ -49,9 +54,12 @@ TS_DIR = f"{ROOT_DIR}/YCSB-TS"
 OUT_DIR = f"{ROOT_DIR}/data/revision/R1.O7_ycsb-derivatives"
 WORKLOAD_DIR = f"{OUT_DIR}/workloads"
 RESULTS_DIR = f"{OUT_DIR}/results"
-DBSTATE_DIR = f"{OUT_DIR}/db_state"
-LOG_PATH = f"{OUT_DIR}/logs/run.log"
-ROCKSDB_DIR = f"{OUT_DIR}/rocksdb_data"
+DIRECT_IO = "--direct-io" in sys.argv
+RUN_DIR = f"{OUT_DIR}/direct-io-enabled" if DIRECT_IO else OUT_DIR  # what the execute and report stages write
+DBSTATE_DIR = f"{RUN_DIR}/db_state"
+LOG_PATH = f"{RUN_DIR}/logs/run.log"
+ROCKSDB_DIR = f"{RUN_DIR}/rocksdb_data"
+EXECUTOR_CONFIG = ";direct_io=1" if DIRECT_IO else ""
 
 TRIALS = 5
 # ycsb_derivative: the derivative's trace X-Bench is compared against; ycsb_derivative_rerun: a second,
@@ -858,7 +866,7 @@ def stage_trace_spread(args):
 # =============================================================================
 #  STAGE: EXECUTE (RocksDB, TRIALS per trace)
 # =============================================================================
-EXEC_PATH = f"{RESULTS_DIR}/execution.json"
+EXEC_PATH = f"{RUN_DIR}/results/execution.json"
 
 
 def drop_caches():
@@ -1012,7 +1020,7 @@ def execute_trial(name, side, trace, trial, merge_mode, state_dir=None):
     shutil.copyfile(trace, SHM_TRACE)
     drop_caches()
     cmd = [TECTONIC_CLI, "execute", "-i", SHM_TRACE, "-d", "rocksdb", "-p", ROCKSDB_DIR, "-t", "1",
-           "--merge-mode", merge_mode, "-c", f"scan_log={scan_log};statistics=1"]
+           "--merge-mode", merge_mode, "-c", f"scan_log={scan_log};statistics=1{EXECUTOR_CONFIG}"]
     log(f"  $ {' '.join(cmd)}   (trace: {trace})")
     iostat = Iostat(IOSTAT_DEVICE)
     t0 = time.perf_counter()
@@ -1095,7 +1103,7 @@ def stage_execute(args):
 # The execute stage runs the trials of one trace after another: YCSB, then the YCSB rerun, then X-Bench.
 # The order check runs one trial of every trace per round and rotates the order each round, so every trace
 # runs first, second and third; a difference that comes from the order shows up as one by position.
-ORDER_PATH = f"{RESULTS_DIR}/order_check.json"
+ORDER_PATH = f"{RUN_DIR}/results/order_check.json"
 ORDER_STATE_DIR = f"{DBSTATE_DIR}/order_check"
 
 
@@ -1127,8 +1135,8 @@ def stage_order_check(args):
 # =============================================================================
 #  STAGE: REPORT
 # =============================================================================
-SUMMARY_PATH = f"{RESULTS_DIR}/summary.json"
-REPORT_PATH = f"{OUT_DIR}/report.md"
+SUMMARY_PATH = f"{RUN_DIR}/results/summary.json"
+REPORT_PATH = f"{RUN_DIR}/report.md"
 
 
 def mean_sd(values):
@@ -1413,9 +1421,13 @@ def main():
                     help="execute stage: rerun these trials of --workloads, e.g. xbench:1")
     ap.add_argument("--regen-xbench", action="store_true",
                     help="rewrite the specs and regenerate only the X-Bench traces of --workloads")
+    ap.add_argument("--direct-io", action="store_true",
+                    help="execute / report with RocksDB's direct I/O, into direct-io-enabled/")
     args = ap.parse_args()
+    if args.direct_io and args.stage not in ("execute", "report"):
+        fail("--direct-io is for the execute and report stages: the traces are the existing ones")
 
-    for d in (OUT_DIR, WORKLOAD_DIR, RESULTS_DIR, DBSTATE_DIR, os.path.dirname(LOG_PATH)):
+    for d in (OUT_DIR, WORKLOAD_DIR, RESULTS_DIR, f"{RUN_DIR}/results", DBSTATE_DIR, os.path.dirname(LOG_PATH)):
         os.makedirs(d, exist_ok=True)
     _log_fh = open(LOG_PATH, "a")
     banner(f"run_ycsb_derivatives_fidelity.py  stage={args.stage}  {time.strftime('%Y-%m-%d %H:%M:%S')}")

@@ -33,7 +33,7 @@ TRACE_ANALYZER = f"{ROCKSDB_SRC}/trace_analyzer"
 # The same source with references/db_bench_scan_length_log.patch: one log line per Seek (key id, scan length
 # drawn, Next calls made), because RocksDB's tracer does not record Next. No other change.
 DB_BENCH_SCANLOG = f"{ROOT_DIR}/rocksdb-v10.4.2-scanlog/db_bench"
-TECTONIC_CLI = f"{ROOT_DIR}/target/release/tectonic-cli"
+TECTONIC_CLI = os.environ.get("TECTONIC_CLI", f"{ROOT_DIR}/target/release/tectonic-cli")  # override: the WAL-off rerun
 
 OUT_DIR = f"{ROOT_DIR}/data/revision/R1.O9-R2.O1_mixgraph"
 DBBENCH_DIR = f"{OUT_DIR}/dbbench"
@@ -976,13 +976,16 @@ EXEC_DIR = f"{OUT_DIR}/execute"
 # --direct-io (2026-10-31, decided with the authors): execute and report again with RocksDB's direct I/O
 # (`-c direct_io=1`: use_direct_reads and use_direct_io_for_flush_and_compaction, as the paper's db_bench
 # commands), on the same traces in execute/; results, database states, log and report go to direct-io-enabled/
+# --direct-io --disable-wal (2026-11-03): the same with the WAL off too (`-c direct_io=1;disable_wal=1`), into
+# direct-io-wal-off/: with it, iostat adds up to RocksDB's counters (R1.O7-R1.O9_direct-io_iostat-vs-rocksdb-stats/)
 DIRECT_IO = "--direct-io" in sys.argv
-RUN_DIR = f"{OUT_DIR}/direct-io-enabled" if DIRECT_IO else OUT_DIR
+DISABLE_WAL = "--disable-wal" in sys.argv
+RUN_DIR = (f"{OUT_DIR}/direct-io-wal-off" if DISABLE_WAL else f"{OUT_DIR}/direct-io-enabled") if DIRECT_IO else OUT_DIR
 DBSTATE_DIR = f"{RUN_DIR}/db_state"
 ROCKSDB_DIR = f"{RUN_DIR}/rocksdb_data"
 SHM_TRACE = "/dev/shm/mixgraph_trace.txt"
 EXEC_PATH = f"{RUN_DIR}/results/execution.json"
-EXECUTOR_CONFIG = ";direct_io=1" if DIRECT_IO else ""
+EXECUTOR_CONFIG = (";direct_io=1" if DIRECT_IO else "") + (";disable_wal=1" if DISABLE_WAL else "")
 
 
 def markers(load_ops, n):
@@ -1118,13 +1121,13 @@ def stage_execute(args):
     if os.path.exists(EXEC_PATH):
         with open(EXEC_PATH) as f:
             results = json.load(f)
-    for rnd in range(1, TRIALS + 1):
+    for rnd in range(1, args.trials + 1):  # --trials 1 first, then --trials 5 adds rounds 2-5
         order = EXEC_SIDES[(rnd - 1) % len(EXEC_SIDES):] + EXEC_SIDES[:(rnd - 1) % len(EXEC_SIDES)]
         for pos, side in enumerate(order, 1):
             done = results.setdefault(side, [])
             if any(t["trial"] == rnd for t in done):
                 continue
-            log(f"\n=== EXECUTE round {rnd}/{TRIALS}: {pos}. {side} ===")
+            log(f"\n=== EXECUTE round {rnd}/{args.trials}: {pos}. {side} ===")
             rec = execute_trial(side, traces[side], rnd)
             rec["position"] = pos
             done.append(rec)
@@ -1278,9 +1281,14 @@ def main():
     ap.add_argument("--stage", choices=["dbbench", "dbbench-scanlog", "scan-lengths", "characterize", "spec", "xbench", "distance", "ycsb", "traces", "execute", "report"], default="dbbench")
     ap.add_argument("--direct-io", action="store_true",
                     help="execute / report with RocksDB's direct I/O, into direct-io-enabled/")
+    ap.add_argument("--disable-wal", action="store_true",
+                    help="with --direct-io: also disable_wal=1, into direct-io-wal-off/ (2026-11-03)")
+    ap.add_argument("--trials", type=int, default=TRIALS, help="execute: rounds 1..N (rounds already done are kept)")
     args = ap.parse_args()
     if args.direct_io and args.stage not in ("execute", "report"):
         fail("--direct-io is for the execute and report stages: the traces are the existing ones")
+    if args.disable_wal and not args.direct_io:
+        fail("--disable-wal goes with --direct-io")
     log_path = f"{RUN_DIR}/logs/run.log" if args.direct_io else LOG_PATH
     os.makedirs(os.path.dirname(log_path), exist_ok=True)
     os.makedirs(f"{RUN_DIR}/results", exist_ok=True)

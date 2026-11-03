@@ -26,6 +26,8 @@ Stages (checkpointed, run with --stage <name>, or all in this order):
 (`-c direct_io=1`: use_direct_reads and use_direct_io_for_flush_and_compaction), on the same traces. The
 results, database states, log and report go to direct-io-enabled/; the traces, generation.json and the trace
 analysis are read from the folder above, which is not changed.
+--direct-io --disable-wal (2026-11-03): the same with the WAL off too (`-c direct_io=1;disable_wal=1`), into
+direct-io-wal-off/: with it, iostat adds up to RocksDB's counters (R1.O7-R1.O9_direct-io_iostat-vs-rocksdb-stats/).
 
 Output: data/revision/R1.O7_ycsb-derivatives/ (see its README.md).
 """
@@ -44,7 +46,7 @@ import subprocess
 import threading
 
 ROOT_DIR = "/home/cc/Tectonic"
-TECTONIC_CLI = f"{ROOT_DIR}/target/release/tectonic-cli"
+TECTONIC_CLI = os.environ.get("TECTONIC_CLI", f"{ROOT_DIR}/target/release/tectonic-cli")  # override: the WAL-off rerun
 VALUE_SIZES_BIN = f"{ROOT_DIR}/target/release/examples/rocksdb_value_sizes"
 
 DERIV_DIR = f"{ROOT_DIR}/ycsb-derivatives"
@@ -55,11 +57,13 @@ OUT_DIR = f"{ROOT_DIR}/data/revision/R1.O7_ycsb-derivatives"
 WORKLOAD_DIR = f"{OUT_DIR}/workloads"
 RESULTS_DIR = f"{OUT_DIR}/results"
 DIRECT_IO = "--direct-io" in sys.argv
-RUN_DIR = f"{OUT_DIR}/direct-io-enabled" if DIRECT_IO else OUT_DIR  # what the execute and report stages write
+DISABLE_WAL = "--disable-wal" in sys.argv  # 2026-11-03: with --direct-io, also disable_wal=1, into direct-io-wal-off/
+RUN_DIR = (f"{OUT_DIR}/direct-io-wal-off" if DISABLE_WAL else f"{OUT_DIR}/direct-io-enabled") if DIRECT_IO \
+    else OUT_DIR  # what the execute and report stages write
 DBSTATE_DIR = f"{RUN_DIR}/db_state"
 LOG_PATH = f"{RUN_DIR}/logs/run.log"
 ROCKSDB_DIR = f"{RUN_DIR}/rocksdb_data"
-EXECUTOR_CONFIG = ";direct_io=1" if DIRECT_IO else ""
+EXECUTOR_CONFIG = (";direct_io=1" if DIRECT_IO else "") + (";disable_wal=1" if DISABLE_WAL else "")
 
 TRIALS = 5
 # ycsb_derivative: the derivative's trace X-Bench is compared against; ycsb_derivative_rerun: a second,
@@ -1423,9 +1427,13 @@ def main():
                     help="rewrite the specs and regenerate only the X-Bench traces of --workloads")
     ap.add_argument("--direct-io", action="store_true",
                     help="execute / report with RocksDB's direct I/O, into direct-io-enabled/")
+    ap.add_argument("--disable-wal", action="store_true",
+                    help="with --direct-io: also disable_wal=1, into direct-io-wal-off/ (2026-11-03)")
     args = ap.parse_args()
     if args.direct_io and args.stage not in ("execute", "report"):
         fail("--direct-io is for the execute and report stages: the traces are the existing ones")
+    if args.disable_wal and not args.direct_io:
+        fail("--disable-wal goes with --direct-io")
 
     for d in (OUT_DIR, WORKLOAD_DIR, RESULTS_DIR, f"{RUN_DIR}/results", DBSTATE_DIR, os.path.dirname(LOG_PATH)):
         os.makedirs(d, exist_ok=True)

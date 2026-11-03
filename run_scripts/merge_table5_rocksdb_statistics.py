@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 """Build the final Table 5 revision results: Redis, Cassandra and ScyllaDB from the
 original multi-run experiment, RocksDB from the rerun with RocksDB statistics enabled
-(tectonic-cli -c statistics=1), which reports exact byte counters.
+(tectonic-cli -c statistics=1), which reports exact byte counters; and two cells, Redis 2^18 and
+Cassandra 2^19 (both workloads, all metrics), from their rerun of 2026-11-03 on fixedkeyset-2
+(run_scripts/run_table5_two_cells.py: the same harness, binary fc63df5f, trace files, images and client
+configuration). Their bytes transferred (iostat) differed by 7.06% and 9.35% between YCSB and X-Bench in
+the original run; the original trials stay in data/table-5-revision-multirun/.
 
 Writes <out>/results/results_raw.json; rebuild the summary, table and documentation with
   python3 run_scripts/run_table5_revision_multirun.py --report-only \
@@ -15,6 +19,8 @@ import argparse
 ROOT_DIR = "/home/cc/Tectonic"
 ORIGINAL = f"{ROOT_DIR}/data/table-5-revision-multirun"
 ROCKSDB_RERUN = f"{ROOT_DIR}/data/table-5-revision-multirun-rocksdb-statistics"
+TWO_CELL_RERUN = f"{ROOT_DIR}/data/table-5-revision-two-cell-rerun-2026-11-03"
+TWO_CELLS = [("redis", "262144"), ("cassandra", "524288")]
 OUT = f"{ROOT_DIR}/data/table-5-revision-final"
 TRIALS = 5
 
@@ -23,11 +29,13 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--original", default=ORIGINAL)
     parser.add_argument("--rocksdb-rerun", default=ROCKSDB_RERUN)
+    parser.add_argument("--two-cell-rerun", default=TWO_CELL_RERUN)
     parser.add_argument("--out", default=OUT)
     args = parser.parse_args()
 
     original = json.load(open(f"{args.original}/results/results_raw.json"))
     rerun = json.load(open(f"{args.rocksdb_rerun}/results/results_raw.json"))
+    two_cell = json.load(open(f"{args.two_cell_rerun}/results/results_raw.json"))
 
     rocksdb = rerun["results"].get("rocksdb", {})
     problems = []
@@ -43,8 +51,21 @@ def main():
     if problems:
         sys.exit("RocksDB rerun incomplete:\n  " + "\n  ".join(problems))
 
-    results = dict(original["results"])
+    for key in ("client_config", "db_images", "iostat_device", "workload_dir"):
+        if two_cell["config"][key] != original["config"][key]:
+            problems.append(f"two-cell rerun: {key} differs from the original run")
+    for db, scale in TWO_CELLS:
+        for workload in ("ycsb", "tectonic"):
+            n = len(two_cell["results"].get(db, {}).get(scale, {}).get(workload, []))
+            if n != TRIALS:
+                problems.append(f"two-cell rerun {db} {scale} {workload}: {n} trials")
+    if problems:
+        sys.exit("two-cell rerun incomplete:\n  " + "\n  ".join(problems))
+
+    results = {db: dict(scales) for db, scales in original["results"].items()}
     results["rocksdb"] = rocksdb
+    for db, scale in TWO_CELLS:
+        results[db][scale] = two_cell["results"][db][scale]
     merged = {
         "config": {
             "experiment": "table-5-revision-final",
@@ -54,6 +75,7 @@ def main():
                 "redis": f"{args.original}/results/results_raw.json",
                 "cassandra": f"{args.original}/results/results_raw.json",
                 "scylla": f"{args.original}/results/results_raw.json",
+                **{f"{db} {scale}": f"{args.two_cell_rerun}/results/results_raw.json" for db, scale in TWO_CELLS},
             },
             "client_config": {**original["config"]["client_config"],
                               "rocksdb": rerun["config"]["client_config"]["rocksdb"]},

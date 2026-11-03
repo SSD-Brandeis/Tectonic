@@ -36,7 +36,8 @@ import plot_style
 
 OUT_DIR = "/home/cc/Tectonic/data/revision/R1.O7_ycsb-derivatives"
 if "--direct-io" in sys.argv:  # the rerun with RocksDB's direct I/O (2026-10-31): its execution.json and plots
-    OUT_DIR = f"{OUT_DIR}/direct-io-enabled"
+    # with --wal-off: the rerun with the WAL off too (2026-11-03, direct_io=1;disable_wal=1)
+    OUT_DIR = f"{OUT_DIR}/direct-io-wal-off" if "--wal-off" in sys.argv else f"{OUT_DIR}/direct-io-enabled"
 EXEC_PATH = f"{OUT_DIR}/results/execution.json"
 PLOT_DIR = f"{OUT_DIR}/plots"
 

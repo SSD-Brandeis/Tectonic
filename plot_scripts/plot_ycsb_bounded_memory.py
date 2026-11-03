@@ -225,12 +225,16 @@ HEAP_FLOOR_FONT = {"font.size": 17, "axes.labelsize": 17, "xtick.labelsize": 16,
 def plot_heap_floor(floor, ycsb_data, xbench, log=False):
     """Figure 3: the two promised metrics of workload A as YCSB's heap cap shrinks, one figure each
     (ycsb_heap_floor_memory, ycsb_heap_floor_time), with X-Bench as a line. YCSB as in Figure 1 (per trial
-    the larger peak of load and run, the sum of their times), every cap of the main sweep; line = mean of the
-    5 trials (no min-max shading: the default heap's spread fans it out from 1024). 4m from the floor runs (the load fails); 12m is left out
-    (load phase only). The default heap (no -Xmx, the paper's setting) is the last point of the line."""
-    caps = ["6m", "8m", "16m", "32m", "64m", "128m", "256m", "512m", "1024m", "default"]
+    the larger peak of load and run, the sum of their times), every capped heap of the main sweep; line = mean
+    of the 5 trials. 4m from the floor runs (the load fails, marked by an arrow to its tick); 12m is left out
+    (load phase only). The default heap (no -Xmx) is not shown. No grid."""
+    caps = ["6m", "8m", "16m", "32m", "64m", "128m", "256m", "512m", "1024m"]
     x_fail, x = 1, np.arange(2, len(caps) + 2)  # x = 0 is the origin, labelled 0
-    labels = ["0", "4"] + [h[:-1] for h in caps[:-1]] + [f"default\n({default_max_heap()[4:]})"]
+    labels = ["0", "4"] + [h[:-1] for h in caps]
+    # the out-of-memory note (axes fraction of its left edge and bottom, text); its arrow points at the 4 tick
+    one_line, two_lines = "out of memory error in YCSB", "out of memory\nerror in YCSB"
+    note = {("memory", True): ((0.22, 0.10), one_line), ("time", True): ((0.22, 0.07), one_line),
+            ("memory", False): ((0.30, 0.38), two_lines), ("time", False): ((0.45, 0.30), two_lines)}
     metrics = [(0, "memory", "memory footprint (MB)", "upper left"), (1, "time", "generation time (s)", "upper right")]
     for idx, name, ylabel, legend_loc in metrics:
         with plt.rc_context(HEAP_FLOOR_FONT):
@@ -250,24 +254,17 @@ def plot_heap_floor(floor, ycsb_data, xbench, log=False):
             ax.axhspan(xb.min(), xb.max(), color="tab:red", alpha=0.15, linewidth=0)
             ax.axhline(xb.mean(), color="tab:red", linestyle="--", linewidth=1.8, label="X-Bench")
             ax.plot(x, ycsb_mean, color="black", marker="o", markersize=5, linewidth=1.8, label="YCSB")
-            label_box = dict(boxstyle="round,pad=0.12", facecolor="white", edgecolor="none", alpha=0.85)
-            # the note goes below X-Bench if that leaves at least 40% of the axis height, else just above it
-            below = np.log10(xb.min() / bottom) / np.log10(top / bottom) if log else (xb.min() - bottom) / (top - bottom)
-            ax.annotate("fails:\nout of\nmemory", xy=(x_fail, bottom if below >= 0.4 else xb.max()), xytext=(0, 4),
-                        textcoords="offset points",
-                        ha="center", va="bottom", fontsize=14, bbox=label_box, zorder=5)
+            (note_x, note_y), note_text = note[(name, log)]
+            ax.annotate(note_text, xy=(x_fail, bottom), xycoords="data", xytext=(note_x, note_y), textcoords="axes fraction", ha="left", va="bottom",
+                        fontsize=14, zorder=5,
+                        arrowprops=dict(arrowstyle="-|>", color="black", linewidth=1.4, mutation_scale=16,
+                                        shrinkA=2, shrinkB=1, connectionstyle="arc3,rad=0.2"))
             ax.set_ylim(bottom, top)
             ax.set_xlim(0, x[-1] + 0.5)
             ax.set_xticks([0, x_fail, *x])
-            ax.set_xticklabels(labels, fontsize=14)  # 11 categories: 16 pt runs 512, 1024 and default together
-            default_label = ax.get_xticklabels()[-1]
-            default_label.set_fontsize(12)
-            default_label.set_transform(default_label.get_transform()  # clear of the 1024 label
-                                        + mtransforms.ScaledTranslation(7 / 72, 0, fig.dpi_scale_trans))
+            ax.set_xticklabels(labels, fontsize=14)
             ax.set_xlabel("YCSB Java heap cap, -Xmx (MB)")  # not format_label: it lowercases Java and -Xmx
             ax.set_ylabel(plot_style.format_label(ylabel) if plot_style else ylabel)
-            ax.grid(True, linestyle="--", alpha=0.4)
-            ax.set_axisbelow(True)
             handles, legend_labels = ax.get_legend_handles_labels()
             ax.legend(handles[::-1], legend_labels[::-1], loc=legend_loc, frameon=False, handlelength=1.8,
                       borderaxespad=0.3)

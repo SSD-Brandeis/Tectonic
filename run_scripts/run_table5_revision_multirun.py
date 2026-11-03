@@ -785,7 +785,7 @@ LATEX_SINGLE_COLUMN_PATH_NAME = "table_5_revision_single_column.tex"
 def write_latex_table_single_column(summary, font=r"\footnotesize", tabcolsep="3.4pt"):
     """Single-column (table) version of the LaTeX table: execution time and bytes transferred
     (iostat block-device read + write), DB names rotated, units on their own header row
-    under each label (about 300 pt wide at the defaults)."""
+    under each label; no CV columns (authors' decision, 2026-11-03)."""
     scales = sorted({int(s) for db in summary for s in summary[db]})
     lines = [
         r"\begin{table}[t]",
@@ -794,18 +794,18 @@ def write_latex_table_single_column(summary, font=r"\footnotesize", tabcolsep="3
         rf"\setlength{{\tabcolsep}}{{{tabcolsep}}}",
         r"\renewcommand{\arraystretch}{1}",
         r"\caption{Comparison of YCSB and \bench{} generated workloads in terms of execution time and bytes transferred."
-        r" Each value is computed over " + str(TRIALS) + r" trials; SD is the standard deviation and CV the"
-        r" coefficient of variation. Diff.\ is the difference between the \bench{} and YCSB means relative to"
+        r" Each value is computed over " + str(TRIALS) + r" trials; SD is the standard deviation."
+        r" Diff.\ is the difference between the \bench{} and YCSB means relative to"
         r" the YCSB mean. Bytes transferred is the block-device read and write volume measured by iostat.}"
         r"\label{tab:db_execution_times_compare}",
         r"\vspace{-1em}",
-        r"\begin{tabular}{@{}c c l rrrr rrrr@{}}",
+        r"\begin{tabular}{@{}c c l rrr rrr@{}}",
         r"\toprule",
-        r" & & & \multicolumn{4}{c}{\textbf{Execution time}} & \multicolumn{4}{c}{\textbf{Bytes transferred}} \\",
-        r"\cmidrule(lr){4-7} \cmidrule(l){8-11}",
-        r" & & \textbf{Bench.} & mean & SD & CV & diff. & mean & SD & CV & diff. \\",
+        r" & & & \multicolumn{3}{c}{\textbf{Execution time}} & \multicolumn{3}{c}{\textbf{Bytes transferred}} \\",
+        r"\cmidrule(lr){4-6} \cmidrule(l){7-9}",
+        r" & & \textbf{Bench.} & mean & SD & diff. & mean & SD & diff. \\",
         r"\multirow{-2}{*}{\rotatebox{90}{\textbf{DB}}} & \textbf{Scale}"
-        r" & \textbf{suite} & (s) & (s) & (\%) & (\%) & (MB) & (MB) & (\%) & (\%) \\",
+        r" & \textbf{suite} & (s) & (s) & (\%) & (MB) & (MB) & (\%) \\",
     ]
     for db, name in LATEX_DB_ORDER:
         if db not in summary:
@@ -827,9 +827,9 @@ def write_latex_table_single_column(summary, font=r"\footnotesize", tabcolsep="3
                 scale_cell = rf"\multirow{{2}}{{*}}{{$2^{{{scale.bit_length() - 1}}}$}}" if k == 0 else ""
                 lines.append(
                     f"{db_cell} & {scale_cell} & {suite}"
-                    f" & {t['mean']:.2f} & {t['stdev']:.2f} & {t['cv_pct']:.2f} & {diff}"
-                    f" & {b['mean']:.2f} & {b['stdev']:.2f} & {b['cv_pct']:.2f} & {b_diff} \\\\"
-                    + (r" \cmidrule(l){2-11}" if k == 1 and j < len(db_scales) - 1 else ""))
+                    f" & {t['mean']:.2f} & {t['stdev']:.2f} & {diff}"
+                    f" & {b['mean']:.2f} & {b['stdev']:.2f} & {b_diff} \\\\"
+                    + (r" \cmidrule(l){2-9}" if k == 1 and j < len(db_scales) - 1 else ""))
     lines += [r"\bottomrule", r"\end{tabular}", r"\vspace{-1em}", r"\end{table}", ""]
     with open(f"{RESULTS_DIR}/{LATEX_SINGLE_COLUMN_PATH_NAME}", "w") as f:
         f.write("\n".join(lines))

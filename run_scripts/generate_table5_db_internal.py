@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
+from pathlib import Path as _Path
+REPO_ROOT = str(_Path(__file__).resolve().parents[1])
 import os
 import json
 
-ROOT_DIR = "/home/cc/Tectonic"
+ROOT_DIR = REPO_ROOT
 OUT_DIR = f"{ROOT_DIR}/data/table5_rerun"
 RESULTS_PATH = f"{OUT_DIR}/results_io_bytes.json"
 TABLE_OUT = f"{OUT_DIR}/table_5_db_internal_unambiguous.md"
@@ -76,11 +78,11 @@ def main():
         for scale in scales:
             lbl = f"2^{scale.bit_length() - 1}"
             sdata = results[db][str(scale)]
-            if "ycsb" not in sdata or "tectonic" not in sdata:
+            if "ycsb" not in sdata or "xbench" not in sdata:
                 continue
 
             y = sdata["ycsb"]
-            t = sdata["tectonic"]
+            t = sdata["xbench"]
 
             # 1. Execution time
             y_et = y.get("overall_metrics", {}).get("end_to_end_time_s", y.get("wall_time_s", 0.0))
@@ -162,7 +164,7 @@ def main():
 - **Formula**: `total_net_input_bytes / (1024 * 1024)`.
 
 ### 3. Cassandra (`cassandra`)
-- **Primary Source**: Cassandra JMX management MBeans via `nodetool tablestats tectonic.data`.
+- **Primary Source**: Cassandra JMX management MBeans via `nodetool tablestats xbench.data`.
 - **Measured Metric**: **In-Memory Memtable Live Data Size (`Memtable data size`)**.
   - In Cassandra, newly inserted and updated records accumulate in an in-memory **Memtable** while mutations are appended to the commit log on disk.
   - Cassandra only creates and flushes on-disk SSTables when the Memtable exceeds its flush threshold (typically ~1–2 GB).

@@ -2,9 +2,9 @@
 """
 Workload Similarity Correctness Experiment
 ==========================================
-Reproduces Fig. 8 from the Tectonic paper.
+Reproduces Fig. 8 from the X-Bench paper.
 
-Goal: prove that YCSB and Tectonic generate comparable YCSB Workload A traces
+Goal: prove that YCSB and X-Bench generate comparable YCSB Workload A traces
 when run on the same RocksDB configuration.
 
 Stages (clearly separated):
@@ -14,6 +14,8 @@ Stages (clearly separated):
                             cache hit/miss counts, and RocksDB I/O statistics
   4. COMPARISON           - print a side-by-side table and save results to JSON
 """
+from pathlib import Path as _Path
+REPO_ROOT = str(_Path(__file__).resolve().parents[1])
 
 import os
 import sys
@@ -22,18 +24,18 @@ import json
 import shutil
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
-HARNESS_DIR  = "/home/cc/Tectonic/rocksdb-benchmark-harness"
-TECTONIC_CLI = "/home/cc/Tectonic/target/release/tectonic-cli"
+HARNESS_DIR  = REPO_ROOT + "/rocksdb-benchmark-harness"
+XBENCH_CLI = REPO_ROOT + "/target/release/xbench-cli"
 
 # C++ harness with STATS enabled (writes per-op latency CSV + perf context)
 HARNESS_STATS = f"{HARNESS_DIR}/cmake-build-release-with-stats/rocksdb-benchmark-harness"
 ROCKSDB_OPTS  = f"{HARNESS_DIR}/experiments/workload-similarity/rocksdb-options.ini"
 
-# Tectonic spec file – the same one used in the paper's similarity experiment.
+# X-Bench spec file – the same one used in the paper's similarity experiment.
 # Encodes YCSB A: inserts in load phase; 50% point_queries + 50% updates in run phase.
 # Key format: segmented "usertable:user<19-digit numeric>" (identical to YCSB).
 # Selection distribution: Beta(alpha=0.15, beta=0.55) which matches YCSB's Zipfian.
-TECTONIC_SPEC = f"{HARNESS_DIR}/experiments/workload-similarity/workload-a.spec.json"
+XBENCH_SPEC = f"{HARNESS_DIR}/experiments/workload-similarity/workload-a.spec.json"
 
 # YCSB Java classpath
 M2       = os.path.expanduser("~/.m2/repository")
@@ -48,7 +50,7 @@ YCSB_CP  = ":".join([
     f"{YCSB_DIR}/core/target/core-0.18.0-SNAPSHOT.jar",
 ])
 
-OUT_DIR = "/home/cc/Tectonic/data/workload_similarity_small"
+OUT_DIR = REPO_ROOT + "/data/workload_similarity_small"
 os.makedirs(OUT_DIR, exist_ok=True)
 DB_DIR = "/tmp/rocksdb-similarity-test"
 
@@ -56,7 +58,7 @@ DB_DIR = "/tmp/rocksdb-similarity-test"
 # Small scale: 50,000 record load + 50,000 operation run (25k reads + 25k updates)
 RECORD_COUNT    = 50_000
 OPERATION_COUNT = 50_000
-TECTONIC_SCALE  = RECORD_COUNT / 1_000_000  # spec base is 1M ops
+XBENCH_SCALE  = RECORD_COUNT / 1_000_000  # spec base is 1M ops
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 def run(cmd, cwd=None, env=None, capture=False):
@@ -123,25 +125,25 @@ def generate_ycsb(label):
     print(f"  → Trace: {trace}  ({lines:,} lines)")
     return trace
 
-# ── Stage 1b: Tectonic Workload Generation ────────────────────────────────────
-def generate_tectonic(label):
+# ── Stage 1b: X-Bench Workload Generation ────────────────────────────────────
+def generate_xbench(label):
     print(f"\n{'='*65}")
-    print(f" STAGE 1b – Generate Tectonic Workload A trace")
-    print(f"   Generator       : tectonic-cli generate")
-    print(f"   Spec file       : {TECTONIC_SPEC}")
-    print(f"   Scale factor    : {TECTONIC_SCALE} (= {RECORD_COUNT:,} / 1,000,000)")
+    print(f" STAGE 1b – Generate X-Bench Workload A trace")
+    print(f"   Generator       : xbench-cli generate")
+    print(f"   Spec file       : {XBENCH_SPEC}")
+    print(f"   Scale factor    : {XBENCH_SCALE} (= {RECORD_COUNT:,} / 1,000,000)")
     print(f"   Spec encodes    : inserts (load) + point_queries + updates (run),")
     print(f"                     key format usertable:user<19-digit-numeric>,")
     print(f"                     selection: Beta(0.15, 0.55) ≈ YCSB Zipfian(0.99)")
     print(f"   Output format   : text trace  I<key><val> / P<key> / U<key><val>")
     print(f"{'='*65}")
 
-    trace = f"{OUT_DIR}/tectonic-{label}.txt"
+    trace = f"{OUT_DIR}/xbench-{label}.txt"
 
-    run([TECTONIC_CLI, "generate",
-         "-w", TECTONIC_SPEC,
+    run([XBENCH_CLI, "generate",
+         "-w", XBENCH_SPEC,
          "-o", trace,
-         "-s", str(TECTONIC_SCALE)])
+         "-s", str(XBENCH_SCALE)])
 
     lines = sum(1 for _ in open(trace))
     print(f"  → Trace: {trace}  ({lines:,} lines)")
@@ -234,14 +236,14 @@ def print_comparison(y, t):
         if not yop and not top:
             continue
         print(f"\n  {op}")
-        print(f"  {'Pct':<8} {'YCSB (µs)':>14} {'Tectonic (µs)':>14}")
+        print(f"  {'Pct':<8} {'YCSB (µs)':>14} {'X-Bench (µs)':>14}")
         print(f"  {'-'*38}")
         for pct in ["p0", "p25", "p50", "p75", "p95", "p99"]:
             yv = yop.get(pct, 0.0)
             tv = top.get(pct, 0.0)
             print(f"  {pct:<8} {yv:>14.2f} {tv:>14.2f}")
 
-    print(f"\n  {'Metric':<20} {'YCSB':>14} {'Tectonic':>14}")
+    print(f"\n  {'Metric':<20} {'YCSB':>14} {'X-Bench':>14}")
     print(f"  {'-'*50}")
     for key, label in [("cache_hits","Cache hits"),("cache_misses","Cache misses"),
                         ("bytes_read","Bytes read"),("bytes_written","Bytes written")]:
@@ -257,25 +259,25 @@ def main():
 
     # Stage 1: generate workload traces
     ycsb_trace = generate_ycsb("workloada")
-    tec_trace  = generate_tectonic("workloada")
+    x_trace  = generate_xbench("workloada")
 
     print("\n── Trace inspection (operation counts) ──")
     ycsb_ops = inspect_trace(ycsb_trace, "YCSB")
-    tec_ops  = inspect_trace(tec_trace,  "Tectonic")
+    x_ops  = inspect_trace(x_trace,  "X-Bench")
 
     # Stage 2+3: execute + capture metrics
     ycsb_res = run_harness(ycsb_trace, "ycsb")
-    tec_res  = run_harness(tec_trace,  "tectonic")
+    x_res  = run_harness(x_trace,  "xbench")
 
     # Stage 4: compare
-    print_comparison(ycsb_res, tec_res)
+    print_comparison(ycsb_res, x_res)
 
     results = {
         "config": {"record_count": RECORD_COUNT, "operation_count": OPERATION_COUNT,
-                   "tectonic_scale": TECTONIC_SCALE, "tectonic_spec": TECTONIC_SPEC,
+                   "xbench_scale": XBENCH_SCALE, "xbench_spec": XBENCH_SPEC,
                    "ycsb_workload": "workloada"},
         "ycsb":     {**ycsb_res, "op_counts": ycsb_ops},
-        "tectonic": {**tec_res,  "op_counts": tec_ops},
+        "xbench": {**x_res,  "op_counts": x_ops},
     }
     out = f"{OUT_DIR}/results.json"
     with open(out, "w") as f:

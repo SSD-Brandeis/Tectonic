@@ -11,18 +11,20 @@ Revision items R1.O8 / R2.O3 / R2.Q3 and R2.O2 (ii):
    'adaptive KeySet' selection"
 
 Two workload suites (--suite), each in its own folder under the output directory:
-  table4    the seven workloads of Table 4 (Tec-1..Tec-7), as promised;
+  table4    the seven workloads of Table 4 (X-1..X-7), as promised;
   branches  one workload per branch of Algorithm 1 (B1..B8), so that every KeySet Algorithm 1 can
             select is selected by one workload (Table 4 only reaches three of them).
 
-Every run is one single-threaded `tectonic-cli generate -w <spec> -o <trace> --keyset <k>`:
-  - adaptive: Algorithm 1 selects the KeySet per section (the default of `tectonic-cli`);
+Every run is one single-threaded `xbench-cli generate -w <spec> -o <trace> --keyset <k>`:
+  - adaptive: Algorithm 1 selects the KeySet per section (the default of `xbench-cli`);
   - every compatible KeySet forced for all sections (the fixed baseline of R2.O2 (ii) is VecKeySet).
 Wall-clock time and peak RSS (getrusage, via GNU time) of the process; the trace is written to the
 same SSD and deleted after the run; the page cache is dropped before every run.
 
 Output: data/revision/R1.O8-R2.O2_keyset-selection/<suite folder>/ (see the README.md there).
 """
+from pathlib import Path as _Path
+REPO_ROOT = str(_Path(__file__).resolve().parents[1])
 import math
 import os
 import re
@@ -35,8 +37,8 @@ import argparse
 import statistics
 import subprocess
 
-ROOT_DIR = "/home/cc/Tectonic"
-TECTONIC_CLI = f"{ROOT_DIR}/target/release/tectonic-cli"
+ROOT_DIR = REPO_ROOT
+XBENCH_CLI = f"{ROOT_DIR}/target/release/xbench-cli"
 EXPERIMENT_DIR = f"{ROOT_DIR}/data/revision/R1.O8-R2.O2_keyset-selection"
 # set by use_suite()
 OUT_DIR = RUNS_PATH = SUMMARY_PATH = REPORT_PATH = LOG_PATH = TRACE_PATH = None
@@ -47,22 +49,22 @@ TIMEOUT_S = None  # per suite, see SUITES
 SHUFFLE_SEED = 20261022
 
 # Table 4 of the paper: the seven X-Bench workloads, as corrected in x-bench-specs/table4/ (see the README of
-# the experiment): Tec-1 written from Table 4, unique inserts in Tec-1..6, hot reads in Tec-7.
+# the experiment): X-1 written from Table 4, unique inserts in X-1..6, hot reads in X-7.
 TABLE4_WORKLOADS = {
-    "Tec-1": ("multi-stage", "x-bench-specs/table4/Tec-1_multi_stage.spec.json"),
-    "Tec-2": ("interleaved", "x-bench-specs/table4/Tec-2_interleaved.spec.json"),
-    "Tec-3": ("varied sortedness", "x-bench-specs/table4/Tec-3_varied_sortedness.spec.json"),
-    "Tec-4": ("slow shift", "x-bench-specs/table4/Tec-4_slow_shift.spec.json"),
-    "Tec-5": ("abrupt shift", "x-bench-specs/table4/Tec-5_abrupt_shift.spec.json"),
-    "Tec-6": ("varied key/val size", "x-bench-specs/table4/Tec-6_varied_kv_size.spec.json"),
-    "Tec-7": ("hot-key", "x-bench-specs/table4/Tec-7_hot_key.spec.json"),
+    "X-1": ("multi-stage", "x-bench-specs/table4/X-1_multi_stage.spec.json"),
+    "X-2": ("interleaved", "x-bench-specs/table4/X-2_interleaved.spec.json"),
+    "X-3": ("varied sortedness", "x-bench-specs/table4/X-3_varied_sortedness.spec.json"),
+    "X-4": ("slow shift", "x-bench-specs/table4/X-4_slow_shift.spec.json"),
+    "X-5": ("abrupt shift", "x-bench-specs/table4/X-5_abrupt_shift.spec.json"),
+    "X-6": ("varied key/val size", "x-bench-specs/table4/X-6_varied_kv_size.spec.json"),
+    "X-7": ("hot-key", "x-bench-specs/table4/X-7_hot_key.spec.json"),
 }
 
 # The same seven workloads with upserts (`inserts`) instead of `unique_inserts`, nothing else changed
 TABLE4_UPSERT_WORKLOADS = {wl: (label, path.replace("x-bench-specs/table4/", "x-bench-specs/table4-upsert/"))
                            for wl, (label, path) in TABLE4_WORKLOADS.items()}
 
-# One workload per branch of Algorithm 1 (adaptive_keyset in tectonic/src/lib.rs). Each is one section of
+# One workload per branch of Algorithm 1 (adaptive_keyset in xbench/src/lib.rs). Each is one section of
 # two groups: "load" (2M inserts; unique inserts where the branch needs contains checks) and "run" (the
 # operations that make the branch's requirements, no inserts so the loaded keys stay sorted).
 BRANCH_WORKLOADS = {
@@ -99,7 +101,7 @@ def use_suite(name):
     LOG_PATH = f"{OUT_DIR}/logs/run.log"
     TRACE_PATH = f"{OUT_DIR}/tmp/trace.txt"
 
-# The seven KeySets of Algorithm 1: `--keyset` value -> name printed by tectonic-cli
+# The seven KeySets of Algorithm 1: `--keyset` value -> name printed by xbench-cli
 KEYSETS = {
     "empty": "EmptyKeySet",
     "vec": "VecKeySet",
@@ -111,7 +113,7 @@ KEYSETS = {
 }
 FIXED_KEYSET = "vec"
 
-# What each KeySet supports (tectonic/src/keyset.rs). EmptyKeySet answers every contains check with
+# What each KeySet supports (xbench/src/keyset.rs). EmptyKeySet answers every contains check with
 # "no" and BloomFilterKeySet cannot return keys, so neither supports random access.
 CAPABILITIES = {
     "empty": set(),
@@ -129,7 +131,7 @@ OPS = ["inserts", "unique_inserts", "updates", "merges", "point_deletes", "empty
 
 
 def section_requirements(section):
-    """The requirements Algorithm 1 derives from a section's operations (tectonic/src/lib.rs)."""
+    """The requirements Algorithm 1 derives from a section's operations (xbench/src/lib.rs)."""
     has = {op for g in section["groups"] for op in OPS if op in g and g[op].get("op_count", 0)}
     # range queries need sorted keys only in StartEnd format (has_query_range); StartCount
     # (the default) only needs a random start key (has_query_range_count)
@@ -202,11 +204,11 @@ def generate(workload, keyset, trial, validate):
     if os.path.exists(TRACE_PATH):
         os.remove(TRACE_PATH)
     drop_caches()
-    cmd = ["/usr/bin/time", "-v", TECTONIC_CLI, "generate", "-w", spec, "-o", TRACE_PATH, "--keyset", keyset]
-    env = {k: v for k, v in os.environ.items() if k != "TECTONIC_PARALLEL_GEN"}  # single-threaded
-    env["RUST_LOG"] = "tectonic=debug"  # progress of every group in steps of 10%, for runs that time out
+    cmd = ["/usr/bin/time", "-v", XBENCH_CLI, "generate", "-w", spec, "-o", TRACE_PATH, "--keyset", keyset]
+    env = {k: v for k, v in os.environ.items() if k != "XBENCH_PARALLEL_GEN"}  # single-threaded
+    env["RUST_LOG"] = "xbench=debug"  # progress of every group in steps of 10%, for runs that time out
     t0 = time.perf_counter()
-    # own process group, so that a timeout kills tectonic-cli and not only /usr/bin/time
+    # own process group, so that a timeout kills xbench-cli and not only /usr/bin/time
     p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env,
                          start_new_session=True)
     try:
@@ -238,9 +240,9 @@ def generate(workload, keyset, trial, validate):
         rec["peak_rss_mib"] = int(m.group(1)) / 1024
         m = re.search(r"Elapsed \(wall clock\) time \(h:mm:ss or m:ss\): (\S+)", stderr)
         rec["gnu_time_elapsed"] = m.group(1)
-        m = re.search(r"Tectonic_Op_Timings: (\{.*\})", stdout or "")  # printed to stdout
+        m = re.search(r"XBench_Op_Timings: (\{.*\})", stdout or "")  # printed to stdout
         rec["op_timings_s"] = json.loads(m.group(1)) if m else None
-        rec["keysets_used"] = re.findall(r"\[Tectonic KeySet\] Section (\d+): (\S+)", stderr)
+        rec["keysets_used"] = re.findall(r"\[X-Bench KeySet\] Section (\d+): (\S+)", stderr)
         if validate:
             rec["op_counts"] = op_counts(TRACE_PATH)
     if os.path.exists(TRACE_PATH):
@@ -358,7 +360,7 @@ def stage_report(args):
             continue
         selected = [name for _, name in rows["adaptive"]["keysets_used"]]
         forced = {k: v for k, v in rows.items() if k != "adaptive" and not v["timed_out"]}
-        # None when every forced KeySet timed out (e.g. table4-upsert Tec-1, where only VecKeySet is forced)
+        # None when every forced KeySet timed out (e.g. table4-upsert X-1, where only VecKeySet is forced)
         best_time = min(forced, key=lambda k: forced[k]["time_s"][0]) if forced else None
         best_mem = min(forced, key=lambda k: forced[k]["peak_rss_mib"][0]) if forced else None
         summary[wl] = {"label": label, "spec": spec_path, "requirements": reqs, "compatible": keysets,
@@ -373,7 +375,7 @@ def stage_report(args):
     L = ["# KeySet selection (R1.O8, R2.O3, R2.Q3) and fixed vs. adaptive KeySet (R2.O2 (ii))", "",
          f"Suite `{SUITE}`: {SUITES[SUITE][1]}.", "",
          f"Generated {time.strftime('%Y-%m-%d %H:%M:%S')} by `run_scripts/run_keyset_selection.py`. "
-         f"Single-threaded `tectonic-cli generate`, {TRIALS} trials per configuration, mean ± stdev; "
+         f"Single-threaded `xbench-cli generate`, {TRIALS} trials per configuration, mean ± stdev; "
          "time is wall clock of the whole process including writing the trace; memory is peak RSS. "
          f"Two configurations are called different only when the ranges [min, max] of their {TRIALS} trials "
          "do not overlap; \"fastest\" / \"least memory\" mark the lowest mean, and every KeySet whose range "

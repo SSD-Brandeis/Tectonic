@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Plot db_bench-compatible vs Tectonic workload generation metrics."""
+"""Plot db_bench-compatible vs X-Bench workload generation metrics."""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ FONT_PATH = ROOT_DIR / "LinLibertine_Mah.ttf"
 
 TOOLS = [
     ("db_bench_wrapper", r"db\_bench wrapper", {"facecolor": "white", "edgecolor": "0.25", "hatch": "///"}),
-    ("tectonic", "Tectonic", {"facecolor": "tab:red", "edgecolor": "tab:red", "hatch": ""}),
+    ("xbench", "X-Bench", {"facecolor": "tab:red", "edgecolor": "tab:red", "hatch": ""}),
 ]
 
 

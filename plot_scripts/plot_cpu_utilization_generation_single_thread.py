@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Plot single-core workload-generation CPU utilization."""
+from pathlib import Path as _Path
+REPO_ROOT = str(_Path(__file__).resolve().parents[1])
 
 import json
 import os
@@ -15,7 +17,7 @@ import matplotlib.ticker as ticker
 import plot_style
 
 
-ROOT_DIR = "/home/cc/Tectonic"
+ROOT_DIR = REPO_ROOT
 OUT_DIR = f"{ROOT_DIR}/data/CPU-utilization"
 RESULTS_PATH = f"{OUT_DIR}/generation_single_thread_results.json"
 FONT_PATH = f"{ROOT_DIR}/LinLibertine_Mah.ttf"
@@ -29,7 +31,7 @@ YCSB_STYLE = {
     "markeredgecolor": "grey",
     "linewidth": 1.4,
 }
-TECTONIC_STYLE = {
+XBENCH_STYLE = {
     "color": "tab:red",
     "linestyle": "-.",
     "marker": "s",
@@ -158,17 +160,17 @@ def main():
     configure_font()
     data = load_results()
     generation = data["generation"]
-    window_s = max(generation["ycsb"]["duration_s"], generation["tectonic"]["duration_s"])
+    window_s = max(generation["ycsb"]["duration_s"], generation["xbench"]["duration_s"])
     ycsb_log = resample_cpu_log(
         pad_cpu_log(generation["ycsb"].get("cpu_log", []), generation["ycsb"]["duration_s"], window_s)
     )
-    tectonic_log = resample_cpu_log(
-        pad_cpu_log(generation["tectonic"].get("cpu_log", []), generation["tectonic"]["duration_s"], window_s)
+    xbench_log = resample_cpu_log(
+        pad_cpu_log(generation["xbench"].get("cpu_log", []), generation["xbench"]["duration_s"], window_s)
     )
 
     fig, ax = plt.subplots(1, 1, figsize=(4.2, 2.8))
     ycsb_handle = plot_line(ax, ycsb_log, "YCSB", YCSB_STYLE)
-    tectonic_handle = plot_line(ax, tectonic_log, "Tectonic", TECTONIC_STYLE)
+    xbench_handle = plot_line(ax, xbench_log, "X-Bench", XBENCH_STYLE)
     for boundary in generation["ycsb"].get("phase_boundaries_s", []):
         ax.axvline(boundary, color="grey", linestyle=":", linewidth=0.8)
     style_axis(ax, window_s)
@@ -179,7 +181,7 @@ def main():
     fig.savefig(f"{base}.png", bbox_inches="tight", dpi=300)
     plt.close(fig)
 
-    save_legend([ycsb_handle, tectonic_handle], ["YCSB", "Tectonic"], base)
+    save_legend([ycsb_handle, xbench_handle], ["YCSB", "X-Bench"], base)
     print(f"saved: {base}.pdf")
     print(f"saved: {base}.png")
 

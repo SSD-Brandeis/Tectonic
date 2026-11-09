@@ -600,7 +600,7 @@ pub fn generate_section<OP: OperationHandler>(
         Some(choice) if *choice != KeySetChoice::Adaptive => *choice,
         _ => adaptive_keyset(section),
     };
-    eprintln!("[Tectonic KeySet] Section {}: {}", section_idx, choice.name());
+    eprintln!("[X-Bench KeySet] Section {}: {}", section_idx, choice.name());
 
     macro_rules! write_with {
         ($constructor:expr) => {
@@ -1660,8 +1660,8 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
 
 fn generate_workload_spec(workload_spec: WorkloadSpec, output_file: &PathBuf, thread_id: Option<usize>) -> Result<()> {
     let global_start = std::time::Instant::now();
-    if std::env::var("TECTONIC_PARALLEL_GEN").is_ok() && workload_spec.sections.len() > 1 {
-        println!("[Tectonic Parallel Gen] Spawning {} threads (one per section) to generate workload sections in parallel", workload_spec.sections.len());
+    if std::env::var("XBENCH_PARALLEL_GEN").is_ok() && workload_spec.sections.len() > 1 {
+        println!("[X-Bench Parallel Gen] Spawning {} threads (one per section) to generate workload sections in parallel", workload_spec.sections.len());
         let workload_spec = Arc::new(workload_spec);
         let mut handles = Vec::new();
 
@@ -1677,7 +1677,7 @@ fn generate_workload_spec(workload_spec: WorkloadSpec, output_file: &PathBuf, th
                     generate_section(&mut write_handler, &mut timings, &spec, &spec.sections[i], i, thread_id)?;
                 }
                 let end_elapsed = global_start.elapsed().as_secs_f64();
-                println!("[Tectonic Parallel Gen] Section {} ({}) started at {:.4}s, finished at {:.4}s (duration: {:.4}s)", i, section_name, start_elapsed, end_elapsed, end_elapsed - start_elapsed);
+                println!("[X-Bench Parallel Gen] Section {} ({}) started at {:.4}s, finished at {:.4}s (duration: {:.4}s)", i, section_name, start_elapsed, end_elapsed, end_elapsed - start_elapsed);
                 Ok(buffer)
             });
             handles.push(handle);
@@ -1690,7 +1690,7 @@ fn generate_workload_spec(workload_spec: WorkloadSpec, output_file: &PathBuf, th
         }
         final_file.flush()?;
     } else {
-        println!("[Tectonic Sequential Gen] Generating {} sections sequentially", workload_spec.sections.len());
+        println!("[X-Bench Sequential Gen] Generating {} sections sequentially", workload_spec.sections.len());
         let mut final_file = BufWriter::with_capacity(1024 * 1024, File::create(output_file)?);
         {
             let mut write_handler = WriteHandler(&mut final_file);
@@ -1700,9 +1700,9 @@ fn generate_workload_spec(workload_spec: WorkloadSpec, output_file: &PathBuf, th
                 let start_elapsed = global_start.elapsed().as_secs_f64();
                 generate_section(&mut write_handler, &mut timings, &workload_spec, &workload_spec.sections[i], i, thread_id)?;
                 let end_elapsed = global_start.elapsed().as_secs_f64();
-                println!("[Tectonic Sequential Gen] Section {} ({}) started at {:.4}s, finished at {:.4}s (duration: {:.4}s)", i, section_name, start_elapsed, end_elapsed, end_elapsed - start_elapsed);
+                println!("[X-Bench Sequential Gen] Section {} ({}) started at {:.4}s, finished at {:.4}s (duration: {:.4}s)", i, section_name, start_elapsed, end_elapsed, end_elapsed - start_elapsed);
             }
-            println!("Tectonic_Op_Timings: {{\"Insert\":{},\"Update\":{},\"Point Query\":{},\"Point Delete\":{},\"Range Query\":{},\"Range Delete\":{}}}",
+            println!("XBench_Op_Timings: {{\"Insert\":{},\"Update\":{},\"Point Query\":{},\"Point Delete\":{},\"Range Query\":{},\"Range Delete\":{}}}",
                 timings.time_insert.as_secs_f64() + timings.time_upsert.as_secs_f64(),
                 timings.time_update.as_secs_f64() + timings.time_merge.as_secs_f64(),
                 timings.time_query_point.as_secs_f64() + timings.time_query_point_empty.as_secs_f64() + timings.time_untracked_point_query.as_secs_f64(),

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from pathlib import Path as _Path
+REPO_ROOT = str(_Path(__file__).resolve().parents[1])
 import os
 import json
 import matplotlib.pyplot as plt
@@ -7,8 +9,8 @@ import numpy as np
 import plot_style
 
 # Paths
-DATA_DIR = "/home/cc/Tectonic/data/ycsb_tectonic_correctness"
-PLOTS_DIR = "/home/cc/Tectonic/ycsb_tectonic_correctness_plots"
+DATA_DIR = REPO_ROOT + "/data/ycsb_xbench_correctness"
+PLOTS_DIR = REPO_ROOT + "/ycsb_xbench_correctness_plots"
 os.makedirs(PLOTS_DIR, exist_ok=True)
 
 RESULTS_FILE = os.path.join(DATA_DIR, "results.json")
@@ -26,10 +28,10 @@ def generate_plot(runs, base_scale, output_name, title_suffix, broken=False):
     ycsb_queries = []
     ycsb_updates = []
     
-    # Tectonic counts
-    tectonic_inserts = []
-    tectonic_queries = []
-    tectonic_updates = []
+    # X-Bench counts
+    xbench_inserts = []
+    xbench_queries = []
+    xbench_updates = []
     
     for r in runs:
         scales.append(r["scale"])
@@ -42,9 +44,9 @@ def generate_plot(runs, base_scale, output_name, title_suffix, broken=False):
         ycsb_queries.append(r["ycsb"]["P"])
         ycsb_updates.append(r["ycsb"]["U"])
         
-        tectonic_inserts.append(r["tectonic"]["I"])
-        tectonic_queries.append(r["tectonic"]["P"])
-        tectonic_updates.append(r["tectonic"]["U"])
+        xbench_inserts.append(r["xbench"]["I"])
+        xbench_queries.append(r["xbench"]["P"])
+        xbench_updates.append(r["xbench"]["U"])
         
     scales = np.array(scales)
     op_counts = base_scale * scales # convert scale to operation count
@@ -58,18 +60,18 @@ def generate_plot(runs, base_scale, output_name, title_suffix, broken=False):
     ycsb_queries = np.array(ycsb_queries)
     ycsb_updates = np.array(ycsb_updates)
     
-    tectonic_inserts = np.array(tectonic_inserts)
-    tectonic_queries = np.array(tectonic_queries)
-    tectonic_updates = np.array(tectonic_updates)
+    xbench_inserts = np.array(xbench_inserts)
+    xbench_queries = np.array(xbench_queries)
+    xbench_updates = np.array(xbench_updates)
     
     # Calculate accuracy in percentage: 100 * (1 - abs(actual - expected) / expected)
     ycsb_inserts_acc = 100.0 * (1.0 - np.abs(ycsb_inserts - expected_inserts) / expected_inserts)
     ycsb_queries_acc = 100.0 * (1.0 - np.abs(ycsb_queries - expected_queries) / expected_queries)
     ycsb_updates_acc = 100.0 * (1.0 - np.abs(ycsb_updates - expected_updates) / expected_updates)
     
-    tectonic_inserts_acc = 100.0 * (1.0 - np.abs(tectonic_inserts - expected_inserts) / expected_inserts)
-    tectonic_queries_acc = 100.0 * (1.0 - np.abs(tectonic_queries - expected_queries) / expected_queries)
-    tectonic_updates_acc = 100.0 * (1.0 - np.abs(tectonic_updates - expected_updates) / expected_updates)
+    xbench_inserts_acc = 100.0 * (1.0 - np.abs(xbench_inserts - expected_inserts) / expected_inserts)
+    xbench_queries_acc = 100.0 * (1.0 - np.abs(xbench_queries - expected_queries) / expected_queries)
+    xbench_updates_acc = 100.0 * (1.0 - np.abs(xbench_updates - expected_updates) / expected_updates)
     
     # Ground truth expected accuracy line is always 100%
     expected_acc = np.ones_like(op_counts) * 100.0
@@ -84,9 +86,9 @@ def generate_plot(runs, base_scale, output_name, title_suffix, broken=False):
         ax1.plot(op_counts, expected_acc, label="ground truth (100 percent)", color="tab:orange", linestyle="--")
         ax2.plot(op_counts, expected_acc, color="tab:orange", linestyle="--")
         
-        # Standard Tectonic Style: Color: tab:red, Line style: -., Marker: s, hollow on both axes
-        ax1.plot(op_counts, tectonic_inserts_acc, label="tectonic", color="tab:red", linestyle="-.", marker="s", markersize=8, markerfacecolor="none")
-        ax2.plot(op_counts, tectonic_inserts_acc, color="tab:red", linestyle="-.", marker="s", markersize=8, markerfacecolor="none")
+        # Standard X-Bench Style: Color: tab:red, Line style: -., Marker: s, hollow on both axes
+        ax1.plot(op_counts, xbench_inserts_acc, label="xbench", color="tab:red", linestyle="-.", marker="s", markersize=8, markerfacecolor="none")
+        ax2.plot(op_counts, xbench_inserts_acc, color="tab:red", linestyle="-.", marker="s", markersize=8, markerfacecolor="none")
         
         # Standard YCSB Style: Color: grey, Line style: -, Marker: ^, hollow on both axes.
         ax1.plot(op_counts, ycsb_inserts_acc, label="YCSB - Inserts", color="grey", linestyle="-", marker="^", markersize=8, markerfacecolor="none")
@@ -161,8 +163,8 @@ def generate_plot(runs, base_scale, output_name, title_suffix, broken=False):
         # Plot Ground Truth - orange dashed line
         ax.plot(op_counts, expected_acc, label="ground truth (100 percent)", color="tab:orange", linestyle="--")
         
-        # Standard Tectonic Style: Color: tab:red, Line style: -., Marker: s, hollow
-        ax.plot(op_counts, tectonic_inserts_acc, label="tectonic", color="tab:red", linestyle="-.", marker="s", markersize=8, markerfacecolor="none")
+        # Standard X-Bench Style: Color: tab:red, Line style: -., Marker: s, hollow
+        ax.plot(op_counts, xbench_inserts_acc, label="xbench", color="tab:red", linestyle="-.", marker="s", markersize=8, markerfacecolor="none")
         
         # Standard YCSB Style: Color: grey, Line style: -, Marker: ^, hollow.
         ax.plot(op_counts, ycsb_inserts_acc, label="YCSB - Inserts", color="grey", linestyle="-", marker="^", markersize=8, markerfacecolor="none")

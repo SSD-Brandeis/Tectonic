@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Plot key-space access heatmaps for db_bench and Tectonic mixgraph runs."""
+"""Plot key-space access heatmaps for db_bench and X-Bench mixgraph runs."""
 
 from __future__ import annotations
 
@@ -118,14 +118,14 @@ def main() -> None:
             save_heatmap(x, y, "db_bench", "grey", out_dir / "mixgraph_heatmap_db_bench.pdf")
             print(f"Saved db_bench heatmap to {out_dir / 'mixgraph_heatmap_db_bench.pdf'}")
 
-    # Plot Tectonic heatmap (tab:red)
-    tectonic_data = data.get("tectonic", {})
-    if tectonic_data:
-        x = tectonic_data.get("key_sequence", [])
-        y = tectonic_data.get("access_counts", [])
+    # Plot X-Bench heatmap (tab:red)
+    xbench_data = data.get("xbench", {})
+    if xbench_data:
+        x = xbench_data.get("key_sequence", [])
+        y = xbench_data.get("access_counts", [])
         if x and y:
-            save_heatmap(x, y, "X-Bench", "tab:red", out_dir / "mixgraph_heatmap_tectonic.pdf")
-            print(f"Saved tectonic heatmap to {out_dir / 'mixgraph_heatmap_tectonic.pdf'}")
+            save_heatmap(x, y, "X-Bench", "tab:red", out_dir / "mixgraph_heatmap_xbench.pdf")
+            print(f"Saved xbench heatmap to {out_dir / 'mixgraph_heatmap_xbench.pdf'}")
 
 if __name__ == "__main__":
     main()

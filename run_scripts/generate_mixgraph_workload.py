@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Synthesize a db_bench-equivalent mixgraph workload in Tectonic's text operation format."""
+"""Synthesize a db_bench-equivalent mixgraph workload in X-Bench's text operation format."""
 
 from __future__ import annotations
 
@@ -110,7 +110,7 @@ class GenerateTwoTermExpKeys:
         return self.keyrange_size * keyrange_id + key_offset
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Generate a mixgraph trace in Tectonic text format.")
+    parser = argparse.ArgumentParser(description="Generate a mixgraph trace in X-Bench text format.")
     parser.add_argument("--num", type=int, default=10000, help="Total number of entries (FLAGS_num)")
     parser.add_argument("--reads", type=int, default=4200, help="Total operations to execute")
     parser.add_argument("--key-size", type=int, default=48, help="Key size in bytes")

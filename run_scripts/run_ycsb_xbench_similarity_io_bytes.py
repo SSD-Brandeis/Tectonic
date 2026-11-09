@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 """
-run_ycsb_tectonic_similarity_io_bytes.py
+run_ycsb_xbench_similarity_io_bytes.py
 =========================================
 YCSB Workload A Similarity Experiment — All Four Databases with Disk I/O bytes tracking (iostat)
 
-Experiment : run_ycsb_tectonic_similarity_io_bytes
-Data dir   : /home/cc/Tectonic/data/ycsb_tectonic_similarity_io_bytes/
+Experiment : run_ycsb_xbench_similarity_io_bytes
+Data dir   : data/ycsb_xbench_similarity_io_bytes/
 
 This script runs the workload similarity experiment across all four databases (rocksdb, redis, cassandra, scylla)
 and records disk read/write MB/s time-series data using `iostat` for all runs.
 """
+from pathlib import Path as _Path
+REPO_ROOT = str(_Path(__file__).resolve().parents[1])
 
 import os
 import sys
@@ -27,8 +29,8 @@ from datetime import datetime
 # =============================================================================
 #  CONFIG
 # =============================================================================
-HARNESS_DIR  = "/home/cc/Tectonic/rocksdb-benchmark-harness"
-TECTONIC_CLI = "/home/cc/Tectonic/target/release/tectonic-cli"
+HARNESS_DIR  = REPO_ROOT + "/rocksdb-benchmark-harness"
+XBENCH_CLI = REPO_ROOT + "/target/release/xbench-cli"
 
 YCSB_DIR = f"{HARNESS_DIR}/vendor/YCSB"
 M2       = "/home/cc/.m2/repository"
@@ -44,15 +46,15 @@ YCSB_CP  = ":".join([
 
 HARNESS_BIN  = f"{HARNESS_DIR}/cmake-build-release-with-stats/rocksdb-benchmark-harness"
 ROCKSDB_OPTS = f"{HARNESS_DIR}/experiments/workload-similarity/rocksdb-options.ini"
-ROCKSDB_DIR  = "/tmp/ycsb_tectonic_sim_rocksdb"
+ROCKSDB_DIR  = "/tmp/ycsb_xbench_sim_rocksdb"
 
-TECTONIC_SPEC = "/home/cc/Tectonic/example-specs/ycsb/a.spec.json"
+XBENCH_SPEC = REPO_ROOT + "/example-specs/ycsb/a.spec.json"
 
-OUT_DIR      = "/home/cc/Tectonic/data/ycsb_tectonic_similarity_io_bytes"
+OUT_DIR      = REPO_ROOT + "/data/ycsb_xbench_similarity_io_bytes"
 RESULTS_PATH = f"{OUT_DIR}/results_io_bytes.json"
-PLOT_SCRIPT  = "/home/cc/Tectonic/plot_scripts/plot_ycsb_tectonic_similarity_io_bytes.py"
+PLOT_SCRIPT  = REPO_ROOT + "/plot_scripts/plot_ycsb_xbench_similarity_io_bytes.py"
 IMAGE_LOCK_PATH = f"{OUT_DIR}/db_images.json"
-ORIGINAL_IMAGE_LOCK = "/home/cc/Tectonic/data/ycsb_tectonic_similarity_all_dbs/db_images.json"
+ORIGINAL_IMAGE_LOCK = REPO_ROOT + "/data/ycsb_xbench_similarity_all_dbs/db_images.json"
 LOG_PATH     = f"{OUT_DIR}/run_io_bytes.log"
 
 IOSTAT_DEVICE = "sda"
@@ -340,20 +342,20 @@ def generate_ycsb(scale, out_path):
     return out_path
 
 # =============================================================================
-#  STAGE 2 — Generate Tectonic trace
+#  STAGE 2 — Generate X-Bench trace
 # =============================================================================
-def generate_tectonic(scale, out_path):
+def generate_xbench(scale, out_path):
     sf = scale / 1_000_000.0
-    banner("STAGE 2", f"Generate Tectonic Workload A  (scale={scale:,}  2^{scale.bit_length()-1})")
-    log(f"  Tool         : tectonic-cli generate")
-    log(f"  Spec         : {TECTONIC_SPEC}")
+    banner("STAGE 2", f"Generate X-Bench Workload A  (scale={scale:,}  2^{scale.bit_length()-1})")
+    log(f"  Tool         : xbench-cli generate")
+    log(f"  Spec         : {XBENCH_SPEC}")
     log(f"  scale factor : {sf}")
     log(f"  output       : {out_path}")
 
     cleanup_trace_artifacts(out_path, remove_output=True)
-    check_disk(TRACE_GEN_MIN_GB, f"before Tectonic trace generation for 2^{scale.bit_length()-1}")
-    run([TECTONIC_CLI, "generate",
-         "-w", TECTONIC_SPEC,
+    check_disk(TRACE_GEN_MIN_GB, f"before X-Bench trace generation for 2^{scale.bit_length()-1}")
+    run([XBENCH_CLI, "generate",
+         "-w", XBENCH_SPEC,
          "-o", out_path,
          "-s", str(sf)])
 
@@ -365,10 +367,10 @@ def generate_tectonic(scale, out_path):
 # =============================================================================
 #  STAGE 3 — Compare traces
 # =============================================================================
-def compare_traces(ycsb_path, tec_path):
-    banner("STAGE 3", "Compare YCSB vs Tectonic traces")
+def compare_traces(ycsb_path, x_path):
+    banner("STAGE 3", "Compare YCSB vs X-Bench traces")
     yc = count_ops(ycsb_path)
-    tc = count_ops(tec_path)
+    tc = count_ops(x_path)
 
     def first_key(path):
         with open(path) as f:
@@ -385,7 +387,7 @@ def compare_traces(ycsb_path, tec_path):
                     return len(parts[2].rstrip()) if len(parts) == 3 else 0
         return 0
 
-    log(f"\n  {'Op':<12} {'YCSB':>12} {'Tectonic':>12}  description")
+    log(f"\n  {'Op':<12} {'YCSB':>12} {'X-Bench':>12}  description")
     log(f"  {'-'*52}")
     for op, desc in [("I", "insert (db->Put, load phase)"),
                      ("P", "point query (db->Get, valid key, Zipfian)"),
@@ -395,15 +397,15 @@ def compare_traces(ycsb_path, tec_path):
             log(f"  {op:<12} {yv:>12,} {tv:>12,}  {desc}")
     log(f"  {'Total':<12} {sum(yc.values()):>12,} {sum(tc.values()):>12,}")
 
-    yk, tk = first_key(ycsb_path), first_key(tec_path)
-    yvl, tvl = first_val_len(ycsb_path), first_val_len(tec_path)
+    yk, tk = first_key(ycsb_path), first_key(x_path)
+    yvl, tvl = first_val_len(ycsb_path), first_val_len(x_path)
     log(f"\n  First insert key  — YCSB: {yk}")
-    log(f"                       Tectonic: {tk}")
-    log(f"  First insert val  — YCSB: {yvl} bytes  Tectonic: {tvl} bytes")
+    log(f"                       X-Bench: {tk}")
+    log(f"  First insert val  — YCSB: {yvl} bytes  X-Bench: {tvl} bytes")
 
-    return {"ycsb_ops": dict(yc), "tectonic_ops": dict(tc),
-            "ycsb_key_example": yk, "tectonic_key_example": tk,
-            "ycsb_val_bytes": yvl, "tectonic_val_bytes": tvl}
+    return {"ycsb_ops": dict(yc), "xbench_ops": dict(tc),
+            "ycsb_key_example": yk, "xbench_key_example": tk,
+            "ycsb_val_bytes": yvl, "xbench_val_bytes": tvl}
 
 # =============================================================================
 #  DATABASE SETUP / RESET / TEARDOWN
@@ -459,7 +461,7 @@ def drop_caches():
 
 def restart_db(db, image_ref=None):
     """Fully restart the db (fresh container / fresh data dir) so YCSB and
-    Tectonic phases both see identical cold state — avoids one-time startup
+    X-Bench phases both see identical cold state — avoids one-time startup
     costs (e.g. Scylla commitlog preallocation) leaking into whichever
     phase happens to run first."""
     log(f"  [restart] restarting {db} for a cold, comparable state")
@@ -519,7 +521,7 @@ def run_rocksdb_harness_with_iostat(trace_path, stats_out, latency_out):
     return lat, elapsed, tput, sampler.get_timeseries(), sampler.get_totals()
 
 # =============================================================================
-#  EXECUTION — tectonic-cli execute (Redis / Cassandra / ScyllaDB)
+#  EXECUTION — xbench-cli execute (Redis / Cassandra / ScyllaDB)
 # =============================================================================
 DB_CLI_DRIVER = {"redis": "redis", "cassandra": "scylla", "scylla": "scylla", "rocksdb": "rocksdb"}
 DB_CLI_PATH   = {
@@ -549,13 +551,13 @@ EXECUTE_OVERALL_METRIC_MAP = {
     "Throughput (using aggregate operation times)": "throughput_ops_s_aggregate_operation_times",
 }
 
-def run_tectonic_execute_with_iostat(trace_path, db):
+def run_xbench_execute_with_iostat(trace_path, db):
     sampler = IoStatSampler(device=IOSTAT_DEVICE)
     sampler.start()
     time.sleep(0.8) # skip first boot block
 
     t0 = time.perf_counter()
-    r = run([TECTONIC_CLI, "execute",
+    r = run([XBENCH_CLI, "execute",
              "-i", trace_path,
              "-d", DB_CLI_DRIVER[db],
              "-p", DB_CLI_PATH[db],
@@ -608,7 +610,7 @@ def run_tectonic_execute_with_iostat(trace_path, db):
 # =============================================================================
 #  STAGES 4+5 — Run one (db, scale) pair
 # =============================================================================
-def run_one_db(db, scale, ycsb_trace, tec_trace, image_ref=None, workloads=("ycsb", "tectonic")):
+def run_one_db(db, scale, ycsb_trace, x_trace, image_ref=None, workloads=("ycsb", "xbench")):
     scale_lbl = f"2^{scale.bit_length()-1}"
     prefix    = f"{OUT_DIR}/{db}_scale{scale}"
     result    = {}
@@ -619,7 +621,7 @@ def run_one_db(db, scale, ycsb_trace, tec_trace, image_ref=None, workloads=("ycs
         log(f"  trace  : {ycsb_trace}")
         restart_db(db, image_ref)
 
-        lat, wt, tp, op_metrics, overall, timeseries, io_totals = run_tectonic_execute_with_iostat(ycsb_trace, db)
+        lat, wt, tp, op_metrics, overall, timeseries, io_totals = run_xbench_execute_with_iostat(ycsb_trace, db)
         result["ycsb"] = {
             "latency_us": lat, "wall_time_s": wt, "throughput_ops_s": tp,
             "io_bytes_total": io_totals
@@ -635,27 +637,27 @@ def run_one_db(db, scale, ycsb_trace, tec_trace, image_ref=None, workloads=("ycs
     else:
         log("\n  [skip] YCSB execution phase not requested (--workloads)")
 
-    # --- Tectonic workload run ---
-    if "tectonic" in workloads:
-        banner("STAGE 5", f"Execute Tectonic trace on {db}  [{scale_lbl}]  (same driver)")
-        log(f"  trace  : {tec_trace}")
+    # --- X-Bench workload run ---
+    if "xbench" in workloads:
+        banner("STAGE 5", f"Execute X-Bench trace on {db}  [{scale_lbl}]  (same driver)")
+        log(f"  trace  : {x_trace}")
         restart_db(db, image_ref)
 
-        lat, wt, tp, op_metrics, overall, timeseries, io_totals = run_tectonic_execute_with_iostat(tec_trace, db)
-        result["tectonic"] = {
+        lat, wt, tp, op_metrics, overall, timeseries, io_totals = run_xbench_execute_with_iostat(x_trace, db)
+        result["xbench"] = {
             "latency_us": lat, "wall_time_s": wt, "throughput_ops_s": tp,
             "io_bytes_total": io_totals
         }
         if op_metrics:
-            result["tectonic"]["operation_metrics"] = op_metrics
+            result["xbench"]["operation_metrics"] = op_metrics
         if overall:
-            result["tectonic"]["overall_metrics"] = overall
+            result["xbench"]["overall_metrics"] = overall
 
-        save_iostat_csv(timeseries, f"{prefix}_tectonic_io_bytes.csv")
-        log(f"\n  Tectonic:  wall={wt:.2f}s  tput={tp:,.0f} ops/s  read={io_totals['total_read_mb']:.2f}MB  write={io_totals['total_write_mb']:.2f}MB")
+        save_iostat_csv(timeseries, f"{prefix}_xbench_io_bytes.csv")
+        log(f"\n  X-Bench:  wall={wt:.2f}s  tput={tp:,.0f} ops/s  read={io_totals['total_read_mb']:.2f}MB  write={io_totals['total_write_mb']:.2f}MB")
         _print_lat(lat)
     else:
-        log("\n  [skip] Tectonic execution phase not requested (--workloads)")
+        log("\n  [skip] X-Bench execution phase not requested (--workloads)")
 
     return result
 
@@ -687,11 +689,11 @@ def trigger_plot():
 # =============================================================================
 def main():
     parser = argparse.ArgumentParser(
-        description="YCSB vs Tectonic similarity with disk bytes tracking")
+        description="YCSB vs X-Bench similarity with disk bytes tracking")
     parser.add_argument("--db", nargs="+", choices=DATABASES, default=DATABASES)
     parser.add_argument("--scales", nargs="+", type=int, default=SCALES)
-    parser.add_argument("--workloads", nargs="+", choices=["ycsb", "tectonic"],
-                         default=["ycsb", "tectonic"],
+    parser.add_argument("--workloads", nargs="+", choices=["ycsb", "xbench"],
+                         default=["ycsb", "xbench"],
                          help="Which execution phase(s) to run against the target db. "
                               "Trace generation/comparison always runs regardless.")
     args = parser.parse_args()
@@ -703,7 +705,7 @@ def main():
     scales, dbs, workloads = args.scales, args.db, args.workloads
 
     log(SEP)
-    log("  YCSB vs Tectonic Similarity with Disk I/O bytes tracking (iostat)")
+    log("  YCSB vs X-Bench Similarity with Disk I/O bytes tracking (iostat)")
     log(f"  output dir   : {OUT_DIR}")
     log(f"  databases    : {dbs}")
     log(f"  scales       : {[f'2^{s.bit_length()-1}={s:,}' for s in scales]}")
@@ -715,7 +717,7 @@ def main():
         "scales": scales,
         "databases": dbs,
         "ycsb_workload": "workloads/workloada",
-        "tectonic_spec": TECTONIC_SPEC,
+        "xbench_spec": XBENCH_SPEC,
         "exec_threads": EXEC_THREADS,
         "iostat_device": IOSTAT_DEVICE,
     }, "results": {}}
@@ -753,7 +755,7 @@ def main():
         check_disk(TRACE_GEN_MIN_GB, f"starting scale {slbl}")
 
         ycsb_trace = f"/tmp/sim_ycsb_{scale}.txt"
-        tec_trace  = f"/tmp/sim_tectonic_{scale}.txt"
+        x_trace  = f"/tmp/sim_xbench_{scale}.txt"
 
         if not validate_trace(ycsb_trace, scale):
             generate_ycsb(scale, ycsb_trace)
@@ -761,19 +763,19 @@ def main():
             cleanup_trace_artifacts(ycsb_trace, remove_output=False)
             log("  [skip] ycsb trace exists and is complete")
 
-        if not validate_trace(tec_trace, scale):
-            generate_tectonic(scale, tec_trace)
+        if not validate_trace(x_trace, scale):
+            generate_xbench(scale, x_trace)
         else:
-            cleanup_trace_artifacts(tec_trace, remove_output=False)
-            log("  [skip] tectonic trace exists and is complete")
+            cleanup_trace_artifacts(x_trace, remove_output=False)
+            log("  [skip] xbench trace exists and is complete")
 
-        comparison = compare_traces(ycsb_trace, tec_trace)
+        comparison = compare_traces(ycsb_trace, x_trace)
         check_disk(DB_RUN_MIN_GB, f"after trace generation for scale {slbl}")
 
         for db in todo:
             log(f"\n{'='*70}\n  DB={db}  SCALE={slbl}\n{'='*70}")
             check_disk(DB_RUN_MIN_GB, f"before database run {db} {slbl}")
-            db_res = run_one_db(db, scale, ycsb_trace, tec_trace, image_lock.get(db), workloads)
+            db_res = run_one_db(db, scale, ycsb_trace, x_trace, image_lock.get(db), workloads)
             db_res["trace_comparison"] = comparison
             teardown_db(db)
 
@@ -786,7 +788,7 @@ def main():
             check_disk(DB_RUN_MIN_GB, f"after checkpoint for {db} {slbl}")
 
         if all(skey in results["results"].get(db, {}) for db in dbs):
-            for p in [ycsb_trace, tec_trace]:
+            for p in [ycsb_trace, x_trace]:
                 if os.path.exists(p):
                     os.remove(p)
                     log(f"  [cleanup] deleted {p}")

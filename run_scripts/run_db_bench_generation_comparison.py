@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compare db_bench-compatible text generation against Tectonic generation."""
+"""Compare db_bench-compatible text generation against X-Bench generation."""
 
 from __future__ import annotations
 
@@ -12,13 +12,13 @@ import subprocess
 
 from run_db_bench_exp_test import (
     DEFAULT_SCALE,
-    DEFAULT_TECTONIC_CLI,
+    DEFAULT_XBENCH_CLI,
     ROOT_DIR,
     TMP_DIR,
     WORKLOADS,
     add_efficiency_metrics,
     banner,
-    build_tectonic,
+    build_xbench,
     ensure_file,
     fail,
     generated_ops_for_workload,
@@ -50,16 +50,16 @@ def add_file_metrics(result: dict, output_path: Path, generated_ops: int) -> dic
     return result
 
 
-def run_workload_generation(workload: str, scale: float, op_count: int, tectonic_cli: Path) -> dict:
+def run_workload_generation(workload: str, scale: float, op_count: int, xbench_cli: Path) -> dict:
     cfg = WORKLOADS[workload]
     banner(f"db_bench workload-generation comparison {workload}: {cfg['description']}")
     generated_ops = generated_ops_for_workload(workload, op_count)
 
     db_bench_output = TMP_DIR / f"db_bench_wrapper_w{workload}.txt"
-    tectonic_output = TMP_DIR / f"tectonic_w{workload}.txt"
+    xbench_output = TMP_DIR / f"xbench_w{workload}.txt"
     metadata_output = OUT_DIR / f"db_bench_wrapper_w{workload}.metadata.json"
 
-    for path in (db_bench_output, tectonic_output):
+    for path in (db_bench_output, xbench_output):
         if path.exists():
             path.unlink()
 
@@ -80,19 +80,19 @@ def run_workload_generation(workload: str, scale: float, op_count: int, tectonic
         OUT_DIR / f"db_bench_wrapper_generate_w{workload}.log",
         cwd=ROOT_DIR,
     )
-    tectonic_result = run_monitored(
-        f"Tectonic file generation workload {workload}",
+    xbench_result = run_monitored(
+        f"X-Bench file generation workload {workload}",
         [
-            str(tectonic_cli),
+            str(xbench_cli),
             "generate",
             "-w",
             str(cfg["spec"]),
             "-o",
-            str(tectonic_output),
+            str(xbench_output),
             "-s",
             str(scale),
         ],
-        OUT_DIR / f"tectonic_generate_w{workload}.log",
+        OUT_DIR / f"xbench_generate_w{workload}.log",
         cwd=ROOT_DIR,
     )
 
@@ -100,12 +100,12 @@ def run_workload_generation(workload: str, scale: float, op_count: int, tectonic
         "workload": workload,
         "description": cfg["description"],
         "note": cfg.get("note"),
-        "tectonic_spec": str(cfg["spec"]),
+        "xbench_spec": str(cfg["spec"]),
         "scale": scale,
         "scaled_ops_per_phase": op_count,
         "generated_operations_per_tool": generated_ops,
         "db_bench_wrapper": add_file_metrics(db_bench_result, db_bench_output, generated_ops),
-        "tectonic": add_file_metrics(tectonic_result, tectonic_output, generated_ops),
+        "xbench": add_file_metrics(xbench_result, xbench_output, generated_ops),
     }
 
 
@@ -122,42 +122,42 @@ def write_results(payload: dict) -> Path:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Run db_bench-compatible vs Tectonic workload-generation comparison.",
+        description="Run db_bench-compatible vs X-Bench workload-generation comparison.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument("--workloads", default="1,2,4,5", help="comma-separated workload ids or all")
     parser.add_argument("--scale", type=float, default=DEFAULT_SCALE)
-    parser.add_argument("--tectonic-cli", default=str(DEFAULT_TECTONIC_CLI))
-    parser.add_argument("--no-build", action="store_true", help="do not build missing tectonic-cli")
+    parser.add_argument("--xbench-cli", default=str(DEFAULT_XBENCH_CLI))
+    parser.add_argument("--no-build", action="store_true", help="do not build missing xbench-cli")
     parser.add_argument("--no-plot", action="store_true", help="skip PDF plot generation")
     parser.add_argument("--keep-files", action="store_true", help="keep generated workload files in /tmp")
     args = parser.parse_args()
 
     workloads = parse_workloads(args.workloads)
     op_count = scaled_ops(args.scale)
-    tectonic_cli = Path(args.tectonic_cli).expanduser().resolve()
+    xbench_cli = Path(args.xbench_cli).expanduser().resolve()
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     TMP_DIR.mkdir(parents=True, exist_ok=True)
     ensure_file(GENERATOR_SCRIPT, "db_bench-compatible generator")
-    build_tectonic(tectonic_cli, args.no_build)
+    build_xbench(xbench_cli, args.no_build)
     for workload in workloads:
-        ensure_file(WORKLOADS[workload]["spec"], f"Tectonic db_bench workload {workload} spec")
+        ensure_file(WORKLOADS[workload]["spec"], f"X-Bench db_bench workload {workload} spec")
 
-    runs = [run_workload_generation(workload, args.scale, op_count, tectonic_cli) for workload in workloads]
+    runs = [run_workload_generation(workload, args.scale, op_count, xbench_cli) for workload in workloads]
     payload = {
         "experiment": "db_bench_exp_test",
-        "mode": "db_bench_compatible_vs_tectonic_workload_generation",
+        "mode": "db_bench_compatible_vs_xbench_workload_generation",
         "root_dir": str(ROOT_DIR),
         "output_dir": str(OUT_DIR),
         "scale": args.scale,
         "scaled_ops_per_phase": op_count,
         "workloads": workloads,
         "generator_script": str(GENERATOR_SCRIPT),
-        "tectonic_cli": str(tectonic_cli),
+        "xbench_cli": str(xbench_cli),
         "comparison_caveat": (
             "db_bench_wrapper is a compatible text generator for db_bench workload families. "
-            "Native db_bench does not expose generated operations in Tectonic's text format."
+            "Native db_bench does not expose generated operations in X-Bench's text format."
         ),
         "metric_definitions": {
             "duration_s": "wall-clock time around workload file generation",

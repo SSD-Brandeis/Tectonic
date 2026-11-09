@@ -30,7 +30,7 @@ def main():
     for db, scales in data["results"].items():
         for scale, workloads in sorted(scales.items(), key=lambda kv: int(kv[0])):
             for workload, trials in workloads.items():
-                name = "xbench" if workload == "tectonic" else "ycsb"
+                name = "xbench" if workload == "xbench" else "ycsb"
                 trace_mb = os.path.getsize(f"{workload_dir}/{name}_workload_a_scale_{scale}.txt") / MB
                 for t in trials:
                     tag = f"{db} 2^{int(scale).bit_length() - 1} {workload} trial {t['trial']}"
@@ -75,8 +75,8 @@ def main():
                             problems.append(f"{tag}: Scylla io_queue {queue_w:.1f} MB vs container cgroup "
                                             f"{cont['wbytes'] / MB:.1f} MB")
                     elif db == "cassandra":
-                        flushed = d.get("type=Table,keyspace=tectonic,scope=data,name=BytesFlushed", 0) / MB
-                        compacted = d.get("type=Table,keyspace=tectonic,scope=data,name=CompactionBytesWritten", 0) / MB
+                        flushed = d.get("type=Table,keyspace=xbench,scope=data,name=BytesFlushed", 0) / MB
+                        compacted = d.get("type=Table,keyspace=xbench,scope=data,name=CompactionBytesWritten", 0) / MB
                         print(f"  Cassandra BytesFlushed {flushed:.1f} MB + CompactionBytesWritten {compacted:.1f} MB"
                               f" = {flushed + compacted:.1f} MB; rest of container write (commit log etc.)"
                               f" {cont['wbytes'] / MB - flushed - compacted:.1f} MB")

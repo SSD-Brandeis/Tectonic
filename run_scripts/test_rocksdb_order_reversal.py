@@ -1,18 +1,20 @@
 #!/usr/bin/env python3
+from pathlib import Path as _Path
+REPO_ROOT = str(_Path(__file__).resolve().parents[1])
 import os
 import sys
 import time
 
-sys.path.insert(0, "/home/cc/Tectonic/run_scripts")
+sys.path.insert(0, REPO_ROOT + "/run_scripts")
 from run_table5_rerun import (
-    generate_ycsb, generate_tectonic, restart_db, teardown_db,
+    generate_ycsb, generate_xbench, restart_db, teardown_db,
     execute_with_dual_io, drop_caches, validate_trace, log, banner,
     OUT_DIR
 )
 
 SCALE = 2**18  # 262,144 ops
 YCSB_TRACE = f"/dev/shm/test_sim_ycsb_{SCALE}.txt"
-TEC_TRACE  = f"/dev/shm/test_sim_tectonic_{SCALE}.txt"
+X_TRACE  = f"/dev/shm/test_sim_xbench_{SCALE}.txt"
 
 def main():
     banner("INVESTIGATION", "RocksDB Run Order Reversal & Deep-Dive Test")
@@ -21,8 +23,8 @@ def main():
     # 1. Generate traces in RAM tmpfs
     if not validate_trace(YCSB_TRACE, SCALE):
         generate_ycsb(SCALE, YCSB_TRACE)
-    if not validate_trace(TEC_TRACE, SCALE):
-        generate_tectonic(SCALE, TEC_TRACE)
+    if not validate_trace(X_TRACE, SCALE):
+        generate_xbench(SCALE, X_TRACE)
 
     results = {}
 
@@ -47,10 +49,10 @@ def main():
     log(f"  Trial 1 YCSB wall time: {t1_ycsb['wall_time_s']:.3f}s")
 
     log("\n[Trial 1.2] Executing X-Bench...")
-    t1_tec = run_one("tectonic", TEC_TRACE)
-    log(f"  Trial 1 X-Bench wall time: {t1_tec['wall_time_s']:.3f}s")
+    t1_x = run_one("xbench", X_TRACE)
+    log(f"  Trial 1 X-Bench wall time: {t1_x['wall_time_s']:.3f}s")
 
-    t1_diff = abs(t1_tec['wall_time_s'] - t1_ycsb['wall_time_s']) / t1_ycsb['wall_time_s'] * 100.0
+    t1_diff = abs(t1_x['wall_time_s'] - t1_ycsb['wall_time_s']) / t1_ycsb['wall_time_s'] * 100.0
     log(f"  Trial 1 Diff: {t1_diff:.2f}%\n")
 
     # =========================================================================
@@ -58,21 +60,21 @@ def main():
     # =========================================================================
     banner("TRIAL 2", "Reversed Order: X-Bench first -> YCSB second")
     log("\n[Trial 2.1] Executing X-Bench...")
-    t2_tec = run_one("tectonic", TEC_TRACE)
-    log(f"  Trial 2 X-Bench wall time: {t2_tec['wall_time_s']:.3f}s")
+    t2_x = run_one("xbench", X_TRACE)
+    log(f"  Trial 2 X-Bench wall time: {t2_x['wall_time_s']:.3f}s")
 
     log("\n[Trial 2.2] Executing YCSB...")
     t2_ycsb = run_one("ycsb", YCSB_TRACE)
     log(f"  Trial 2 YCSB wall time: {t2_ycsb['wall_time_s']:.3f}s")
 
-    t2_diff = abs(t2_tec['wall_time_s'] - t2_ycsb['wall_time_s']) / t2_ycsb['wall_time_s'] * 100.0
+    t2_diff = abs(t2_x['wall_time_s'] - t2_ycsb['wall_time_s']) / t2_ycsb['wall_time_s'] * 100.0
     log(f"  Trial 2 Diff: {t2_diff:.2f}%\n")
 
     # Cleanup database
     teardown_db("rocksdb")
 
     # Cleanup test traces
-    for p in [YCSB_TRACE, TEC_TRACE]:
+    for p in [YCSB_TRACE, X_TRACE]:
         if os.path.exists(p):
             os.remove(p)
 
@@ -80,7 +82,7 @@ def main():
     print(f"{'Metric':<30} | {'Trial 1 (YCSB first)':<25} | {'Trial 2 (X-Bench first)':<25}")
     print("-" * 86)
     print(f"{'YCSB Wall Time (s)':<30} | {t1_ycsb['wall_time_s']:<25.3f} | {t2_ycsb['wall_time_s']:<25.3f}")
-    print(f"{'X-Bench Wall Time (s)':<30} | {t1_tec['wall_time_s']:<25.3f} | {t2_tec['wall_time_s']:<25.3f}")
+    print(f"{'X-Bench Wall Time (s)':<30} | {t1_x['wall_time_s']:<25.3f} | {t2_x['wall_time_s']:<25.3f}")
     print(f"{'Execution Time Diff (%)':<30} | {t1_diff:<25.2f}% | {t2_diff:<25.2f}%")
     print("-" * 86)
 
@@ -88,9 +90,9 @@ def main():
     for op, op_key in [("INSERT", "insert"), ("READ", "point_query"), ("UPDATE", "update")]:
         print(f"\n--- {op} (Avg Latency in us) ---")
         y1_avg = t1_ycsb["op_metrics"].get(op_key, {}).get("average", 0.0)
-        t1_avg = t1_tec["op_metrics"].get(op_key, {}).get("average", 0.0)
+        t1_avg = t1_x["op_metrics"].get(op_key, {}).get("average", 0.0)
         y2_avg = t2_ycsb["op_metrics"].get(op_key, {}).get("average", 0.0)
-        t2_avg = t2_tec["op_metrics"].get(op_key, {}).get("average", 0.0)
+        t2_avg = t2_x["op_metrics"].get(op_key, {}).get("average", 0.0)
         d1 = abs(t1_avg - y1_avg) / y1_avg * 100.0 if y1_avg > 0 else 0.0
         d2 = abs(t2_avg - y2_avg) / y2_avg * 100.0 if y2_avg > 0 else 0.0
         print(f"Trial 1 (Standard): YCSB = {y1_avg:6.2f} us, X-Bench = {t1_avg:6.2f} us  (diff = {d1:5.2f}%)")

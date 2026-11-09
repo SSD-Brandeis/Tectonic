@@ -1,9 +1,11 @@
+from pathlib import Path as _Path
+REPO_ROOT = str(_Path(__file__).resolve().parents[1])
 import json
 import os
 
-RESULTS_PATH = "/home/cc/Tectonic/data/ycsb_tectonic_similarity_io_bytes/results_io_bytes.json"
-TABLE_OUT = "/home/cc/Tectonic/data/ycsb_tectonic_similarity_io_bytes/table_5_plotting_data"
-LOG_OUT = "/home/cc/Tectonic/data/ycsb_tectonic_similarity_io_bytes/plotting_data_summary.json"
+RESULTS_PATH = REPO_ROOT + "/data/ycsb_xbench_similarity_io_bytes/results_io_bytes.json"
+TABLE_OUT = REPO_ROOT + "/data/ycsb_xbench_similarity_io_bytes/table_5_plotting_data"
+LOG_OUT = REPO_ROOT + "/data/ycsb_xbench_similarity_io_bytes/plotting_data_summary.json"
 
 def extract_data():
     if not os.path.exists(RESULTS_PATH):
@@ -39,7 +41,7 @@ def extract_data():
             
             summary[db][scale_lbl] = {}
             
-            for wl in ["ycsb", "tectonic"]:
+            for wl in ["ycsb", "xbench"]:
                 wl_data = scale_data.get(wl, {})
                 
                 wall_time = wl_data.get("wall_time_s", 0.0)

@@ -4,7 +4,7 @@
 This runner mirrors the scale of data/overall_benchmarks/logs_fig3:
 1M load operations plus 1M run-phase operations per YCSB workload. The workload
 file is emitted by the locally modified RocksDB db_bench binary itself via
---benchmarks=ycsbtrace and --tectonic_trace_file. Python only orchestrates the
+--benchmarks=ycsbtrace and --xbench_trace_file. Python only orchestrates the
 runs and records metadata; it does not generate workload operations.
 """
 
@@ -122,12 +122,12 @@ def write_metadata(
         "run_mix": run_mix,
         "operation_counts": counts,
         "total_operations": record_count + run_count,
-        "format": "Tectonic text workload: FS/FE markers plus I, P, U, SC, M records",
+        "format": "X-Bench text workload: FS/FE markers plus I, P, U, SC, M records",
         "generator": "modified RocksDB db_bench",
         "mode": "native_db_bench_ycsbtrace",
         "db_bench_bin": str(db_bench_bin),
         "trace_file": str(output_path),
-        "trace_file_generated_by": "db_bench --benchmarks=ycsbtrace --tectonic_trace_file=<path>",
+        "trace_file_generated_by": "db_bench --benchmarks=ycsbtrace --xbench_trace_file=<path>",
         "threads": 1,
         "seed": 1,
         "writer_buffer_bytes": 1_048_576,
@@ -137,7 +137,7 @@ def write_metadata(
         "command": cmd,
         "comparison_note": (
             "db_bench was modified in vendor/rocksdb/tools/db_bench_tool.cc to "
-            "materialize generated YCSB A-F operations as a Tectonic text workload file. "
+            "materialize generated YCSB A-F operations as a X-Bench text workload file. "
             "No standalone Python workload generator is used for these records."
         ),
     }
@@ -161,13 +161,13 @@ def run_one(workload: str, scale: float, db_bench_bin: Path, keep_output: bool) 
         "-v",
         str(db_bench_bin),
         "--benchmarks=ycsbtrace",
-        f"--tectonic_trace_file={output_path}",
-        f"--tectonic_trace_ycsb_workload={workload}",
-        f"--tectonic_trace_load_count={record_count}",
-        f"--tectonic_trace_run_count={run_count}",
-        f"--tectonic_trace_insert_value_size={INSERT_VALUE_SIZE}",
-        f"--tectonic_trace_update_value_size={UPDATE_VALUE_SIZE}",
-        f"--tectonic_trace_scan_length={SCAN_LENGTH}",
+        f"--xbench_trace_file={output_path}",
+        f"--xbench_trace_ycsb_workload={workload}",
+        f"--xbench_trace_load_count={record_count}",
+        f"--xbench_trace_run_count={run_count}",
+        f"--xbench_trace_insert_value_size={INSERT_VALUE_SIZE}",
+        f"--xbench_trace_update_value_size={UPDATE_VALUE_SIZE}",
+        f"--xbench_trace_scan_length={SCAN_LENGTH}",
         f"--num={record_count}",
         f"--reads={run_count}",
         "--threads=1",

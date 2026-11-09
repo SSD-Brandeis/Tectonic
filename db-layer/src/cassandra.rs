@@ -5,8 +5,8 @@ use anyhow::{Result, anyhow};
 use cassandra_cpp::{Cluster, PreparedStatement, Session};
 use tokio::runtime::{self, Runtime};
 
-const KEYSPACE_NAME: &str = "tectonic";
-const TABLE_NAME: &str = "tectonic.data";
+const KEYSPACE_NAME: &str = "xbench";
+const TABLE_NAME: &str = "xbench.data";
 
 pub struct Cassandra {
     _session: Session,

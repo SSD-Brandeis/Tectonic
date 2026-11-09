@@ -93,24 +93,24 @@ def parse_trace(trace_path: Path) -> tuple[list[int], list[int]]:
                     
     return value_sizes, scan_lengths
 
-def save_cdf_plot(db_data: list[int], tec_data: list[int], xlabel: str, out_pdf: Path, out_legend: Path, is_log: bool = False) -> None:
+def save_cdf_plot(db_data: list[int], x_data: list[int], xlabel: str, out_pdf: Path, out_legend: Path, is_log: bool = False) -> None:
     fig, ax = plt.subplots(1, 1, figsize=(5, 3.6))
 
     # Calculate empirical CDF for db_bench (grey)
     db_sorted = np.sort(db_data)
     db_y = np.arange(len(db_sorted)) / float(len(db_sorted) - 1)
     
-    # Calculate empirical CDF for Tectonic (tab:red)
-    tec_sorted = np.sort(tec_data)
-    tec_y = np.arange(len(tec_sorted)) / float(len(tec_sorted) - 1)
+    # Calculate empirical CDF for X-Bench (tab:red)
+    x_sorted = np.sort(x_data)
+    x_y = np.arange(len(x_sorted)) / float(len(x_sorted) - 1)
 
     # Standardized Tool Styles (Rule 4):
     # db_bench / YCSB -> Color: grey, Marker: ^ (triangle up), Line: -
-    # Tectonic / X-Bench -> Color: tab:red, Marker: s (square), Line: -.
+    # X-Bench / X-Bench -> Color: tab:red, Marker: s (square), Line: -.
     # sequential settings hatch rules don't apply to simple CDF line plots, 
     # but we can use distinct line styles and markers.
     ax.plot(db_sorted, db_y, label="db_bench", color="grey", linestyle="-", marker="^", markevery=max(1, len(db_sorted)//10), markersize=6)
-    ax.plot(tec_sorted, tec_y, label="X-Bench", color="tab:red", linestyle="-.", marker="s", markevery=max(1, len(tec_sorted)//10), markersize=6)
+    ax.plot(x_sorted, x_y, label="X-Bench", color="tab:red", linestyle="-.", marker="s", markevery=max(1, len(x_sorted)//10), markersize=6)
 
     ax.set_xlabel(xlabel, fontproperties=font(20), labelpad=8)
     ax.set_ylabel("cumulative probability", fontproperties=font(20), labelpad=8)
@@ -123,7 +123,7 @@ def save_cdf_plot(db_data: list[int], tec_data: list[int], xlabel: str, out_pdf:
         # Explicit limits and ticks for log scale
         ax.set_xlim(1.0, 10000.0)
     else:
-        ax.set_xlim(0, max(max(db_data), max(tec_data)) * 1.05)
+        ax.set_xlim(0, max(max(db_data), max(x_data)) * 1.05)
         # Force 0 to be printed and ticked
         xticks = list(ax.get_xticks())
         if 0.0 not in xticks:
@@ -147,14 +147,14 @@ def save_cdf_plot(db_data: list[int], tec_data: list[int], xlabel: str, out_pdf:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Plot mixgraph trace size distributions.")
     parser.add_argument("--db-bench-trace", required=True, help="Path to db_bench trace file")
-    parser.add_argument("--tectonic-trace", required=True, help="Path to Tectonic trace file")
+    parser.add_argument("--xbench-trace", required=True, help="Path to X-Bench trace file")
     parser.add_argument("--out-dir", required=True, help="Path to output directory")
     args = parser.parse_args()
 
     configure_font()
 
     db_trace = Path(args.db_bench_trace)
-    tec_trace = Path(args.tectonic_trace)
+    x_trace = Path(args.xbench_trace)
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -162,16 +162,16 @@ def main() -> None:
 
     print("Parsing traces...")
     db_vals, db_scans = parse_trace(db_trace)
-    tec_vals, tec_scans = parse_trace(tec_trace)
+    x_vals, x_scans = parse_trace(x_trace)
 
-    # Apply mathematical quantile mapping to project Tectonic's classical Pareto samples
+    # Apply mathematical quantile mapping to project X-Bench's classical Pareto samples
     # to the equivalent Generalized Pareto space used by db_bench.
-    mapped_tec_vals = [
-        max(10, int(math.ceil((x - 25.45) / 0.2615))) for x in tec_vals
+    mapped_x_vals = [
+        max(10, int(math.ceil((x - 25.45) / 0.2615))) for x in x_vals
     ]
     
-    mapped_tec_scans = []
-    for x in tec_scans:
+    mapped_x_scans = []
+    for x in x_scans:
         # y = sigma * ((x / scale) ** (alpha * k) - 1) / k
         # where alpha = 2.517, scale = 14.236, k = 2.517, sigma = 14.236
         # alpha * k = 2.517 * 2.517 = 6.3353
@@ -179,12 +179,12 @@ def main() -> None:
         y_mod = int(math.ceil(y)) % 10000
         if y_mod <= 0:
             y_mod = 1
-        mapped_tec_scans.append(y_mod)
+        mapped_x_scans.append(y_mod)
 
     # Plot Value Size CDF
-    if db_vals and mapped_tec_vals:
+    if db_vals and mapped_x_vals:
         save_cdf_plot(
-            db_vals, mapped_tec_vals,
+            db_vals, mapped_x_vals,
             xlabel="value size (bytes)",
             out_pdf=out_dir / "mixgraph_value_cdf.pdf",
             out_legend=out_dir / "mixgraph_value_cdf_legend.pdf",
@@ -193,9 +193,9 @@ def main() -> None:
         print(f"Saved mapped value size CDF to {out_dir / 'mixgraph_value_cdf.pdf'}")
 
     # Plot Scan Length CDF
-    if db_scans and mapped_tec_scans:
+    if db_scans and mapped_x_scans:
         save_cdf_plot(
-            db_scans, mapped_tec_scans,
+            db_scans, mapped_x_scans,
             xlabel="range scan length (keys)",
             out_pdf=out_dir / "mixgraph_scan_cdf.pdf",
             out_legend=out_dir / "mixgraph_scan_cdf_legend.pdf",

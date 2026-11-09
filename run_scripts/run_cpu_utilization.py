@@ -2,13 +2,15 @@
 """
 CPU-utilization sanity experiment.
 
-This experiment compares YCSB and Tectonic on one embedded RocksDB setup:
+This experiment compares YCSB and X-Bench on one embedded RocksDB setup:
   1. workload generation CPU usage
   2. database execution CPU usage through the same RocksDB harness
 
 Results are written to:
-  /home/cc/Tectonic/data/CPU-utilization/results.json
+  data/CPU-utilization/results.json
 """
+from pathlib import Path as _Path
+REPO_ROOT = str(_Path(__file__).resolve().parents[1])
 
 import argparse
 import collections
@@ -22,9 +24,9 @@ import time
 
 EXPERIMENT_NAME = "CPU-utilization"
 
-ROOT_DIR = "/home/cc/Tectonic"
+ROOT_DIR = REPO_ROOT
 HARNESS_DIR = f"{ROOT_DIR}/rocksdb-benchmark-harness"
-TECTONIC_CLI = f"{ROOT_DIR}/target/release/tectonic-cli"
+XBENCH_CLI = f"{ROOT_DIR}/target/release/xbench-cli"
 YCSB_DIR = f"{HARNESS_DIR}/vendor/YCSB"
 M2 = "/home/cc/.m2/repository"
 
@@ -43,7 +45,7 @@ ROCKSDB_OPTS = f"{HARNESS_DIR}/experiments/workload-similarity/rocksdb-options.i
 OUT_DIR = f"{ROOT_DIR}/data/{EXPERIMENT_NAME}"
 RESULTS_PATH = f"{OUT_DIR}/results.json"
 PLOT_SCRIPT = f"{ROOT_DIR}/plot_scripts/plot_cpu_utilization.py"
-DB_DIR = "/tmp/tectonic_cpu_utilization_rocksdb"
+DB_DIR = "/tmp/xbench_cpu_utilization_rocksdb"
 DEFAULT_SCALE = 10_000_000
 DEFAULT_WORKLOAD = "a"
 DEFAULT_MIN_EXECUTION_SECONDS = 60.0
@@ -191,7 +193,7 @@ def clean_metadata_lines(path):
             out_f.write(line)
     if removed:
         os.replace(tmp_path, path)
-        print(f"  [clean] removed {removed} tectonic metadata lines", flush=True)
+        print(f"  [clean] removed {removed} xbench metadata lines", flush=True)
     else:
         remove_if_exists(tmp_path)
 
@@ -297,25 +299,25 @@ def generate_ycsb_trace(workload, scale, poll_interval):
     }
 
 
-def generate_tectonic_trace(workload, scale, poll_interval):
-    banner(f"generate Tectonic workload {workload.upper()} untracked trace")
+def generate_xbench_trace(workload, scale, poll_interval):
+    banner(f"generate X-Bench workload {workload.upper()} untracked trace")
     spec_path = f"{ROOT_DIR}/example-specs/ycsb_untracked/{workload}.spec.json"
-    raw_trace = f"{OUT_DIR}/tectonic_workload{workload}_raw.txt"
-    rocksdb_trace = f"{OUT_DIR}/tectonic_workload{workload}.txt"
+    raw_trace = f"{OUT_DIR}/xbench_workload{workload}_raw.txt"
+    rocksdb_trace = f"{OUT_DIR}/xbench_workload{workload}.txt"
     for path in (raw_trace, rocksdb_trace):
         remove_if_exists(path)
-    ensure_file(spec_path, "Tectonic untracked spec")
+    ensure_file(spec_path, "X-Bench untracked spec")
 
     scale_factor = scale / 1_000_000.0
     result = trace_process(
-        "Tectonic generation",
+        "X-Bench generation",
         [
-            TECTONIC_CLI, "generate",
+            XBENCH_CLI, "generate",
             "-w", spec_path,
             "-o", raw_trace,
             "-s", str(scale_factor),
         ],
-        f"{OUT_DIR}/tectonic_workload{workload}_generate.log",
+        f"{OUT_DIR}/xbench_workload{workload}_generate.log",
         cwd=ROOT_DIR,
         poll_interval=poll_interval,
     )
@@ -397,13 +399,13 @@ def main():
         default=DEFAULT_MIN_EXECUTION_SECONDS,
         help="Minimum required RocksDB execution duration for each trace. Use 0 to disable.",
     )
-    parser.add_argument("--build", action="store_true", help="Build tectonic-cli and the RocksDB harness first.")
+    parser.add_argument("--build", action="store_true", help="Build xbench-cli and the RocksDB harness first.")
     parser.add_argument("--no-plot", action="store_true", help="Skip plot generation after writing results.json.")
     args = parser.parse_args()
 
     os.makedirs(OUT_DIR, exist_ok=True)
     maybe_build(args.build)
-    ensure_file(TECTONIC_CLI, "tectonic-cli")
+    ensure_file(XBENCH_CLI, "xbench-cli")
     ensure_file(HARNESS_BIN, "RocksDB harness")
     ensure_file(ROCKSDB_OPTS, "RocksDB options")
 
@@ -418,7 +420,7 @@ def main():
     print(SEP, flush=True)
 
     ycsb_generation = generate_ycsb_trace(args.workload, args.scale, args.poll_interval)
-    tectonic_generation = generate_tectonic_trace(args.workload, args.scale, args.poll_interval)
+    xbench_generation = generate_xbench_trace(args.workload, args.scale, args.poll_interval)
 
     banner("generation complete; start rocksdb cpu tracking")
     print("  both workload traces are fully materialized before any rocksdb execution sampling starts", flush=True)
@@ -429,18 +431,18 @@ def main():
         f"ycsb_workload{args.workload}",
         args.poll_interval,
     )
-    tectonic_execution = execute_trace_on_rocksdb(
-        "Tectonic",
-        tectonic_generation["rocksdb_trace_path"],
-        f"tectonic_workload{args.workload}",
+    xbench_execution = execute_trace_on_rocksdb(
+        "X-Bench",
+        xbench_generation["rocksdb_trace_path"],
+        f"xbench_workload{args.workload}",
         args.poll_interval,
     )
 
-    execution_window_s = max(ycsb_execution["duration_s"], tectonic_execution["duration_s"])
+    execution_window_s = max(ycsb_execution["duration_s"], xbench_execution["duration_s"])
     if args.min_execution_seconds > 0.0:
         short = {
             name: result["duration_s"]
-            for name, result in (("YCSB", ycsb_execution), ("Tectonic", tectonic_execution))
+            for name, result in (("YCSB", ycsb_execution), ("X-Bench", xbench_execution))
             if result["duration_s"] < args.min_execution_seconds
         }
         if short:
@@ -463,11 +465,11 @@ def main():
         "cpu_count": CPU_COUNT,
         "generation": {
             "ycsb": ycsb_generation,
-            "tectonic": tectonic_generation,
+            "xbench": xbench_generation,
         },
         "execution": {
             "ycsb": ycsb_execution,
-            "tectonic": tectonic_execution,
+            "xbench": xbench_execution,
         },
     }
     write_results_atomic(payload)

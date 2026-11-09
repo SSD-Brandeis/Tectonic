@@ -172,10 +172,10 @@ def main() -> None:
     generate_full_scale_heatmap("grey", save_path_db)
     print(f"Saved full-scale db_bench heatmap to {save_path_db}")
 
-    # Plot full-scale Tectonic heatmap (tab:red)
-    save_path_tec = out_dir / "mixgraph_heatmap_full_scale_tectonic.pdf"
-    generate_full_scale_heatmap("tab:red", save_path_tec)
-    print(f"Saved full-scale tectonic heatmap to {save_path_tec}")
+    # Plot full-scale X-Bench heatmap (tab:red)
+    save_path_x = out_dir / "mixgraph_heatmap_full_scale_xbench.pdf"
+    generate_full_scale_heatmap("tab:red", save_path_x)
+    print(f"Saved full-scale xbench heatmap to {save_path_x}")
 
 if __name__ == "__main__":
     main()

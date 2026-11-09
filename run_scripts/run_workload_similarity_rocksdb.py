@@ -4,18 +4,20 @@ YCSB Workload A Similarity Experiment — RocksDB Harness
 =========================================================
 Stages:
   1. Generate YCSB Workload A trace   → print first 10 lines to log
-  2. Generate Tectonic Workload A trace → print first 10 lines to log
+  2. Generate X-Bench Workload A trace → print first 10 lines to log
   3. Compare the two workloads        → op counts, key format, sample diff
   4. Execute YCSB trace on RocksDB    → via C++ rocksdb-benchmark-harness (stats build)
-  5. Execute Tectonic trace on RocksDB → same binary, same options, fresh DB
+  5. Execute X-Bench trace on RocksDB → same binary, same options, fresh DB
   6. Compare performance results      → latency percentiles (insert, point query, update)
 """
+from pathlib import Path as _Path
+REPO_ROOT = str(_Path(__file__).resolve().parents[1])
 
 import os, sys, subprocess, shutil, json, collections
 
 # ── Paths ──────────────────────────────────────────────────────────────────
-HARNESS_DIR   = "/home/cc/Tectonic/rocksdb-benchmark-harness"
-TECTONIC_CLI  = "/home/cc/Tectonic/target/release/tectonic-cli"
+HARNESS_DIR   = REPO_ROOT + "/rocksdb-benchmark-harness"
+XBENCH_CLI  = REPO_ROOT + "/target/release/xbench-cli"
 YCSB_DIR      = f"{HARNESS_DIR}/vendor/YCSB"
 M2            = "/home/cc/.m2/repository"
 
@@ -25,9 +27,9 @@ M2            = "/home/cc/.m2/repository"
 HARNESS_BIN   = f"{HARNESS_DIR}/cmake-build-release-with-stats/rocksdb-benchmark-harness"
 ROCKSDB_OPTS  = f"{HARNESS_DIR}/experiments/workload-similarity/rocksdb-options.ini"
 
-# Tectonic spec: encodes YCSB Workload A (50% point_queries + 50% updates)
+# X-Bench spec: encodes YCSB Workload A (50% point_queries + 50% updates)
 # using Beta(0.15, 0.55) key selection ≈ Zipfian(0.99), same key format as YCSB
-TECTONIC_SPEC = f"{HARNESS_DIR}/experiments/workload-similarity/workload-a.spec.json"
+XBENCH_SPEC = f"{HARNESS_DIR}/experiments/workload-similarity/workload-a.spec.json"
 
 YCSB_CP = ":".join([
     f"{YCSB_DIR}/file/conf",
@@ -39,7 +41,7 @@ YCSB_CP = ":".join([
     f"{YCSB_DIR}/core/target/core-0.18.0-SNAPSHOT.jar",
 ])
 
-OUT_DIR = "/home/cc/Tectonic/data/workload_similarity_rocksdb"
+OUT_DIR = REPO_ROOT + "/data/workload_similarity_rocksdb"
 os.makedirs(OUT_DIR, exist_ok=True)
 DB_DIR = "/tmp/rocksdb-similarity"
 
@@ -50,7 +52,7 @@ parser.add_argument("--scale", type=int, default=50_000,
                     help="Number of records (load) and operations (run). Default: 50000")
 args = parser.parse_args()
 SCALE = args.scale
-TECTONIC_SCALE_FACTOR = SCALE / 1_000_000.0   # spec base = 1M ops
+XBENCH_SCALE_FACTOR = SCALE / 1_000_000.0   # spec base = 1M ops
 
 # ── Helpers ────────────────────────────────────────────────────────────────
 SEP = "=" * 65
@@ -145,42 +147,42 @@ print(f"\n  → YCSB trace written: {YCSB_TRACE}  ({ycsb_lines:,} total lines)")
 print_workload_sample(YCSB_TRACE, "YCSB trace")
 
 # ══════════════════════════════════════════════════════════════════════════════
-# STAGE 2 — Generate Tectonic Workload A trace
+# STAGE 2 — Generate X-Bench Workload A trace
 # ══════════════════════════════════════════════════════════════════════════════
-banner("STAGE 2", f"Generate Tectonic Workload A  (scale={SCALE:,})")
-print(f"  Generator     : tectonic-cli generate")
-print(f"  Spec file     : {TECTONIC_SPEC}")
-print(f"  Scale factor  : {TECTONIC_SCALE_FACTOR}  (= {SCALE:,} / 1,000,000)")
+banner("STAGE 2", f"Generate X-Bench Workload A  (scale={SCALE:,})")
+print(f"  Generator     : xbench-cli generate")
+print(f"  Spec file     : {XBENCH_SPEC}")
+print(f"  Scale factor  : {XBENCH_SCALE_FACTOR}  (= {SCALE:,} / 1,000,000)")
 print(f"  Load phase    : {SCALE:,} inserts — key: usertable:user<19-digit-numeric>")
 print(f"  Run phase     : {SCALE//2:,} point_queries + {SCALE//2:,} updates")
 print(f"                  key selection: Beta(alpha=0.15, beta=0.55) ≈ Zipfian(0.99)")
-print(f"  Output file   : {OUT_DIR}/tectonic-workload-a.txt")
+print(f"  Output file   : {OUT_DIR}/xbench-workload-a.txt")
 
-TECTONIC_TRACE = f"{OUT_DIR}/tectonic-workload-a.txt"
+XBENCH_TRACE = f"{OUT_DIR}/xbench-workload-a.txt"
 
-run([TECTONIC_CLI, "generate",
-     "-w", TECTONIC_SPEC,
-     "-o", TECTONIC_TRACE,
-     "-s", str(TECTONIC_SCALE_FACTOR)])
+run([XBENCH_CLI, "generate",
+     "-w", XBENCH_SPEC,
+     "-o", XBENCH_TRACE,
+     "-s", str(XBENCH_SCALE_FACTOR)])
 
-tec_lines = sum(1 for _ in open(TECTONIC_TRACE))
-print(f"\n  → Tectonic trace written: {TECTONIC_TRACE}  ({tec_lines:,} total lines)")
-print_workload_sample(TECTONIC_TRACE, "Tectonic trace")
+x_lines = sum(1 for _ in open(XBENCH_TRACE))
+print(f"\n  → X-Bench trace written: {XBENCH_TRACE}  ({x_lines:,} total lines)")
+print_workload_sample(XBENCH_TRACE, "X-Bench trace")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # STAGE 3 — Compare the two workloads
 # ══════════════════════════════════════════════════════════════════════════════
-banner("STAGE 3", "Compare YCSB vs Tectonic workload traces")
+banner("STAGE 3", "Compare YCSB vs X-Bench workload traces")
 
 ycsb_ops = count_ops(YCSB_TRACE)
-tec_ops  = count_ops(TECTONIC_TRACE)
+x_ops  = count_ops(XBENCH_TRACE)
 
-print(f"\n  {'Operation':<12} {'YCSB':>12} {'Tectonic':>12}  meaning")
+print(f"\n  {'Operation':<12} {'YCSB':>12} {'X-Bench':>12}  meaning")
 print(f"  {'-'*55}")
-print(f"  {'I (insert)':<12} {ycsb_ops.get('I',0):>12,} {tec_ops.get('I',0):>12,}  db->Put (load phase)")
-print(f"  {'P (point Q)':<12} {ycsb_ops.get('P',0):>12,} {tec_ops.get('P',0):>12,}  db->Get (valid key, Zipfian)")
-print(f"  {'U (update)':<12} {ycsb_ops.get('U',0):>12,} {tec_ops.get('U',0):>12,}  db->Put (existing key)")
-print(f"  {'Total':<12} {ycsb_lines:>12,} {tec_lines:>12,}")
+print(f"  {'I (insert)':<12} {ycsb_ops.get('I',0):>12,} {x_ops.get('I',0):>12,}  db->Put (load phase)")
+print(f"  {'P (point Q)':<12} {ycsb_ops.get('P',0):>12,} {x_ops.get('P',0):>12,}  db->Get (valid key, Zipfian)")
+print(f"  {'U (update)':<12} {ycsb_ops.get('U',0):>12,} {x_ops.get('U',0):>12,}  db->Put (existing key)")
+print(f"  {'Total':<12} {ycsb_lines:>12,} {x_lines:>12,}")
 
 # Key format check
 print(f"\n  Key format verification (first insert key from each trace):")
@@ -191,7 +193,7 @@ def first_key(path):
                 return line.split(" ", 2)[1]
     return "?"
 print(f"    YCSB     : {first_key(YCSB_TRACE)}")
-print(f"    Tectonic : {first_key(TECTONIC_TRACE)}")
+print(f"    X-Bench : {first_key(XBENCH_TRACE)}")
 print(f"\n  Value size check (first insert value length from each trace):")
 def first_val_len(path):
     with open(path) as f:
@@ -201,7 +203,7 @@ def first_val_len(path):
                 return len(parts[2].rstrip()) if len(parts) == 3 else 0
     return 0
 print(f"    YCSB     : {first_val_len(YCSB_TRACE)} bytes")
-print(f"    Tectonic : {first_val_len(TECTONIC_TRACE)} bytes")
+print(f"    X-Bench : {first_val_len(XBENCH_TRACE)} bytes")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # STAGE 4 — Execute YCSB trace on RocksDB (C++ harness)
@@ -228,29 +230,29 @@ with open(YCSB_LATENCY) as f:
         print(f"    {line}", end="")
 
 # ══════════════════════════════════════════════════════════════════════════════
-# STAGE 5 — Execute Tectonic trace on RocksDB (same harness, fresh DB)
+# STAGE 5 — Execute X-Bench trace on RocksDB (same harness, fresh DB)
 # ══════════════════════════════════════════════════════════════════════════════
-banner("STAGE 5", "Execute Tectonic trace on RocksDB  [same harness, fresh DB]")
+banner("STAGE 5", "Execute X-Bench trace on RocksDB  [same harness, fresh DB]")
 print(f"  Binary     : {HARNESS_BIN}  (identical)")
 print(f"  DB options : {ROCKSDB_OPTS}  (identical)")
 print(f"  DB path    : {DB_DIR}/db  (wiped and recreated)")
-print(f"  Workload   : {TECTONIC_TRACE}")
+print(f"  Workload   : {XBENCH_TRACE}")
 
 reset_db()
-TEC_STATS   = f"{OUT_DIR}/tectonic-stats.txt"
-TEC_LATENCY = f"{OUT_DIR}/tectonic-latency.csv"
-run([HARNESS_BIN, ROCKSDB_OPTS, TECTONIC_TRACE, TEC_STATS, TEC_LATENCY], cwd=DB_DIR)
-print(f"\n  → Stats written  : {TEC_STATS}")
-print(f"  → Latency written: {TEC_LATENCY}")
-print(f"\n  Raw latency CSV (Tectonic):")
-with open(TEC_LATENCY) as f:
+X_STATS   = f"{OUT_DIR}/xbench-stats.txt"
+X_LATENCY = f"{OUT_DIR}/xbench-latency.csv"
+run([HARNESS_BIN, ROCKSDB_OPTS, XBENCH_TRACE, X_STATS, X_LATENCY], cwd=DB_DIR)
+print(f"\n  → Stats written  : {X_STATS}")
+print(f"  → Latency written: {X_LATENCY}")
+print(f"\n  Raw latency CSV (X-Bench):")
+with open(X_LATENCY) as f:
     for line in f:
         print(f"    {line}", end="")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # STAGE 6 — Compare performance
 # ══════════════════════════════════════════════════════════════════════════════
-banner("STAGE 6", "Performance comparison: YCSB vs Tectonic on RocksDB")
+banner("STAGE 6", "Performance comparison: YCSB vs X-Bench on RocksDB")
 
 def parse_latency_csv(path):
     """Returns dict: {op_name: {pct: value_us}}. Values stored in ns, converted to µs."""
@@ -270,16 +272,16 @@ def parse_latency_csv(path):
     return result
 
 ycsb_lat = parse_latency_csv(YCSB_LATENCY)
-tec_lat  = parse_latency_csv(TEC_LATENCY)
+x_lat  = parse_latency_csv(X_LATENCY)
 
 PCTS = ["p0", "p25", "p50", "p75", "p95", "p99"]
 
-all_ops = list(dict.fromkeys(list(ycsb_lat) + list(tec_lat)))
+all_ops = list(dict.fromkeys(list(ycsb_lat) + list(x_lat)))
 for op in all_ops:
     y = ycsb_lat.get(op, {})
-    t = tec_lat.get(op, {})
+    t = x_lat.get(op, {})
     print(f"\n  {op}")
-    print(f"  {'percentile':<10} {'YCSB (µs)':>14} {'Tectonic (µs)':>14}")
+    print(f"  {'percentile':<10} {'YCSB (µs)':>14} {'X-Bench (µs)':>14}")
     print(f"  {'-'*40}")
     for pct in PCTS:
         yv = y.get(pct, 0.0)
@@ -289,16 +291,16 @@ for op in all_ops:
 # Save results JSON
 results = {
     "scale": SCALE,
-    "tectonic_spec": TECTONIC_SPEC,
+    "xbench_spec": XBENCH_SPEC,
     "ycsb_trace":  YCSB_TRACE,
-    "tectonic_trace": TECTONIC_TRACE,
+    "xbench_trace": XBENCH_TRACE,
     "op_counts": {
         "ycsb":     {k: v for k,v in ycsb_ops.items()},
-        "tectonic": {k: v for k,v in tec_ops.items()},
+        "xbench": {k: v for k,v in x_ops.items()},
     },
     "latency_us": {
         "ycsb":     ycsb_lat,
-        "tectonic": tec_lat,
+        "xbench": x_lat,
     },
 }
 results_path = f"{OUT_DIR}/results.json"

@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-Plot: YCSB vs Tectonic Workload A Similarity — All Four Databases
+Plot: YCSB vs X-Bench Workload A Similarity — All Four Databases
 =================================================================
 Produces 4 PDF figures (one per database).
 Each figure has 3 subplots (insert, point query, update).
-Each subplot: box plots at each scale (2^18..2^22) for YCSB vs Tectonic.
+Each subplot: box plots at each scale (2^18..2^22) for YCSB vs X-Bench.
 
-Box plot statistics drawn from harness/tectonic-cli percentile data:
+Box plot statistics drawn from harness/xbench-cli percentile data:
   whislo = p0   (minimum)
   q1     = p25
   med    = p50  (median)
@@ -15,11 +15,13 @@ Box plot statistics drawn from harness/tectonic-cli percentile data:
 
 Styles (AGENTS.md):
   YCSB     : grey, hollow (facecolor white), hatch ///
-  Tectonic : tab:red, solid filled
+  X-Bench : tab:red, solid filled
   Legend   : separate PDF (_legend.pdf)
   Font     : LinLibertine_Mah.ttf, text.usetex=True
   Labels   : lowercase except YCSB (always uppercase)
 """
+from pathlib import Path as _Path
+REPO_ROOT = str(_Path(__file__).resolve().parents[1])
 
 import os, sys, json
 import matplotlib
@@ -31,16 +33,16 @@ import matplotlib.ticker as ticker
 import numpy as np
 
 # ── Font ──────────────────────────────────────────────────────────────────────
-fm.fontManager.addfont('/home/cc/Tectonic/LinLibertine_Mah.ttf')
-prop = fm.FontProperties(fname='/home/cc/Tectonic/LinLibertine_Mah.ttf')
+fm.fontManager.addfont(REPO_ROOT + '/LinLibertine_Mah.ttf')
+prop = fm.FontProperties(fname=REPO_ROOT + '/LinLibertine_Mah.ttf')
 matplotlib.rcParams['font.family'] = prop.get_name()
 
-RESULTS_PATH = "/home/cc/Tectonic/data/ycsb_tectonic_similarity_all_dbs/results.json"
-OUT_DIR      = "/home/cc/Tectonic/data/ycsb_tectonic_similarity_all_dbs"
+RESULTS_PATH = REPO_ROOT + "/data/ycsb_xbench_similarity_all_dbs/results.json"
+OUT_DIR      = REPO_ROOT + "/data/ycsb_xbench_similarity_all_dbs"
 
 # ── Styles ────────────────────────────────────────────────────────────────────
 YCSB_COLOR = 'grey'
-TEC_COLOR  = 'tab:red'
+X_COLOR  = 'tab:red'
 BOX_WIDTH  = 0.35
 FONT_SIZE  = 20
 FIGSIZE    = (17.0, 5.8)
@@ -91,15 +93,15 @@ def plot_database(db, db_results):
     available_scales = sorted(int(k) for k in db_results.keys())
     n_scales = len(SCALES)
 
-    # x-positions: one integer per scale, YCSB offset left, Tectonic offset right
+    # x-positions: one integer per scale, YCSB offset left, X-Bench offset right
     x_centers = np.arange(1, n_scales + 1, dtype=float)
     off = BOX_WIDTH * 0.6
 
     for ax, (op_key, op_label) in zip(axes, OPS):
         ycsb_boxes = []
-        tec_boxes  = []
+        x_boxes  = []
         ycsb_pos   = []
-        tec_pos    = []
+        x_pos    = []
 
         for i, scale in enumerate(SCALES):
             skey = str(scale)
@@ -108,14 +110,14 @@ def plot_database(db, db_results):
             pair = db_results[skey]
 
             ys = make_box_stats(pair.get("ycsb",  {}).get("latency_us", {}), op_key)
-            ts = make_box_stats(pair.get("tectonic", {}).get("latency_us", {}), op_key)
+            ts = make_box_stats(pair.get("xbench", {}).get("latency_us", {}), op_key)
 
             if ys:
                 ycsb_boxes.append(ys)
                 ycsb_pos.append(x_centers[i] - off)
             if ts:
-                tec_boxes.append(ts)
-                tec_pos.append(x_centers[i] + off)
+                x_boxes.append(ts)
+                x_pos.append(x_centers[i] + off)
 
         # Draw YCSB boxes (hollow, grey, hatch ///)
         if ycsb_boxes:
@@ -132,18 +134,18 @@ def plot_database(db, db_results):
                     line.set_color(YCSB_COLOR)
                     line.set_linewidth(1.8)
 
-        # Draw Tectonic boxes (solid red)
-        if tec_boxes:
-            bp_t = ax.bxp(tec_boxes, positions=tec_pos,
+        # Draw X-Bench boxes (solid red)
+        if x_boxes:
+            bp_t = ax.bxp(x_boxes, positions=x_pos,
                           widths=BOX_WIDTH, patch_artist=True,
                           showfliers=False, manage_ticks=False)
             for patch in bp_t["boxes"]:
-                patch.set_facecolor(TEC_COLOR)
-                patch.set_edgecolor(TEC_COLOR)
+                patch.set_facecolor(X_COLOR)
+                patch.set_edgecolor(X_COLOR)
                 patch.set_linewidth(1.8)
             for element in ["whiskers","caps","medians"]:
                 for line in bp_t[element]:
-                    line.set_color("white" if element == "medians" else TEC_COLOR)
+                    line.set_color("white" if element == "medians" else X_COLOR)
                     line.set_linewidth(1.8)
 
         # X axis: one tick per scale
@@ -161,7 +163,7 @@ def plot_database(db, db_results):
 
     axes[0].set_ylabel(r"latency ($\mu$s)", fontsize=FONT_SIZE)
     fig.suptitle(
-        r"YCSB vs Tectonic+ workload A latency - " + DB_LABELS.get(db, db),
+        r"YCSB vs X-Bench+ workload A latency - " + DB_LABELS.get(db, db),
         fontsize=FONT_SIZE, y=0.98
     )
     fig.tight_layout(pad=1.0, rect=(0, 0, 1, 0.90))
@@ -177,8 +179,8 @@ def plot_legend():
     handles = [
         mpatches.Patch(facecolor="white", edgecolor=YCSB_COLOR,
                        hatch="///", label="YCSB"),
-        mpatches.Patch(facecolor=TEC_COLOR, edgecolor=TEC_COLOR,
-                       label="Tectonic+"),
+        mpatches.Patch(facecolor=X_COLOR, edgecolor=X_COLOR,
+                       label="X-Bench+"),
     ]
     ax.legend(handles=handles, loc="center", ncol=2, fontsize=FONT_SIZE, frameon=False)
     base = f"{OUT_DIR}/similarity_legend"

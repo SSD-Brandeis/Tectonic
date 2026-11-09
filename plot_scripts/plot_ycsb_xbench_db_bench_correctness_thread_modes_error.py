@@ -31,7 +31,7 @@ from plot_ycsb_xbench_db_bench_correctness_thread_modes import (
 
 SERIES = [
     # (tool, op, color, linestyle, marker)
-    ("tectonic", "I", "tab:blue", "-.", "s"),
+    ("xbench", "I", "tab:blue", "-.", "s"),
     ("ycsb", "I", "grey", "-", "^"),
     ("ycsb", "P", "grey", "--", "o"),
     ("ycsb", "U", "grey", ":", "d"),

@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Plot workload-generation CPU utilization from several monitoring tools."""
+from pathlib import Path as _Path
+REPO_ROOT = str(_Path(__file__).resolve().parents[1])
 
 import argparse
 import json
@@ -16,7 +18,7 @@ import matplotlib.ticker as ticker
 import plot_style
 
 
-ROOT_DIR = "/home/cc/Tectonic"
+ROOT_DIR = REPO_ROOT
 OUT_DIR = f"{ROOT_DIR}/data/CPU-utilization"
 DEFAULT_RESULTS_PATH = f"{OUT_DIR}/monitor_comparison_results.json"
 FONT_PATH = f"{ROOT_DIR}/LinLibertine_Mah.ttf"
@@ -37,7 +39,7 @@ YCSB_STYLE = {
     "markeredgecolor": "grey",
     "linewidth": 1.4,
 }
-TECTONIC_STYLE = {
+XBENCH_STYLE = {
     "color": "tab:red",
     "linestyle": "-.",
     "marker": "s",
@@ -194,17 +196,17 @@ def bucket_size(window_s):
 
 def tool_logs(generation, tool, window_s):
     ycsb = generation["ycsb"]
-    tectonic = generation["tectonic"]
+    xbench = generation["xbench"]
     bucket_s = bucket_size(window_s)
     ycsb_log = resample_cpu_log(
         pad_cpu_log(ycsb.get("monitors", {}).get(tool, []), ycsb["duration_s"], window_s),
         bucket_s=bucket_s,
     )
-    tectonic_log = resample_cpu_log(
-        pad_cpu_log(tectonic.get("monitors", {}).get(tool, []), tectonic["duration_s"], window_s),
+    xbench_log = resample_cpu_log(
+        pad_cpu_log(xbench.get("monitors", {}).get(tool, []), xbench["duration_s"], window_s),
         bucket_s=bucket_s,
     )
-    return ycsb_log, tectonic_log
+    return ycsb_log, xbench_log
 
 
 def y_axis_top(*logs):
@@ -224,18 +226,18 @@ def main():
     generation = data["generation"]
     tag = output_tag(data)
     tools = [tool for tool in data.get("monitors", DEFAULT_TOOLS) if tool != "ps"]
-    window_s = max(generation["ycsb"]["duration_s"], generation["tectonic"]["duration_s"])
+    window_s = max(generation["ycsb"]["duration_s"], generation["xbench"]["duration_s"])
     legend_handles = None
     legend_labels = None
 
     for tool in tools:
-        ycsb_log, tectonic_log = tool_logs(generation, tool, window_s)
+        ycsb_log, xbench_log = tool_logs(generation, tool, window_s)
         fig, ax = plt.subplots(1, 1, figsize=(4.2, 2.8))
         ycsb_handle = plot_line(ax, ycsb_log, "YCSB", YCSB_STYLE)
-        tectonic_handle = plot_line(ax, tectonic_log, "Tectonic", TECTONIC_STYLE)
+        xbench_handle = plot_line(ax, xbench_log, "X-Bench", XBENCH_STYLE)
         for boundary in generation["ycsb"].get("phase_boundaries_s", []):
             ax.axvline(boundary, color="grey", linestyle=":", linewidth=0.8)
-        style_axis(ax, f"workload generation {TOOL_LABELS[tool]}", window_s, y_top=y_axis_top(ycsb_log, tectonic_log))
+        style_axis(ax, f"workload generation {TOOL_LABELS[tool]}", window_s, y_top=y_axis_top(ycsb_log, xbench_log))
 
         base = f"{OUT_DIR}/cpu_monitor_{tool}_{tag}"
         fig.subplots_adjust(left=0.30, right=0.98, bottom=0.18, top=0.88)
@@ -246,8 +248,8 @@ def main():
         print(f"saved: {base}.png")
 
         if legend_handles is None:
-            legend_handles = [ycsb_handle, tectonic_handle]
-            legend_labels = ["YCSB", "Tectonic"]
+            legend_handles = [ycsb_handle, xbench_handle]
+            legend_labels = ["YCSB", "X-Bench"]
 
     if legend_handles:
         save_legend(legend_handles, legend_labels, f"{OUT_DIR}/cpu_monitor_{tag}")

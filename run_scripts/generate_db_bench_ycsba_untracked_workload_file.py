@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Emit a db_bench-style YCSB-A untracked workload in Tectonic text format.
+"""Emit a db_bench-style YCSB-A untracked workload in X-Bench text format.
 
 Native RocksDB db_bench does not materialize its internal operations as the
-line-oriented workload file used by Tectonic. This compatibility generator
+line-oriented workload file used by X-Bench. This compatibility generator
 keeps the YCSB-A untracked operation shape used by example-specs/ycsb_untracked/a.spec.json:
 1M scaled load inserts, then 500k scaled untracked point reads and 500k scaled
 updates.
@@ -136,7 +136,7 @@ def write_workload(args: argparse.Namespace) -> dict:
 
     metadata = {
         "output_path": str(output_path),
-        "format": "Tectonic text workload: I key value, BP key, U key value",
+        "format": "X-Bench text workload: I key value, BP key, U key value",
         "workload": "YCSB-A untracked",
         "scale": args.scale,
         "record_count": record_count,

@@ -1,5 +1,5 @@
 [package]
-name = "tectonic-cli"
+name = "xbench-cli"
 version = "0.1.0"
 edition = "2024"
 
@@ -7,7 +7,7 @@ edition = "2024"
 anyhow = "1.0.98"
 clap = { version = "4.5.40", features = ["derive"] }
 walkdir = "2.5.0"
-tectonic = { path = "../tectonic/" }
+xbench = { path = "../xbench/" }
 db-layer = { path = "../db-layer/" }
 tracing-subscriber.workspace = true
 tracing.workspace = true

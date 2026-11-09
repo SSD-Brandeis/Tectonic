@@ -178,12 +178,12 @@ for name in [
 ]:
     MAPPINGS.append(
         {
-            "experiment": "ycsb_tectonic_correctness",
-            "legacy": f"ycsb_tectonic_correctness_plots/{name}",
-            "canonical": f"data/ycsb_tectonic_correctness/plots/{name}",
-            "plot_script": "plot_scripts/plot_ycsb_tectonic_correctness.py",
-            "run_script": "run_scripts/run_ycsb_tectonic_correctness_experiment.py",
-            "data_sources": ["data/ycsb_tectonic_correctness/results.json"],
+            "experiment": "ycsb_xbench_correctness",
+            "legacy": f"ycsb_xbench_correctness_plots/{name}",
+            "canonical": f"data/ycsb_xbench_correctness/plots/{name}",
+            "plot_script": "plot_scripts/plot_ycsb_xbench_correctness.py",
+            "run_script": "run_scripts/run_ycsb_xbench_correctness_experiment.py",
+            "data_sources": ["data/ycsb_xbench_correctness/results.json"],
         }
     )
 
@@ -200,12 +200,12 @@ for name in [
 ]:
     MAPPINGS.append(
         {
-            "experiment": "ycsb_tectonic_correctness_thread_modes",
-            "legacy": f"ycsb_tectonic_correctness_plots/thread_modes/{name}",
-            "canonical": f"data/ycsb_tectonic_correctness_thread_modes/plots/{name}",
-            "plot_script": "plot_scripts/plot_ycsb_tectonic_db_bench_correctness_thread_modes.py",
-            "run_script": "run_scripts/run_ycsb_tectonic_db_bench_correctness_thread_modes.py",
-            "data_sources": ["data/ycsb_tectonic_correctness_thread_modes/results.json"],
+            "experiment": "ycsb_xbench_correctness_thread_modes",
+            "legacy": f"ycsb_xbench_correctness_plots/thread_modes/{name}",
+            "canonical": f"data/ycsb_xbench_correctness_thread_modes/plots/{name}",
+            "plot_script": "plot_scripts/plot_ycsb_xbench_db_bench_correctness_thread_modes.py",
+            "run_script": "run_scripts/run_ycsb_xbench_db_bench_correctness_thread_modes.py",
+            "data_sources": ["data/ycsb_xbench_correctness_thread_modes/results.json"],
         }
     )
 
@@ -277,7 +277,7 @@ PNG_COMPATIBLE_PLOT_SCRIPTS = {
     "plot_scripts/plot_generator_comparison.py",
     "plot_scripts/plot_rocksdb_similarity_ycsba.py",
     "plot_scripts/plot_subplot_a.py",
-    "plot_scripts/plot_ycsb_tectonic_correctness.py",
+    "plot_scripts/plot_ycsb_xbench_correctness.py",
 }
 
 for entry in list(MAPPINGS):

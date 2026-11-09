@@ -1,31 +1,33 @@
 #!/usr/bin/env python3
 """
-YCSB vs Tectonic Workload Profile Experiment
+YCSB vs X-Bench Workload Profile Experiment
 =============================================
 Stages (explicitly separated):
   STAGE 1 – Generate YCSB Workload A trace file
-  STAGE 2 – Generate Tectonic Workload A trace file
+  STAGE 2 – Generate X-Bench Workload A trace file
   STAGE 3 – Compare the two trace files (op counts, key format, sample lines)
-  STAGE 4 – Run YCSB trace on target database (tectonic-cli execute)
-  STAGE 5 – Run Tectonic trace on SAME target database (tectonic-cli execute)
+  STAGE 4 – Run YCSB trace on target database (xbench-cli execute)
+  STAGE 5 – Run X-Bench trace on SAME target database (xbench-cli execute)
   STAGE 6 – Collect and compare metrics, plot, save results
 
-Both workloads are executed via the SAME tectonic-cli execute driver with
+Both workloads are executed via the SAME xbench-cli execute driver with
 IDENTICAL database configuration, so any difference in metrics reflects
 the workload content itself, not execution mechanism differences.
 """
+from pathlib import Path as _Path
+REPO_ROOT = str(_Path(__file__).resolve().parents[1])
 
 import os, sys, time, json, re, subprocess, shutil, argparse, collections
 
 # ── Paths ──────────────────────────────────────────────────────────────────
-TECTONIC_CLI = "/home/cc/Tectonic/target/release/tectonic-cli"
-HARNESS_DIR  = "/home/cc/Tectonic/rocksdb-benchmark-harness"
+XBENCH_CLI = REPO_ROOT + "/target/release/xbench-cli"
+HARNESS_DIR  = REPO_ROOT + "/rocksdb-benchmark-harness"
 YCSB_DIR     = f"{HARNESS_DIR}/vendor/YCSB"
 M2           = "/home/cc/.m2/repository"
 
-# Tectonic spec: workload-a.spec.json encodes YCSB Workload A with valid-key
+# X-Bench spec: workload-a.spec.json encodes YCSB Workload A with valid-key
 # point queries (Beta(0.15,0.55) ≈ Zipfian) and matching key format.
-TECTONIC_SPEC = f"{HARNESS_DIR}/experiments/workload-similarity/workload-a.spec.json"
+XBENCH_SPEC = f"{HARNESS_DIR}/experiments/workload-similarity/workload-a.spec.json"
 
 YCSB_CP = ":".join([
     f"{YCSB_DIR}/file/conf",
@@ -37,7 +39,7 @@ YCSB_CP = ":".join([
     f"{YCSB_DIR}/core/target/core-0.18.0-SNAPSHOT.jar",
 ])
 
-STATS_DIR = "/home/cc/Tectonic/data/ycsb_tectonic_profile"
+STATS_DIR = REPO_ROOT + "/data/ycsb_xbench_profile"
 os.makedirs(STATS_DIR, exist_ok=True)
 
 DATABASES   = ["rocksdb", "redis", "cassandra", "scylla"]
@@ -110,19 +112,19 @@ def generate_ycsb(scale, out_path):
     print(f"  → Written: {n:,} lines")
     return out_path
 
-# ── STAGE 2: Generate Tectonic trace ─────────────────────────────────────
-def generate_tectonic(scale, out_path):
-    banner(f"STAGE 2 – Generate Tectonic Workload A trace  (scale={scale:,})")
+# ── STAGE 2: Generate X-Bench trace ─────────────────────────────────────
+def generate_xbench(scale, out_path):
+    banner(f"STAGE 2 – Generate X-Bench Workload A trace  (scale={scale:,})")
     scale_factor = scale / 1_000_000.0
-    print(f"   Tool         : tectonic-cli generate")
-    print(f"   Spec         : {TECTONIC_SPEC}")
+    print(f"   Tool         : xbench-cli generate")
+    print(f"   Spec         : {XBENCH_SPEC}")
     print(f"   Scale factor : {scale_factor}  (= {scale:,} / 1,000,000)")
     print(f"   Key format   : usertable:user<19-digit-numeric>  (same as YCSB)")
     print(f"   Read dist    : Beta(alpha=0.15, beta=0.55) ≈ YCSB Zipfian(0.99)")
     print(f"   Output       : {out_path}")
 
-    run_cmd([TECTONIC_CLI, "generate",
-             "-w", TECTONIC_SPEC,
+    run_cmd([XBENCH_CLI, "generate",
+             "-w", XBENCH_SPEC,
              "-o", out_path,
              "-s", str(scale_factor)])
 
@@ -131,8 +133,8 @@ def generate_tectonic(scale, out_path):
     return out_path
 
 # ── STAGE 3: Compare traces ───────────────────────────────────────────────
-def compare_traces(ycsb_path, tec_path):
-    banner("STAGE 3 – Compare YCSB vs Tectonic trace files")
+def compare_traces(ycsb_path, x_path):
+    banner("STAGE 3 – Compare YCSB vs X-Bench trace files")
 
     def inspect(path):
         ops   = collections.Counter()
@@ -151,9 +153,9 @@ def compare_traces(ycsb_path, tec_path):
         return ops, len(keys), first
 
     y_ops, y_keys, y_sample = inspect(ycsb_path)
-    t_ops, t_keys, t_sample = inspect(tec_path)
+    t_ops, t_keys, t_sample = inspect(x_path)
 
-    print(f"\n  {'Op':<8} {'YCSB':>10} {'Tectonic':>10}")
+    print(f"\n  {'Op':<8} {'YCSB':>10} {'X-Bench':>10}")
     print(f"  {'-'*30}")
     all_ops = sorted(set(y_ops) | set(t_ops))
     for op in all_ops:
@@ -162,11 +164,11 @@ def compare_traces(ycsb_path, tec_path):
 
     print(f"\n  YCSB sample lines:")
     for l in y_sample: print(f"    {l}")
-    print(f"\n  Tectonic sample lines:")
+    print(f"\n  X-Bench sample lines:")
     for l in t_sample: print(f"    {l}")
 
-    return {"ycsb_ops": dict(y_ops), "tectonic_ops": dict(t_ops),
-            "ycsb_unique_keys": y_keys, "tectonic_unique_keys": t_keys}
+    return {"ycsb_ops": dict(y_ops), "xbench_ops": dict(t_ops),
+            "ycsb_unique_keys": y_keys, "xbench_unique_keys": t_keys}
 
 # ── Database setup/teardown ────────────────────────────────────────────────
 def setup_db(db):
@@ -215,10 +217,10 @@ def reset_db_state(db):
         run_cmd(["docker", "exec", "redis-bench", "redis-cli", "flushall"])
     elif db == "cassandra":
         run_cmd(["docker", "exec", "cassandra-node-1", "cqlsh", "-e",
-                 "DROP KEYSPACE IF EXISTS tectonic;"])
+                 "DROP KEYSPACE IF EXISTS xbench;"])
     elif db == "scylla":
         run_cmd(["docker", "exec", "scylla-bench", "cqlsh", "-e",
-                 "DROP KEYSPACE IF EXISTS tectonic;"])
+                 "DROP KEYSPACE IF EXISTS xbench;"])
 
 def db_path_for(db):
     return {
@@ -229,7 +231,7 @@ def db_path_for(db):
     }[db]
 
 def cli_db_name(db):
-    # tectonic-cli uses "scylla" driver for both cassandra and scylla
+    # xbench-cli uses "scylla" driver for both cassandra and scylla
     return "scylla" if db in ("cassandra", "scylla") else db
 
 def teardown_db(db):
@@ -250,7 +252,7 @@ def teardown_db(db):
 
 # ── STAGE 4/5: Execute a trace ────────────────────────────────────────────
 def clean_metadata(path):
-    """Remove FS/FE stat-flush lines that tectonic-cli generate emits."""
+    """Remove FS/FE stat-flush lines that xbench-cli generate emits."""
     with open(path) as f:
         lines = f.readlines()
     clean = [l for l in lines if not l.startswith(("FS ", "FE "))]
@@ -259,14 +261,14 @@ def clean_metadata(path):
 
 def execute_trace(label, workload_path, db, threads=1):
     banner(f"STAGE {'4' if label=='YCSB' else '5'} – Execute {label} trace on {db}")
-    print(f"   Driver    : tectonic-cli execute  (SAME for both workloads)")
+    print(f"   Driver    : xbench-cli execute  (SAME for both workloads)")
     print(f"   DB        : {db}  @ {db_path_for(db)}")
     print(f"   Threads   : {threads}")
     print(f"   Workload  : {workload_path}")
 
     clean_metadata(workload_path)
 
-    cmd = [TECTONIC_CLI, "execute",
+    cmd = [XBENCH_CLI, "execute",
            "-i", workload_path,
            "-d", cli_db_name(db),
            "-p", db_path_for(db),
@@ -275,7 +277,7 @@ def execute_trace(label, workload_path, db, threads=1):
     res = run_cmd(cmd, capture=True)
     return res.stdout, res.stderr
 
-# ── Parse tectonic-cli execute output ────────────────────────────────────
+# ── Parse xbench-cli execute output ────────────────────────────────────
 def parse_exec_output(stdout):
     metrics = {}
     for line in stdout.split("\n"):
@@ -289,11 +291,11 @@ def parse_exec_output(stdout):
 
 # ── STAGE 6: Plot ─────────────────────────────────────────────────────────
 def trigger_plot():
-    subprocess.run(["python3", "plot_scripts/plot_ycsb_tectonic_eval.py"],
-                   capture_output=True, cwd="/home/cc/Tectonic")
+    subprocess.run(["python3", "plot_scripts/plot_ycsb_xbench_eval.py"],
+                   capture_output=True, cwd=REPO_ROOT)
 
 # ── Core per-database run ─────────────────────────────────────────────────
-def run_one(db, scale, ycsb_trace, tec_trace, threads=1):
+def run_one(db, scale, ycsb_trace, x_trace, threads=1):
     print(f"\n{'#'*65}")
     print(f"# DATABASE={db}  SCALE={scale:,}")
     print(f"{'#'*65}")
@@ -308,10 +310,10 @@ def run_one(db, scale, ycsb_trace, tec_trace, threads=1):
     stdout, stderr = execute_trace("YCSB", ycsb_trace, db, threads)
     result["ycsb"] = {"metrics": parse_exec_output(stdout)}
 
-    # ── Tectonic run (same DB, same driver, same config) ──
+    # ── X-Bench run (same DB, same driver, same config) ──
     reset_db_state(db)
-    stdout, stderr = execute_trace("Tectonic", tec_trace, db, threads)
-    result["tectonic"] = {"metrics": parse_exec_output(stdout)}
+    stdout, stderr = execute_trace("X-Bench", x_trace, db, threads)
+    result["xbench"] = {"metrics": parse_exec_output(stdout)}
 
     teardown_db(db)
     check_disk()
@@ -330,7 +332,7 @@ def main():
     dbs     = args.db
 
     print("="*65)
-    print("  YCSB vs Tectonic Profile Experiment")
+    print("  YCSB vs X-Bench Profile Experiment")
     print(f"  Scales  : {scales}")
     print(f"  Databases: {dbs}")
     print("="*65)
@@ -352,13 +354,13 @@ def main():
     for scale in scales:
         # ── STAGE 1+2: Generate BOTH traces once per scale ─────────────
         ycsb_trace = f"/tmp/ycsb-workload-{scale}.txt"
-        tec_trace  = f"/tmp/tectonic-workload-{scale}.txt"
+        x_trace  = f"/tmp/xbench-workload-{scale}.txt"
 
         generate_ycsb(scale, ycsb_trace)
-        generate_tectonic(scale, tec_trace)
+        generate_xbench(scale, x_trace)
 
         # ── STAGE 3: Compare ────────────────────────────────────────────
-        comparison = compare_traces(ycsb_trace, tec_trace)
+        comparison = compare_traces(ycsb_trace, x_trace)
 
         # ── STAGE 4+5+6: Run on each DB ─────────────────────────────────
         for db in dbs:
@@ -369,7 +371,7 @@ def main():
                 print(f"  Skipping {db} scale={scale} (already done)")
                 continue
 
-            db_result = run_one(db, scale, ycsb_trace, tec_trace)
+            db_result = run_one(db, scale, ycsb_trace, x_trace)
             db_result["trace_comparison"] = comparison
             results[db][key] = db_result
 
@@ -380,7 +382,7 @@ def main():
             trigger_plot()
 
         # Clean up trace files after all DBs are done for this scale
-        for p in [ycsb_trace, tec_trace]:
+        for p in [ycsb_trace, x_trace]:
             if os.path.exists(p):
                 os.remove(p)
 

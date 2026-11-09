@@ -1,11 +1,12 @@
 #!/bin/bash
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # 2026-11-03: local helper for run_direct_io_wal_off.sh. Waits until <start-at> (UTC; no ssh while the first
 # trials run: an ssh login writes to sda, which iostat measures), then checks every 10 min for PHASE1_DONE. Then it
 # copies direct-io-wal-off/ (without the database) here and creates CONTINUE, which starts trials 2-5.
 # Usage: fetch_wal_off_phase1.sh <ssh-host> <experiment dir under data/revision> <start-at, e.g. 18:15>
 set -u
 HOST=$1 EXP=$2 START=$3
-D=/home/cc/Tectonic/data/revision/$EXP/direct-io-wal-off
+D=${REPO_ROOT}/data/revision/$EXP/direct-io-wal-off
 log() { echo "$(date -u '+%F %T') $HOST $*"; }
 now=$(date -u +%s); at=$(date -u -d "$START" +%s); [ $at -gt $now ] && sleep $((at - now))
 until ssh -o BatchMode=yes -o ConnectTimeout=20 $HOST "test -f $D/PHASE1_DONE"; do

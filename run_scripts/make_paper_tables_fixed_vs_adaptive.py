@@ -6,7 +6,7 @@ R1.O8 / R2.O2: the three fixed-vs-adaptive KeySet tables of the paper (decided w
 recomputed from the raw result files and written to
 data/revision/R1.O8-R2.O2_keyset-selection/paper_table_fixed_vs_adaptive.md:
 
-  Table 1  Tec-1..7, fixed VecKeySet            (+ the KeySet Algorithm 1 selects)
+  Table 1  X-1..7, fixed VecKeySet              (+ the KeySet Algorithm 1 selects)
   Table 2  KV-Bench I-V, fixed VecHashSetKeySet  (KV-Bench's design)  + KV-Bench's own generator
   Table 3  YCSB A-F, fixed EmptyKeySet           (YCSB's design)      + YCSB's own generator
 
@@ -15,16 +15,18 @@ clock, YCSB load + run; peak VmRSS; caches dropped; 5 trials) on the machine of 
 operation counts: Table 2 kvbench-generator-table2/ (fixedkeyset-2), Table 3 ycsb-generator-table3/ (revision-2).
 
 Every cell is the mean of 5 trials (a row with fewer finished trials is marked provisional). Time: wall clock of
-`tectonic-cli generate`, trace written included. Memory: peak RSS (GNU time, KiB / 1024, labelled MB). Means at
+`xbench-cli generate`, trace written included. Memory: peak RSS (GNU time, KiB / 1024, labelled MB). Means at
 full precision, rounded half up at the end: time to 0.01 s, memory to 0.1 MB.
 
 Usage: python3 run_scripts/make_paper_tables_fixed_vs_adaptive.py
 """
+from pathlib import Path as _Path
+REPO_ROOT = str(_Path(__file__).resolve().parents[1])
 import json
 from decimal import Decimal, ROUND_HALF_UP
 from statistics import mean
 
-EXP = "/home/cc/Tectonic/data/revision/R1.O8-R2.O2_keyset-selection"
+EXP = REPO_ROOT + "/data/revision/R1.O8-R2.O2_keyset-selection"
 OUT = f"{EXP}/paper_table_fixed_vs_adaptive.md"
 TRIALS = 5
 
@@ -39,13 +41,13 @@ MM = "table4-fixed-to-completion-multimachine/results"
 # (row label, source file, workload name in the file, trials used, original generator: (file, job, KV-Bench scale)
 # or None)
 TABLE1 = [
-    ("Tec-1", f"{MM}/runs.revision-2.json", "Tec-1", range(1, 6), None),
-    ("Tec-2", TABLE4, "Tec-2", range(1, 6), None),
-    ("Tec-3", f"{MM}/runs.fixedkeyset-2.json", "Tec-3-0.1x", range(31, 36), None),
-    ("Tec-4", TABLE4, "Tec-4", range(1, 6), None),
-    ("Tec-5", f"{MM}/runs.fixedkeyset-2.json", "Tec-5-0.1x", range(31, 36), None),
-    ("Tec-6", f"{MM}/runs.fixedkeyset-2.json", "Tec-6-0.1x", range(31, 36), None),
-    ("Tec-7", TABLE4, "Tec-7", range(1, 6), None),
+    ("X-1", f"{MM}/runs.revision-2.json", "X-1", range(1, 6), None),
+    ("X-2", TABLE4, "X-2", range(1, 6), None),
+    ("X-3", f"{MM}/runs.fixedkeyset-2.json", "X-3-0.1x", range(31, 36), None),
+    ("X-4", TABLE4, "X-4", range(1, 6), None),
+    ("X-5", f"{MM}/runs.fixedkeyset-2.json", "X-5-0.1x", range(31, 36), None),
+    ("X-6", f"{MM}/runs.fixedkeyset-2.json", "X-6-0.1x", range(31, 36), None),
+    ("X-7", TABLE4, "X-7", range(1, 6), None),
 ]
 # Table 2 (authors, 2026-11-02): every column with the same operation counts, on fixedkeyset-2, X-Bench 24f2dddf:
 # KV-I, II, III, V full size; KV-IV at 0.1x in every column (KV-Bench's generator needs ~2 days per full-size IV).
@@ -142,31 +144,39 @@ def orig_cells(r):
     return fmt_time(o["time"]) + mark, fmt_mem(o["mem"]) + mark
 
 
-def markdown(title, fixed_name, rs, generator=None, generator_scale=""):
+def one_selected(rs):
+    """The KeySet name if every row selected the same one (then it is written once, authors 2026-11-06), else None."""
+    names = {r["selected"] for r in rs}
+    return names.pop() if len(names) == 1 else None
+
+
+def markdown(title, fixed_name, rs, generator=None, generator_scale="", merge_selected=False):
     g = f" {generator} generator{generator_scale}" if generator else ""
     head = ["Workload", "Selected KeySet", "Generation time, adaptive (s)", "Generation time, fixed (s)"]
     head += [f"Generation time,{g} (s)"] if generator else []
     head += ["Memory, adaptive (MB)", "Memory, fixed (MB)"]
     head += [f"Memory,{g} (MB)"] if generator else []
     L = [f"## {title}", "", "| " + " | ".join(head) + " |", "|" + " --- |" * len(head)]
-    for r in rs:
+    one = one_selected(rs) if merge_selected else None
+    for i, r in enumerate(rs):
         ft = fmt_time(r["time"][1])
         fm = fmt_mem(r["mem"][1])
         mark = "" if r["n"] == (TRIALS, TRIALS) else f" (provisional: {r['n'][0]} + {r['n'][1]} trials)"
         o = orig_cells(r)
-        cells = [f"{r['label']}{mark}", r["selected"], fmt_time(r["time"][0]), ft] + ([o[0]] if o else [])
+        sel = (one if i == 0 else "") if one else r["selected"]
+        cells = [f"{r['label']}{mark}", sel, fmt_time(r["time"][0]), ft] + ([o[0]] if o else [])
         cells += [fmt_mem(r["mem"][0]), fm] + ([o[1]] if o else [])
         L.append("| " + " | ".join(cells) + " |")
     L += ["", f"Fixed KeySet: `{fixed_name}` in every section.", ""]
     return L
 
 
-def latex(caption, label, rs, generator=None, generator_scale=""):
+def latex(caption, label, rs, generator=None, generator_scale="", merge_selected=False, tabcolsep="3pt"):
     k = 3 if generator else 2
     cols = ["Adaptive", "Fixed"] + ([generator] if generator else [])
     # \small, no outer column padding (@{}), 3 pt between columns, and the generator's scale on its own header
     # line, so the table is as narrow as its contents (one column of the ACM two-column layout: 241 pt)
-    L = ["```latex", r"\begin{table}[t]", r"\small", r"\setlength{\tabcolsep}{3pt}", r"\centering",
+    L = ["```latex", r"\begin{table}[t]", r"\small", rf"\setlength{{\tabcolsep}}{{{tabcolsep}}}", r"\centering",
          rf"\caption{{{caption}}}", rf"\label{{{label}}}",
          r"\begin{tabular}{@{}ll" + "r" * (2 * k) + "@{}}", r"\toprule",
          rf" & & \multicolumn{{{k}}}{{c}}{{Generation time (s)}} & \multicolumn{{{k}}}{{c}}{{Memory (MB)}} \\",
@@ -176,11 +186,14 @@ def latex(caption, label, rs, generator=None, generator_scale=""):
         scale = [""] * 2 + [generator_scale.strip()]
         L.append(" & & " + " & ".join(scale + scale) + r" \\")
     L.append(r"\midrule")
-    for r in rs:
+    # one KeySet for every row: written once, vertically centred (\multirow, as Table 5 uses)
+    one = one_selected(rs) if merge_selected else None
+    for i, r in enumerate(rs):
         ft = fmt_time(r["time"][1])
         fm = fmt_mem(r["mem"][1])
         o = orig_cells(r)
-        cells = [r["label"].replace("†", r"$^\dagger$"), r["selected"], fmt_time(r["time"][0]), ft] + ([o[0]] if o else [])
+        sel = ((rf"\multirow{{{len(rs)}}}{{*}}{{{one}}}" if i == 0 else "") if one else r["selected"])
+        cells = [r["label"].replace("†", r"$^\dagger$"), sel, fmt_time(r["time"][0]), ft] + ([o[0]] if o else [])
         cells += [fmt_mem(r["mem"][0]), fm] + ([o[1]] if o else [])
         L.append(" & ".join(cells) + r" \\")
     L += [r"\bottomrule", r"\end{tabular}", r"\end{table}", "```", ""]
@@ -204,15 +217,15 @@ def main():
          "- **Adaptive KeySet:** Algorithm 1, per section (`--keyset adaptive`).",
          "- **Fixed KeySet:** one KeySet for every section: `VecKeySet` (Table 1), KV-Bench's `VecHashSetKeySet` "
          "(Table 2), YCSB's `EmptyKeySet` (Table 3).",
-         "- Single-threaded `tectonic-cli generate`; time is the wall clock including writing the trace; memory "
+         "- Single-threaded `xbench-cli generate`; time is the wall clock including writing the trace; memory "
          "is peak RSS (KiB / 1024, labelled MB). Means at full precision, rounded half up: 0.01 s, 0.1 MB.",
          "- Each row compares the two KeySets on one machine (2x Xeon Gold 6126, 187 GB, same SSD model).", ""]
-    L += markdown("Table 1: X-Bench workloads Tec-1..7, fixed VecKeySet", "VecKeySet", t1)
-    L += ["Tec-3, Tec-5 and Tec-6 are at 0.1x scale (every `op_count` / 10, nothing else changed: "
-          "`x-bench-specs/table4/*_0.1x.spec.json`): with the fixed VecKeySet they take 85+ h (Tec-3 stopped at 50% "
-          "after 84.7 h), 27-40 h and 27 h at full scale. Tec-1, Tec-2, Tec-4 and Tec-7 are at full scale.", ""]
+    L += markdown("Table 1: X-Bench workloads X-1..7, fixed VecKeySet", "VecKeySet", t1)
+    L += ["X-1 to X-7: X-Bench workloads X-1 to X-7 (authors, 2026-11-06). X-3, X-5 and X-6 are at 0.1x scale (every `op_count` / 10, nothing else changed: "
+          "`x-bench-specs/table4/*_0.1x.spec.json`): with the fixed VecKeySet they take 85+ h (X-3 stopped at 50% "
+          "after 84.7 h), 27-40 h and 27 h at full scale. X-1, X-2, X-4 and X-7 are at full scale.", ""]
     L += latex("Generation time and memory footprint of X-Bench workloads with the adaptive KeySet and the fixed "
-               "VecKeySet (mean of 5 trials; Tec-3, Tec-5, Tec-6 at 0.1x scale).", "tab:fixed-vs-adaptive-tec", t1)
+               "VecKeySet (mean of 5 trials; X-3, X-5, X-6 at 0.1x scale).", "tab:fixed-vs-adaptive-x", t1)
     L += markdown("Table 2: KV-Bench I-V, fixed VecHashSetKeySet (KV-Bench's design)", "VecHashSetKeySet", t2,
                   "KV-Bench")
     L += ["† KV-I to KV-V: KV-Bench workloads I to V.", "",
@@ -231,7 +244,7 @@ def main():
     L += latex("Generation time and memory footprint of KV-Bench workloads with the adaptive KeySet, "
                "KV-Bench's VecHashSetKeySet, and KV-Bench's generator (mean of 5 trials; KV-IV at 0.1x scale). "
                "$^\\dagger$KV-I to KV-V: KV-Bench workloads I to V.", "tab:fixed-vs-adaptive-kvbench", t2, "KV-Bench")
-    L += markdown("Table 3: YCSB A-F, fixed EmptyKeySet (YCSB's design)", "EmptyKeySet", t3, "YCSB")
+    L += markdown("Table 3: YCSB A-F, fixed EmptyKeySet (YCSB's design)", "EmptyKeySet", t3, "YCSB", merge_selected=True)
     L += ["Specs: `example-specs/ycsb-untracked/`, every operation untracked as in YCSB (details: "
           "`ycsb-fixed-empty/README.md`), so Algorithm 1 selects `EmptyKeySet` too and the two columns differ only "
           "by run-to-run noise.", ""]
@@ -240,7 +253,8 @@ def main():
           "Fig. 7: load + run wall clock, the larger peak VmRSS of the two processes, caches dropped "
           "(`ycsb-generator-table3/README.md`). All columns on revision-2 (authors, 2026-11-02).", ""]
     L += latex("Generation time and memory footprint of YCSB workloads with the adaptive KeySet, YCSB's "
-               "EmptyKeySet, and YCSB's generator (mean of 5 trials).", "tab:fixed-vs-adaptive-ycsb", t3, "YCSB")
+               "EmptyKeySet, and YCSB's generator (mean of 5 trials).", "tab:fixed-vs-adaptive-ycsb", t3, "YCSB",
+               merge_selected=True, tabcolsep="2pt")
     L += ["## Sources", "", "Paths relative to this folder.", ""]
     for title, rs in (("Table 1", t1), ("Table 2", t2), ("Table 3", t3)):
         L += [f"**{title}**", ""] + sources(rs)

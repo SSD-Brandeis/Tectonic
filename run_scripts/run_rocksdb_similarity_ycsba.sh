@@ -9,7 +9,7 @@
 # Required binaries (built by setup):
 #   rocksdb-benchmark-harness/cmake-build-release/rocksdb-benchmark-harness
 #   rocksdb-benchmark-harness/cmake-build-release-with-stats/rocksdb-benchmark-harness
-#   target/release/tectonic-cli
+#   target/release/xbench-cli
 #   rocksdb-benchmark-harness/vendor/YCSB  (built with mvn)
 
 set -euo pipefail
@@ -17,12 +17,12 @@ set -euo pipefail
 RUNS=3
 OP_COUNT=1000000
 
-# Resolve absolute paths from Tectonic repo root
+# Resolve absolute paths from X-Bench repo root
 REPO_ROOT=$(realpath "$(dirname "$0")/..")
 HARNESS_DIR="${REPO_ROOT}/rocksdb-benchmark-harness"
 EXPERIMENT_PATH="${HARNESS_DIR}/experiments/workload-similarity"
 OUT="${REPO_ROOT}/data/rocksdb_similarity_ycsba"
-TECTONIC_CLI="${REPO_ROOT}/target/release/tectonic-cli"
+XBENCH_CLI="${REPO_ROOT}/target/release/xbench-cli"
 JAVA=/usr/lib/jvm/java-17-openjdk-amd64/bin/java
 
 YCSB_DIR="${HARNESS_DIR}/vendor/YCSB"
@@ -45,7 +45,7 @@ WORKLOAD_SPEC="${EXPERIMENT_PATH}/workload-a.spec.json"
 # --------------------------------------------------------------------------
 # Sanity checks
 # --------------------------------------------------------------------------
-for bin in "$TECTONIC_CLI" "$HARNESS_RELEASE" "$HARNESS_STATS"; do
+for bin in "$XBENCH_CLI" "$HARNESS_RELEASE" "$HARNESS_STATS"; do
   if [[ ! -x "$bin" ]]; then
     echo "ERROR: binary not found or not executable: $bin" >&2
     echo "       Run the build steps first (see implementation_plan.md)" >&2
@@ -63,10 +63,10 @@ mkdir -p "${OUT}"
 # --------------------------------------------------------------------------
 # Workload generators
 # --------------------------------------------------------------------------
-function generate_tectonic_workload() {
+function generate_xbench_workload() {
   local out_file="$1"
-  echo "  [tectonic] generating workload -> ${out_file}"
-  "${TECTONIC_CLI}" generate \
+  echo "  [xbench] generating workload -> ${out_file}"
+  "${XBENCH_CLI}" generate \
     -w "${WORKLOAD_SPEC}" \
     -o "${out_file}"
 }
@@ -108,13 +108,13 @@ cd "${HARNESS_DIR}"
 
 for i in $(seq 1 "${RUNS}"); do
   echo "--- [X-Bench] iostat run ${i}/${RUNS} ---"
-  generate_tectonic_workload /tmp/tec-workload-a.txt
+  generate_xbench_workload /tmp/x-workload-a.txt
 
-  iostat -d -c -y 1 -o JSON > "${OUT}/iostat.tectonic.${i}.json" &
+  iostat -d -c -y 1 -o JSON > "${OUT}/iostat.xbench.${i}.json" &
   IOSTAT_PID=$!
   sync && sudo sysctl -w vm.drop_caches=3 2>/dev/null || true
 
-  "${HARNESS_RELEASE}" "${ROCKSDB_OPTS}" /tmp/tec-workload-a.txt "${OUT}/rocksdb-LOG.iostat.tectonic.${i}.txt"
+  "${HARNESS_RELEASE}" "${ROCKSDB_OPTS}" /tmp/x-workload-a.txt "${OUT}/rocksdb-LOG.iostat.xbench.${i}.txt"
 
   kill -INT "${IOSTAT_PID}" 2>/dev/null || true
   wait "${IOSTAT_PID}" 2>/dev/null || true
@@ -140,21 +140,21 @@ echo "===== Phase 2: Stats-enabled runs with per-op latency (${RUNS} runs each) 
 
 for i in $(seq 1 "${RUNS}"); do
   echo "--- [X-Bench] stats run ${i}/${RUNS} ---"
-  generate_tectonic_workload /tmp/tec-workload-a.txt
+  generate_xbench_workload /tmp/x-workload-a.txt
   # Save workload for reproducibility (last run only)
   if [[ "${i}" == "${RUNS}" ]]; then
-    cp /tmp/tec-workload-a.txt "${OUT}/tectonic-workload.txt"
+    cp /tmp/x-workload-a.txt "${OUT}/xbench-workload.txt"
   fi
 
   sync && sudo sysctl -w vm.drop_caches=3 2>/dev/null || true
 
   "${HARNESS_STATS}" \
     "${ROCKSDB_OPTS}" \
-    /tmp/tec-workload-a.txt \
-    "${OUT}/stats.tectonic.${i}.json" \
-    "${OUT}/op-latency.tectonic.${i}.json" \
-    "${OUT}/op-latency-raw.tectonic.${i}.csv" \
-    "${OUT}/rocksdb-LOG.tectonic.${i}.txt"
+    /tmp/x-workload-a.txt \
+    "${OUT}/stats.xbench.${i}.json" \
+    "${OUT}/op-latency.xbench.${i}.json" \
+    "${OUT}/op-latency-raw.xbench.${i}.csv" \
+    "${OUT}/rocksdb-LOG.xbench.${i}.txt"
 
   echo "--- [YCSB] stats run ${i}/${RUNS} ---"
   generate_ycsb_workload /tmp/ycsb-workload-a.txt
@@ -179,7 +179,7 @@ done
 echo ""
 echo "===== Verification ====="
 for i in $(seq 1 "${RUNS}"); do
-  for tag in tectonic ycsb; do
+  for tag in xbench ycsb; do
     csv="${OUT}/op-latency-raw.${tag}.${i}.csv"
     if [[ -f "${csv}" ]]; then
       header=$(head -1 "${csv}")

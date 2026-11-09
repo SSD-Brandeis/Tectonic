@@ -3,11 +3,13 @@
 Regenerate figure_6_validate plots from empirical trace JSON.
 
 Outputs:
-  /home/cc/Tectonic/generator_experiment_plots/fig1.pdf
-  /home/cc/Tectonic/generator_experiment_plots/fig1_mem.pdf
-  /home/cc/Tectonic/generator_experiment_plots/fig3.pdf
-  /home/cc/Tectonic/generator_experiment_plots/fig3_mem.pdf
+  generator_experiment_plots/fig1.pdf
+  generator_experiment_plots/fig1_mem.pdf
+  generator_experiment_plots/fig3.pdf
+  generator_experiment_plots/fig3_mem.pdf
 """
+from pathlib import Path as _Path
+REPO_ROOT = str(_Path(__file__).resolve().parents[1])
 
 import csv
 import json
@@ -23,7 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import plot_style
 
 
-ROOT = Path("/home/cc/Tectonic")
+ROOT = Path(REPO_ROOT)
 OUT_DIR = ROOT / "data" / "figure_6_validate"
 SOURCE_DIR = OUT_DIR / "traces"
 PLOTS_DIR = ROOT / "figure_6_validate_plot"
@@ -175,7 +177,7 @@ def export_empirical_csvs() -> tuple[list[dict], list[dict], list[dict]]:
 
     op_rows = []
     for workload in KV_WORKLOADS:
-        for tool, prefix in [("X-Bench", "tectonic"), ("KVBench", "kvbench")]:
+        for tool, prefix in [("X-Bench", "xbench"), ("KVBench", "kvbench")]:
             trace_path = SOURCE_DIR / f"{prefix}_{workload.lower()}_trace.json"
             trace = require_trace(trace_path, f"{tool} workload {workload}")
             if not has_empirical_op_durations(trace):
@@ -219,10 +221,10 @@ def export_empirical_csvs() -> tuple[list[dict], list[dict], list[dict]]:
                 }
             )
 
-        tec_trace = require_trace(SOURCE_DIR / f"tectonic_{workload.lower()}_trace.json", f"X-Bench YCSB-shaped workload {workload}")
-        if not has_empirical_op_durations(tec_trace):
-            data_quality["issues"].append(f"tectonic_{workload.lower()}_trace.json lacks empirical operation timings")
-        durations = op_durations(tec_trace)
+        x_trace = require_trace(SOURCE_DIR / f"xbench_{workload.lower()}_trace.json", f"X-Bench YCSB-shaped workload {workload}")
+        if not has_empirical_op_durations(x_trace):
+            data_quality["issues"].append(f"xbench_{workload.lower()}_trace.json lacks empirical operation timings")
+        durations = op_durations(x_trace)
         load_s = durations["Insert"]
         exec_s = sum(v for op, v in durations.items() if op != "Insert")
         phase_rows.append(
@@ -241,7 +243,7 @@ def export_empirical_csvs() -> tuple[list[dict], list[dict], list[dict]]:
             {
                 "WorkloadSet": "KVBench",
                 "Workload": workload,
-                "X-Bench_PeakMem_MB": peak_mem(require_trace(SOURCE_DIR / f"tectonic_{workload.lower()}_trace.json", f"X-Bench workload {workload} memory")),
+                "X-Bench_PeakMem_MB": peak_mem(require_trace(SOURCE_DIR / f"xbench_{workload.lower()}_trace.json", f"X-Bench workload {workload} memory")),
                 "KVBench_PeakMem_MB": peak_mem(require_trace(SOURCE_DIR / f"kvbench_{workload.lower()}_trace.json", f"KVBench workload {workload} memory")),
                 "YCSB_PeakMem_MB": "",
             }
@@ -251,7 +253,7 @@ def export_empirical_csvs() -> tuple[list[dict], list[dict], list[dict]]:
             {
                 "WorkloadSet": "YCSB",
                 "Workload": workload,
-                "X-Bench_PeakMem_MB": peak_mem(require_trace(SOURCE_DIR / f"tectonic_{workload.lower()}_trace.json", f"X-Bench YCSB-shaped workload {workload} memory")),
+                "X-Bench_PeakMem_MB": peak_mem(require_trace(SOURCE_DIR / f"xbench_{workload.lower()}_trace.json", f"X-Bench YCSB-shaped workload {workload} memory")),
                 "KVBench_PeakMem_MB": peak_mem(require_trace(SOURCE_DIR / f"kvbench_{workload.lower()}_trace.json", f"KVBench YCSB-shaped workload {workload} memory")) if workload in KVBENCH_YCSB_WORKLOADS else "",
                 "YCSB_PeakMem_MB": ycsb_peak_mem(require_trace(SOURCE_DIR / f"ycsb_{workload.lower()}_trace.json", f"YCSB workload {workload} memory")),
             }
@@ -461,7 +463,7 @@ def main() -> int:
         "plot_dir": str(PLOTS_DIR),
         "plots": ["fig1.pdf", "fig1_mem.pdf", "fig3.pdf", "fig3_mem.pdf"],
         "metric_definition": {
-            "fig1": "stacked empirical operation timings from Tectonic_Op_Timings and KVbench_Op_Timings",
+            "fig1": "stacked empirical operation timings from XBench_Op_Timings and KVbench_Op_Timings",
             "fig1_mem": "peak VmRSS sampled while each generator process was running",
             "fig3": "YCSB load/run wall time; KVBench load end from KVbench_LoadPhase_End; X-Bench phase split from empirical insert vs non-insert operation timings",
             "fig3_mem": "peak VmRSS sampled while each generator process was running",

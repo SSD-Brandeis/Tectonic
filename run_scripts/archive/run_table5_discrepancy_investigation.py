@@ -3,13 +3,15 @@
 run_table5_discrepancy_investigation.py
 ========================================
 Fork of run_table5_rerun.py used to re-measure the YCSB-vs-X-Bench "CLI
-Execution Time" comparison AFTER fixing tectonic-cli's End-to-End Time
+Execution Time" comparison AFTER fixing xbench-cli's End-to-End Time
 definition to bracket DB connection setup/teardown the same way YCSB's
-ClientThread does (see /home/cc/Tectonic/debug_difference.md).
+ClientThread does (see debug_difference.md).
 
 Writes to a separate data/discrepancy-investigation/ directory so it never
 overwrites the original data/table5_rerun/ experiment results.
 """
+from pathlib import Path as _Path
+REPO_ROOT = str(_Path(__file__).resolve().parents[2])
 
 
 import os
@@ -28,10 +30,10 @@ from datetime import datetime
 # =============================================================================
 #  CONFIG
 # =============================================================================
-ROOT_DIR     = "/home/cc/Tectonic"
+ROOT_DIR     = REPO_ROOT
 HARNESS_DIR  = f"{ROOT_DIR}/rocksdb-benchmark-harness"
-TECTONIC_CLI = f"{ROOT_DIR}/target/release/tectonic-cli"
-TECTONIC_SPEC = f"{ROOT_DIR}/example-specs/ycsb/a.spec.json"
+XBENCH_CLI = f"{ROOT_DIR}/target/release/xbench-cli"
+XBENCH_SPEC = f"{ROOT_DIR}/example-specs/ycsb/a.spec.json"
 
 YCSB_DIR = f"{HARNESS_DIR}/vendor/YCSB"
 M2       = "/home/cc/.m2/repository"
@@ -50,7 +52,7 @@ RESULTS_PATH = f"{OUT_DIR}/results_io_bytes.json"
 TABLE_OUT    = f"{OUT_DIR}/table_5_plotting_data"
 SUMMARY_OUT  = f"{OUT_DIR}/plotting_data_summary.json"
 IMAGE_LOCK_PATH = f"{OUT_DIR}/db_images.json"
-ORIGINAL_IMAGE_LOCK = f"{ROOT_DIR}/data/ycsb_tectonic_similarity_io_bytes/db_images.json"
+ORIGINAL_IMAGE_LOCK = f"{ROOT_DIR}/data/ycsb_xbench_similarity_io_bytes/db_images.json"
 LOG_PATH     = f"{OUT_DIR}/run_discrepancy_investigation.log"
 
 IOSTAT_DEVICE = "sda"
@@ -249,16 +251,16 @@ def generate_ycsb(scale, out_path):
     log(f"  -> {n:,} total lines written ({sz_mb:.2f} MB in RAM)")
     return out_path
 
-def generate_tectonic(scale, out_path):
+def generate_xbench(scale, out_path):
     sf = scale / 1_000_000.0
     banner("STAGE 2", f"Generate X-Bench Workload A  (scale={scale:,}  2^{scale.bit_length()-1})")
-    log(f"  Tool   : tectonic-cli generate")
+    log(f"  Tool   : xbench-cli generate")
     log(f"  Target : {out_path} (RAM tmpfs)")
 
     if os.path.exists(out_path): os.remove(out_path)
 
-    run([TECTONIC_CLI, "generate",
-         "-w", TECTONIC_SPEC,
+    run([XBENCH_CLI, "generate",
+         "-w", XBENCH_SPEC,
          "-o", out_path,
          "-s", str(sf)])
 
@@ -416,7 +418,7 @@ def capture_and_save_db_internal_logs(db, scale, workload, trace_fname, cli_stdo
     log(f"  [db-internal] capturing internal database logs and telemetry for {db} ({workload} @ 2^{scale.bit_length()-1})...")
     metrics = {}
     saved_files = []
-    wl_folder = "X-Bench" if workload == "tectonic" else "YCSB"
+    wl_folder = "X-Bench" if workload == "xbench" else "YCSB"
     db_out_dir = os.path.join(OUT_DIR, db, wl_folder)
     os.makedirs(db_out_dir, exist_ok=True)
     prefix = f"{db_out_dir}/{db}_scale{scale}_{workload}"
@@ -516,7 +518,7 @@ def capture_and_save_db_internal_logs(db, scale, workload, trace_fname, cli_stdo
         metrics["commands_cpu_time_s"] = round((get_usec + set_usec) / 1e6, 4)
 
     elif db == "cassandra":
-        r_stats = run(["docker", "exec", "sim-cassandra", "nodetool", "tablestats", "tectonic.data"], capture=True, check=False)
+        r_stats = run(["docker", "exec", "sim-cassandra", "nodetool", "tablestats", "xbench.data"], capture=True, check=False)
         stats_dst = f"{prefix}_cassandra_tablestats.txt"
         with open(stats_dst, "w") as f:
             f.write(r_stats.stdout or "")
@@ -574,7 +576,7 @@ def capture_and_save_db_internal_logs(db, scale, workload, trace_fname, cli_stdo
                     except ValueError: pass
 
     elif db == "scylla":
-        r_stats = run(["docker", "exec", "sim-scylla", "nodetool", "tablestats", "tectonic.data"], capture=True, check=False)
+        r_stats = run(["docker", "exec", "sim-scylla", "nodetool", "tablestats", "xbench.data"], capture=True, check=False)
         stats_dst = f"{prefix}_scylla_tablestats.txt"
         with open(stats_dst, "w") as f:
             f.write(r_stats.stdout or "")
@@ -649,7 +651,7 @@ def execute_with_dual_io(trace_path, db, scale=None, workload=None):
 
     # 3. Execute with connection retry resilience
     t0 = time.perf_counter()
-    exec_cmd = [TECTONIC_CLI, "execute",
+    exec_cmd = [XBENCH_CLI, "execute",
                 "-i", trace_path,
                 "-d", DB_CLI_DRIVER[db],
                 "-p", DB_CLI_PATH[db]]
@@ -664,7 +666,7 @@ def execute_with_dual_io(trace_path, db, scale=None, workload=None):
         r = run(exec_cmd, capture=True, check=False)
         if r.returncode == 0:
             break
-        log(f"  [WARN] tectonic-cli execute failed on attempt {attempt}/3 (exit={r.returncode})")
+        log(f"  [WARN] xbench-cli execute failed on attempt {attempt}/3 (exit={r.returncode})")
         err_msg = (r.stderr or "") + " " + (r.stdout or "")
         if "Control connection pool error" in err_msg or "Connection refused" in err_msg or "Failed to perform a connection" in err_msg:
             time.sleep(6)
@@ -679,7 +681,7 @@ def execute_with_dual_io(trace_path, db, scale=None, workload=None):
 
     # Save raw stdout to text file for complete provenance
     trace_fname = os.path.basename(trace_path).replace(".txt", "")
-    wl_folder = "X-Bench" if workload == "tectonic" else ("YCSB" if workload == "ycsb" else "")
+    wl_folder = "X-Bench" if workload == "xbench" else ("YCSB" if workload == "ycsb" else "")
     db_out_dir = os.path.join(OUT_DIR, db, wl_folder) if wl_folder else os.path.join(OUT_DIR, db)
     os.makedirs(db_out_dir, exist_ok=True)
     raw_log_path = f"{db_out_dir}/cli_raw_{db}_{trace_fname}.log"
@@ -825,7 +827,7 @@ def update_table_and_summary(results_dict):
             summary[db][lbl] = {}
 
             y_res = sdata.get("ycsb", {})
-            t_res = sdata.get("tectonic", {})
+            t_res = sdata.get("xbench", {})
 
             y_et = y_res.get("overall_metrics", {}).get("end_to_end_time_s") or y_res.get("overall_metrics", {}).get("End to End Time") or y_res.get("wall_time_s", 0.0)
             t_et = t_res.get("overall_metrics", {}).get("end_to_end_time_s") or t_res.get("overall_metrics", {}).get("End to End Time") or t_res.get("wall_time_s", 0.0)
@@ -852,7 +854,7 @@ def update_table_and_summary(results_dict):
                 "total_write_mb": y_w,
                 "bytes_transferred_mb": y_tot
             }
-            summary[db][lbl]["tectonic"] = {
+            summary[db][lbl]["xbench"] = {
                 "execution_time_s": t_et,
                 "wall_time_s": t_res.get("wall_time_s", 0.0),
                 "total_read_mb": t_r,
@@ -867,7 +869,7 @@ def update_table_and_summary(results_dict):
             if "db_internal_metrics" in y_res or "db_internal_metrics" in t_res:
                 summary[db][lbl]["db_internal_metrics"] = {
                     "ycsb": y_res.get("db_internal_metrics", {}),
-                    "tectonic": t_res.get("db_internal_metrics", {}),
+                    "xbench": t_res.get("db_internal_metrics", {}),
                 }
 
             raw_rows.append([
@@ -897,7 +899,7 @@ def main():
     parser = argparse.ArgumentParser(description="Table 5 Clean Rerun Runner")
     parser.add_argument("--db", nargs="+", choices=["rocksdb", "redis", "cassandra", "scylla"], default=DEFAULT_DATABASES)
     parser.add_argument("--scales", nargs="+", type=int, default=DEFAULT_SCALES)
-    parser.add_argument("--workloads", nargs="+", choices=["ycsb", "tectonic"], default=["ycsb", "tectonic"])
+    parser.add_argument("--workloads", nargs="+", choices=["ycsb", "xbench"], default=["ycsb", "xbench"])
     parser.add_argument("--device", default=IOSTAT_DEVICE, help="Block device to monitor (default: sda)")
     parser.add_argument("--force", action="store_true", help="Force rerun even if results exist in checkpoint")
     args = parser.parse_args()
@@ -950,12 +952,12 @@ def main():
         banner("SCALE", f"Starting Scale {slbl} ({scale:,} operations)")
 
         ycsb_trace = f"/dev/shm/discrepancy_investigation_sim_ycsb_{scale}.txt"
-        tec_trace  = f"/dev/shm/discrepancy_investigation_sim_tectonic_{scale}.txt"
+        x_trace  = f"/dev/shm/discrepancy_investigation_sim_xbench_{scale}.txt"
 
         if "ycsb" in args.workloads and not validate_trace(ycsb_trace, scale):
             generate_ycsb(scale, ycsb_trace)
-        if "tectonic" in args.workloads and not validate_trace(tec_trace, scale):
-            generate_tectonic(scale, tec_trace)
+        if "xbench" in args.workloads and not validate_trace(x_trace, scale):
+            generate_xbench(scale, x_trace)
 
         for db in todo:
             banner("DATABASE", f"Executing {db} at scale {slbl}")
@@ -978,11 +980,11 @@ def main():
                 log(f"  YCSB result: wall={wt:.2f}s  tput={tp:,.0f} ops/s  read={io_tot['total_read_mb']}MB  write={io_tot['total_write_mb']}MB")
 
             # X-Bench run
-            if "tectonic" in args.workloads and (args.force or "tectonic" not in db_res):
+            if "xbench" in args.workloads and (args.force or "xbench" not in db_res):
                 log(f"\n  [run] X-Bench workload on {db}...")
                 restart_db(db)
-                lat, wt, tp, op_m, overall, ts, io_tot, db_metrics, saved_logs = execute_with_dual_io(tec_trace, db, scale, "tectonic")
-                db_res["tectonic"] = {
+                lat, wt, tp, op_m, overall, ts, io_tot, db_metrics, saved_logs = execute_with_dual_io(x_trace, db, scale, "xbench")
+                db_res["xbench"] = {
                     "latency_us": lat, "wall_time_s": wt, "throughput_ops_s": tp,
                     "io_bytes_total": io_tot, "operation_metrics": op_m, "overall_metrics": overall,
                     "db_internal_metrics": db_metrics, "db_log_files": saved_logs
@@ -990,9 +992,9 @@ def main():
                 log(f"  X-Bench result: wall={wt:.2f}s  tput={tp:,.0f} ops/s  read={io_tot['total_read_mb']}MB  write={io_tot['total_write_mb']}MB")
 
             # Compute and print similarity
-            if "ycsb" in db_res and "tectonic" in db_res:
+            if "ycsb" in db_res and "xbench" in db_res:
                 y_res = db_res["ycsb"]
-                t_res = db_res["tectonic"]
+                t_res = db_res["xbench"]
                 y_wt = y_res.get("wall_time_s", 0.0)
                 t_wt = t_res.get("wall_time_s", 0.0)
                 wt_diff = abs(t_wt - y_wt) / y_wt * 100.0 if y_wt > 0 else 0
@@ -1011,7 +1013,7 @@ def main():
             log(f"  [checkpoint] updated results and table_5_plotting_data")
 
         # Cleanup traces in RAM for this scale
-        for p in [ycsb_trace, tec_trace]:
+        for p in [ycsb_trace, x_trace]:
             if os.path.exists(p):
                 os.remove(p)
                 log(f"  [cleanup] freed {p} from RAM")

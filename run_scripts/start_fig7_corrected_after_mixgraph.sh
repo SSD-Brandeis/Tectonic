@@ -1,4 +1,5 @@
 #!/bin/bash
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # 2026-10-31 (authors): starts the corrected Fig. 7 run (run_fig7_corrected.py: YCSB, KV-Bench, X-Bench, 5 trials,
 # caches dropped) on fixedkeyset-2 once the direct-I/O mixgraph rerun there has finished, so nothing ever runs
 # next to either:
@@ -12,9 +13,9 @@
 set -u
 T5_PID=$1
 HOST=fixedkeyset2
-MG=/home/cc/Tectonic/data/revision/R1.O9-R2.O1_mixgraph
-WATCHER_LOG=/home/cc/Tectonic/data/revision/direct-io-watcher.log
-YCSB=/home/cc/Tectonic/rocksdb-benchmark-harness/vendor/YCSB
+MG=${REPO_ROOT}/data/revision/R1.O9-R2.O1_mixgraph
+WATCHER_LOG=${REPO_ROOT}/data/revision/direct-io-watcher.log
+YCSB=${REPO_ROOT}/rocksdb-benchmark-harness/vendor/YCSB
 log() { echo "$(date -u '+%F %T') $*"; }
 
 while kill -0 "$T5_PID" 2>/dev/null; do sleep 60; done
@@ -34,9 +35,9 @@ until ssh -o BatchMode=yes -o ConnectTimeout=15 $HOST "test -s $MG/direct-io-ena
 done
 log "mixgraph direct-I/O rerun finished on $HOST: $(ssh -o BatchMode=yes $HOST "cat $MG/direct-io-enabled/DONE")"
 
-busy=$(ssh -o BatchMode=yes -o ConnectTimeout=15 $HOST 'pgrep -ax tectonic-cli; pgrep -ax load_gen; pgrep -ax java; pgrep -af "^python3 .*run_(keyset|ycsb_derivatives|mixgraph|fig7)"; tmux has-session -t fig7 2>/dev/null && echo "tmux session fig7"; echo REACHED')
+busy=$(ssh -o BatchMode=yes -o ConnectTimeout=15 $HOST 'pgrep -ax xbench-cli; pgrep -ax load_gen; pgrep -ax java; pgrep -af "^python3 .*run_(keyset|ycsb_derivatives|mixgraph|fig7)"; tmux has-session -t fig7 2>/dev/null && echo "tmux session fig7"; echo REACHED')
 [ "$(echo "$busy" | tail -1)" = REACHED ] || { log "$HOST unreachable: not starting"; exit 1; }
 busy=$(echo "$busy" | sed '$d')
 [ -z "$busy" ] || { log "$HOST is busy: $busy; not starting"; exit 1; }
-ssh -o BatchMode=yes $HOST "tmux new-session -d -s fig7 'bash /home/cc/Tectonic/run_scripts/run_fig7_corrected.sh'" \
+ssh -o BatchMode=yes $HOST "tmux new-session -d -s fig7 'bash ${REPO_ROOT}/run_scripts/run_fig7_corrected.sh'" \
     && log "started run_fig7_corrected.py on $HOST (tmux fig7)" || log "start failed"

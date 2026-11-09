@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from pathlib import Path as _Path
+REPO_ROOT = str(_Path(__file__).resolve().parents[1])
 import json
 import os
 
@@ -160,7 +162,7 @@ def main():
       ]
     }
     
-    spec_dir = "/home/cc/Tectonic/tectonic-specs"
+    spec_dir = REPO_ROOT + "/xbench-specs"
     os.makedirs(spec_dir, exist_ok=True)
     
     preload_path = os.path.join(spec_dir, "udb_assoc_preload.spec.json")

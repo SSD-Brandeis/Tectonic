@@ -3,10 +3,10 @@
 run_keyset_fixed_queue.py
 =========================
 R2.O2 (ii): fixed VecKeySet on the Table 4 workloads where it hit the 600 s timeout of the KeySet
-experiment, run to completion, one trial each (decided with the authors, 2026-10-26): Tec-1, Tec-5,
-Tec-6 at full scale and Tec-3 at 0.1x (1M unique inserts instead of 10M; everything else unchanged),
-plus Algorithm 1 on Tec-3 0.1x (5 trials) as its baseline. 2026-10-31 (authors): 5 trials of both KeySets for
-Tec-3, Tec-5 and Tec-6 at 0.1x (op counts / 10, nothing else), all on fixedkeyset-2, trials 31-35. The runs are spread over several machines
+experiment, run to completion, one trial each (decided with the authors, 2026-10-26): X-1, X-5,
+X-6 at full scale and X-3 at 0.1x (1M unique inserts instead of 10M; everything else unchanged),
+plus Algorithm 1 on X-3 0.1x (5 trials) as its baseline. 2026-10-31 (authors): 5 trials of both KeySets for
+X-3, X-5 and X-6 at 0.1x (op counts / 10, nothing else), all on fixedkeyset-2, trials 31-35. The runs are spread over several machines
 of the same hardware; a machine never runs two of them at the same time (a lock enforces it).
 
 Each machine works through its own queue, `queue/<host>.txt`, one job per line:
@@ -15,8 +15,8 @@ can be moved to another machine by deleting its line. A job already in `results/
 skipped.
 
 Same run as `run_scripts/run_keyset_fixed_to_completion.py`, without a timeout:
-`/usr/bin/time -v tectonic-cli generate -w <spec> -o <trace> --keyset <k>`, single-threaded
-(TECTONIC_PARALLEL_GEN unset), RUST_LOG=tectonic=debug, `sync; echo 3 > /proc/sys/vm/drop_caches`
+`/usr/bin/time -v xbench-cli generate -w <spec> -o <trace> --keyset <k>`, single-threaded
+(XBENCH_PARALLEL_GEN unset), RUST_LOG=xbench=debug, `sync; echo 3 > /proc/sys/vm/drop_caches`
 before the run. Wall time and peak RSS from GNU time; VmRSS and VmHWM of the generator sampled every
 10 s into `trial<N>.rss.log`, so a run that is stopped still has its peak memory so far.
 
@@ -31,7 +31,7 @@ YCSB, which computes keys from key numbers (`example-specs/ycsb-untracked/`, wri
 `EmptyKeySet` (`--keyset empty`, YCSB's design: no keys stored) and Algorithm 1, 5 trials each, into
 `R1.O8-R2.O2_keyset-selection/ycsb-fixed-empty/`.
 
-Before it starts, the runner checks that no other `tectonic-cli` (generate or execute) runs on the machine, so a
+Before it starts, the runner checks that no other `xbench-cli` (generate or execute) runs on the machine, so a
 machine never runs two experiments at once, also across output folders.
 
 Usage: python3 run_scripts/run_keyset_fixed_queue.py [--out-dir <dir>]   (on the run machine, inside tmux)
@@ -42,6 +42,8 @@ Output (default --out-dir): data/revision/R1.O8-R2.O2_keyset-selection/table4-fi
   runs/<workload>/<keyset>/trial<N>.{stdout,stderr,rss}.log
   logs/console.<host>.out
 """
+from pathlib import Path as _Path
+REPO_ROOT = str(_Path(__file__).resolve().parents[1])
 import os
 import re
 import sys
@@ -52,8 +54,8 @@ import socket
 import hashlib
 import subprocess
 
-ROOT_DIR = "/home/cc/Tectonic"
-TECTONIC_CLI = f"{ROOT_DIR}/target/release/tectonic-cli"
+ROOT_DIR = REPO_ROOT
+XBENCH_CLI = f"{ROOT_DIR}/target/release/xbench-cli"
 OUT_DIR = f"{ROOT_DIR}/data/revision/R1.O8-R2.O2_keyset-selection/table4-fixed-to-completion-multimachine"
 if "--out-dir" in sys.argv:
     OUT_DIR = os.path.abspath(sys.argv[sys.argv.index("--out-dir") + 1])
@@ -64,13 +66,13 @@ TRACE_PATH = f"{OUT_DIR}/tmp/trace.txt"
 LOCK_PATH = f"{OUT_DIR}/tmp/run.lock"
 SAMPLE_INTERVAL_S = 10
 WORKLOADS = {
-    "Tec-1": "x-bench-specs/table4/Tec-1_multi_stage.spec.json",
-    "Tec-3": "x-bench-specs/table4/Tec-3_varied_sortedness.spec.json",
-    "Tec-3-0.1x": "x-bench-specs/table4/Tec-3_varied_sortedness_0.1x.spec.json",
-    "Tec-5": "x-bench-specs/table4/Tec-5_abrupt_shift.spec.json",
-    "Tec-5-0.1x": "x-bench-specs/table4/Tec-5_abrupt_shift_0.1x.spec.json",
-    "Tec-6": "x-bench-specs/table4/Tec-6_varied_kv_size.spec.json",
-    "Tec-6-0.1x": "x-bench-specs/table4/Tec-6_varied_kv_size_0.1x.spec.json",
+    "X-1": "x-bench-specs/table4/X-1_multi_stage.spec.json",
+    "X-3": "x-bench-specs/table4/X-3_varied_sortedness.spec.json",
+    "X-3-0.1x": "x-bench-specs/table4/X-3_varied_sortedness_0.1x.spec.json",
+    "X-5": "x-bench-specs/table4/X-5_abrupt_shift.spec.json",
+    "X-5-0.1x": "x-bench-specs/table4/X-5_abrupt_shift_0.1x.spec.json",
+    "X-6": "x-bench-specs/table4/X-6_varied_kv_size.spec.json",
+    "X-6-0.1x": "x-bench-specs/table4/X-6_varied_kv_size_0.1x.spec.json",
     "KVBench-I": "example-specs/kvbench/i.spec.json",
     "KVBench-II": "example-specs/kvbench/ii.spec.json",
     "KVBench-III": "example-specs/kvbench/iii.spec.json",
@@ -108,7 +110,7 @@ def op_counts(path):
 
 
 def generator_pid(time_pid):
-    """The tectonic-cli process GNU time started."""
+    """The xbench-cli process GNU time started."""
     for _ in range(100):
         try:
             with open(f"/proc/{time_pid}/task/{time_pid}/children") as f:
@@ -132,7 +134,7 @@ def memory_kib(pid):
 
 
 def other_generators():
-    """PIDs of `tectonic-cli` processes already running on this machine: `generate` of another runner, or
+    """PIDs of `xbench-cli` processes already running on this machine: `generate` of another runner, or
     `execute` of another experiment (2026-10-31: the direct-I/O reruns use the run machines)."""
     pids = []
     for pid in filter(str.isdigit, os.listdir("/proc")):
@@ -141,7 +143,7 @@ def other_generators():
                 args = f.read().split(b"\0")
         except OSError:
             continue
-        if args[0].endswith(b"tectonic-cli"):
+        if args[0].endswith(b"xbench-cli"):
             pids.append(int(pid))
     return pids
 
@@ -152,10 +154,10 @@ def run(workload, keyset, trial, binary_sha256):
     if os.path.exists(TRACE_PATH):
         os.remove(TRACE_PATH)
     subprocess.run(["sudo", "sh", "-c", "sync; echo 3 > /proc/sys/vm/drop_caches"], check=True)
-    cmd = ["/usr/bin/time", "-v", TECTONIC_CLI, "generate", "-w", f"{ROOT_DIR}/{WORKLOADS[workload]}",
+    cmd = ["/usr/bin/time", "-v", XBENCH_CLI, "generate", "-w", f"{ROOT_DIR}/{WORKLOADS[workload]}",
            "-o", TRACE_PATH, "--keyset", keyset]
-    env = {k: v for k, v in os.environ.items() if k != "TECTONIC_PARALLEL_GEN"}  # single-threaded
-    env["RUST_LOG"] = "tectonic=debug"  # progress of every group in steps of 10%, on stdout
+    env = {k: v for k, v in os.environ.items() if k != "XBENCH_PARALLEL_GEN"}  # single-threaded
+    env["RUST_LOG"] = "xbench=debug"  # progress of every group in steps of 10%, on stdout
     prefix = f"{out_dir}/trial{trial}"
     log(f"{workload} {keyset} trial {trial}: {' '.join(cmd)}")
     t0 = time.perf_counter()
@@ -180,13 +182,13 @@ def run(workload, keyset, trial, binary_sha256):
         raise RuntimeError(f"{workload} {keyset} failed with exit code {proc.returncode}: {stderr[-2000:]}")
     with open(f"{prefix}.stdout.log") as f:
         stdout = f.read()
-    m = re.search(r"Tectonic_Op_Timings: (\{.*\})", stdout)
+    m = re.search(r"XBench_Op_Timings: (\{.*\})", stdout)
     rec = {"workload": workload, "keyset": keyset, "trial": trial, "spec": WORKLOADS[workload],
            "spec_sha256": sha256(os.path.join(ROOT_DIR, WORKLOADS[workload])),
            "host": HOST, "binary_sha256": binary_sha256, "wall_time_s": wall, "timed_out": False,
            "peak_rss_mib": int(re.search(r"Maximum resident set size \(kbytes\): (\d+)", stderr).group(1)) / 1024,
            "gnu_time_elapsed": re.search(r"Elapsed \(wall clock\) time \(h:mm:ss or m:ss\): (\S+)", stderr).group(1),
-           "keysets_used": re.findall(r"\[Tectonic KeySet\] Section (\d+): (\S+)", stderr),
+           "keysets_used": re.findall(r"\[X-Bench KeySet\] Section (\d+): (\S+)", stderr),
            "op_timings_s": json.loads(m.group(1)) if m else None,
            "trace_bytes": os.path.getsize(TRACE_PATH),
            "op_counts": op_counts(TRACE_PATH),
@@ -218,9 +220,9 @@ def main():
     except BlockingIOError:
         sys.exit(f"another run is in progress on {HOST}: one run per machine")
     if other_generators():
-        sys.exit(f"tectonic-cli is already running on {HOST} (pid {other_generators()}): one run per machine")
-    binary_sha256 = sha256(TECTONIC_CLI)
-    log(f"{HOST}: {TECTONIC_CLI} sha256 {binary_sha256}, queue {QUEUE_PATH}")
+        sys.exit(f"xbench-cli is already running on {HOST} (pid {other_generators()}): one run per machine")
+    binary_sha256 = sha256(XBENCH_CLI)
+    log(f"{HOST}: {XBENCH_CLI} sha256 {binary_sha256}, queue {QUEUE_PATH}")
     runs = []
     if os.path.exists(RUNS_PATH):
         with open(RUNS_PATH) as f:

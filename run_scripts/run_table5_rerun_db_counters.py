@@ -6,15 +6,15 @@ settings, workload traces, reset + page-cache drop before every trial, iostat on
 plus, for every trial, snapshots taken just before and just after execution:
 
   * kernel block I/O of the database container's cgroup (io.stat, device 8:0 = sda);
-  * kernel block I/O of the client (tectonic-cli), run in its own cgroup
+  * kernel block I/O of the client (xbench-cli), run in its own cgroup
     /sys/fs/cgroup/table5-client; for RocksDB this is the database's own I/O;
   * each database's own counters:
       - Redis:     redis-cli INFO all
-      - Cassandra: JMX metrics via `nodetool sjk mxdump` (Table tectonic.data,
+      - Cassandra: JMX metrics via `nodetool sjk mxdump` (Table xbench.data,
                    CommitLog, Compaction)
       - ScyllaDB:  Prometheus metrics (http://127.0.0.1:9180/metrics)
       - RocksDB:   RocksDB statistics (-c statistics=1); counters start at 0 when the
-                   database opens inside tectonic-cli, so no "before" snapshot is needed.
+                   database opens inside xbench-cli, so no "before" snapshot is needed.
 
 Per-trial order:
   reset database -> "before" snapshots -> drop page cache -> start iostat ->
@@ -42,7 +42,7 @@ CLIENT_CGROUP = "/sys/fs/cgroup/table5-client"
 DEVICE = "8:0"  # sda
 CONTAINER = {"redis": "sim-redis", "cassandra": "sim-cassandra", "scylla": "sim-scylla"}
 CASSANDRA_MX_QUERIES = [
-    "org.apache.cassandra.metrics:type=Table,keyspace=tectonic,scope=data,*",
+    "org.apache.cassandra.metrics:type=Table,keyspace=xbench,scope=data,*",
     "org.apache.cassandra.metrics:type=CommitLog,*",
     "org.apache.cassandra.metrics:type=Compaction,*",
 ]
@@ -152,9 +152,9 @@ def save_raw(raw_dir, name, text):
 #  EXECUTION
 # =============================================================================
 def client_command(db, trace_path):
-    """tectonic-cli command line, run inside CLIENT_CGROUP as the invoking user."""
+    """xbench-cli command line, run inside CLIENT_CGROUP as the invoking user."""
     cfg = mr.DB_CLIENT_CONFIG[db]
-    cmd = [base.TECTONIC_CLI, "execute", "-i", trace_path, "-d", base.DB_CLI_DRIVER[db],
+    cmd = [base.XBENCH_CLI, "execute", "-i", trace_path, "-d", base.DB_CLI_DRIVER[db],
            "-p", base.DB_CLI_PATH[db], "-t", str(cfg["threads"])]
     if cfg["config"]:
         cmd += ["-c", cfg["config"]]
@@ -198,7 +198,7 @@ def execute_trial(db, workload, scale, trial, trace_path, before):
     base.run(["sync"])
     after = snapshot(db)
 
-    wl_folder = "X-Bench" if workload == "tectonic" else "YCSB"
+    wl_folder = "X-Bench" if workload == "xbench" else "YCSB"
     raw_dir = f"{mr.DBSTATE_DIR}/trial{trial}/{db}/{wl_folder}"
     os.makedirs(raw_dir, exist_ok=True)
     raw_log = f"{raw_dir}/cli_raw_{db}_scale{scale}_{workload}_trial{trial}.log"
@@ -293,16 +293,16 @@ def provenance():
     def out(cmd):
         return subprocess.run(cmd, capture_output=True, text=True, cwd=mr.ROOT_DIR).stdout.strip()
     h = hashlib.sha256()
-    with open(base.TECTONIC_CLI, "rb") as f:
+    with open(base.XBENCH_CLI, "rb") as f:
         for chunk in iter(lambda: f.read(8 << 20), b""):
             h.update(chunk)
     return {
         "git_commit": out(["git", "rev-parse", "HEAD"]),
         "git_status_porcelain": out(["git", "status", "--porcelain"]).splitlines(),
-        "tectonic_cli": base.TECTONIC_CLI,
-        "tectonic_cli_sha256": h.hexdigest(),
-        "tectonic_cli_mtime": time.strftime("%Y-%m-%d %H:%M:%S",
-                                            time.gmtime(os.path.getmtime(base.TECTONIC_CLI))),
+        "xbench_cli": base.XBENCH_CLI,
+        "xbench_cli_sha256": h.hexdigest(),
+        "xbench_cli_mtime": time.strftime("%Y-%m-%d %H:%M:%S",
+                                            time.gmtime(os.path.getmtime(base.XBENCH_CLI))),
         "kernel": out(["uname", "-r"]),
         "docker": out(["docker", "version", "--format", "{{.Server.Version}}"]),
     }
@@ -338,7 +338,7 @@ def main():
     parser.add_argument("--out-dir", required=True)
     parser.add_argument("--db", nargs="+", choices=mr.DEFAULT_DATABASES, default=mr.DEFAULT_DATABASES)
     parser.add_argument("--scales", nargs="+", type=int, required=True)
-    parser.add_argument("--workloads", nargs="+", choices=["ycsb", "tectonic"], default=["ycsb", "tectonic"])
+    parser.add_argument("--workloads", nargs="+", choices=["ycsb", "xbench"], default=["ycsb", "xbench"])
     parser.add_argument("--trials", type=int, default=mr.TRIALS)
     parser.add_argument("--pilot", action="store_true", help="label the output directory as a pilot")
     args = parser.parse_args()
@@ -384,7 +384,7 @@ def main():
     base.log(f"  Output dir : {mr.OUT_DIR}")
     base.log(f"  Pilot      : {args.pilot}")
     base.log(f"  Databases  : {args.db}  Scales: {args.scales}  Trials: {args.trials}")
-    base.log(f"  CLI sha256 : {config['provenance']['tectonic_cli_sha256']}")
+    base.log(f"  CLI sha256 : {config['provenance']['xbench_cli_sha256']}")
 
     def checkpoint():
         base.write_json_atomic(mr.RESULTS_PATH, {"config": config, "results": results})

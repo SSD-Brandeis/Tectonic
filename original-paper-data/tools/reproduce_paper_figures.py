@@ -3,7 +3,7 @@
 Reproduces the data figures and Table 5 of the paper (original-paper-data/X_Bench (5).pdf) from the
 original experiment data, with the repository's own plot scripts, unmodified.
 
-1. Stages each experiment's data where its plot script reads it (/home/cc/Tectonic/data/<experiment>),
+1. Stages each experiment's data where its plot script reads it (data/<experiment>),
    copied from the extracted archives (original-paper-data/x_bench_data1, x_bench_data2/data). The
    archives are never written. A destination this script staged before (it holds STAGED_MARK) is
    replaced by a fresh copy; any other existing destination is used only if it is identical to the
@@ -13,6 +13,8 @@ original experiment data, with the repository's own plot scripts, unmodified.
 
 Usage: python3 original-paper-data/tools/reproduce_paper_figures.py
 """
+from pathlib import Path as _Path
+REPO_ROOT = str(_Path(__file__).resolve().parents[2])
 
 import filecmp
 import os
@@ -21,7 +23,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-ROOT = Path("/home/cc/Tectonic")
+ROOT = Path(REPO_ROOT)
 PAPER = ROOT / "original-paper-data"
 DATA1 = PAPER / "x_bench_data1"
 DATA2 = PAPER / "x_bench_data2" / "data"
@@ -34,10 +36,10 @@ STAGE = [
     (DATA1 / "concurrent_blind_generation_resource_monitoring", ROOT / "data/concurrent_untracked_generation_resource_monitoring"),
     (DATA1 / "CPU-utilization", ROOT / "data/CPU-utilization"),
     (DATA1 / "concurrent_experiment", ROOT / "data/concurrent_experiment"),
-    (DATA1 / "ycsb_tectonic_correctness_thread_modes", ROOT / "data/ycsb_tectonic_correctness_thread_modes"),
+    (DATA1 / "ycsb_xbench_correctness_thread_modes", ROOT / "data/ycsb_xbench_correctness_thread_modes"),
     (DATA2 / "rocksdb_similarity_ycsba_10x", ROOT / "data/rocksdb_similarity_ycsba_10x"),
-    (DATA1 / "ycsb_tectonic_similarity_io_bytes", ROOT / "data/ycsb_tectonic_similarity_io_bytes"),
-    (DATA2 / "ycsb_tectonic_similarity_io_bytes", ROOT / "data/machine2_ycsb_tectonic_similarity_io_bytes"),
+    (DATA1 / "ycsb_xbench_similarity_io_bytes", ROOT / "data/ycsb_xbench_similarity_io_bytes"),
+    (DATA2 / "ycsb_xbench_similarity_io_bytes", ROOT / "data/machine2_ycsb_xbench_similarity_io_bytes"),
 ]
 
 PY = sys.executable
@@ -63,7 +65,7 @@ FIGURES = {
     ),
     "fig11": (
         [PY, "plot_scripts/plot_ycsb_xbench_db_bench_correctness_thread_modes.py"], {},
-        [(ROOT / "ycsb_tectonic_correctness_plots", None)],
+        [(ROOT / "ycsb_xbench_correctness_plots", None)],
     ),
     "fig12": (
         [PY, "plot_scripts/plot_rocksdb_similarity_ycsba.py", str(ROOT / "data/rocksdb_similarity_ycsba_10x"),
@@ -135,7 +137,7 @@ def main():
     stage()
     # directories the scripts create at the repository root (moved, not copied, afterwards)
     created = [d for d in (ROOT / "figure_6_validate_plot", ROOT / "concurrent_experiment_plots",
-                           ROOT / "ycsb_tectonic_correctness_plots", ROOT / "experiment_plots") if not d.exists()]
+                           ROOT / "ycsb_xbench_correctness_plots", ROOT / "experiment_plots") if not d.exists()]
     OUT.mkdir()
     failed = []
     for fig, (cmd, env, outputs) in FIGURES.items():

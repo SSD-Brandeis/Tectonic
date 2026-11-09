@@ -30,8 +30,8 @@ TOOLS = [
         {"color": "0.25", "linestyle": "-", "marker": "o", "markerfacecolor": "white"},
     ),
     (
-        "tectonic",
-        "Tectonic",
+        "xbench",
+        "X-Bench",
         {"color": "tab:red", "linestyle": "-.", "marker": "s", "markerfacecolor": "white"},
     ),
 ]
@@ -100,7 +100,7 @@ def set_axes(ax, ylabel: str, max_x: float, max_y: float) -> None:
     for tick in ax.get_xticks():
         if 0.0 <= tick <= ax.get_xlim()[1]:
             xticks.append(float(tick))
-    for scale in ax._tectonic_scales:
+    for scale in ax._xbench_scales:
         xticks.append(scale)
     ax.set_xticks(sorted(set(round(tick, 6) for tick in xticks)))
     ax.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"{x:g}"))
@@ -128,7 +128,7 @@ def plot_metric(data: dict, metric_key: str, ylabel: str, base_name: str, scale:
     max_y = 0.0
     handles = []
     fig, ax = plt.subplots(1, 1, figsize=(5.4, 3.2))
-    ax._tectonic_scales = scales
+    ax._xbench_scales = scales
     for tool_key, tool_label, style in TOOLS:
         values = [metric_value(run, tool_key, metric_key, scale) for run in runs]
         finite_values = [value for value in values if finite(value)]

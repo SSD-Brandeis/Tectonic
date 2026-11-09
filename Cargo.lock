@@ -2124,41 +2124,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "tectonic"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bloom",
- "criterion",
- "db-layer",
- "indicatif",
- "rand 0.9.1",
- "rand_distr 0.5.1",
- "rand_xoshiro",
- "schemars",
- "serde",
- "serde_json",
- "statrs",
- "sweep-bptree",
- "tracing",
-]
-
-[[package]]
-name = "tectonic-cli"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "db-layer",
- "rayon",
- "serde_json",
- "tectonic",
- "tracing",
- "tracing-subscriber",
- "walkdir",
-]
-
-[[package]]
 name = "thiserror"
 version = "2.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2944,6 +2909,41 @@ name = "writeable"
 version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ffae5123b2d3fc086436f8834ae3ab053a283cfac8fe0a0b8eaae044768a4c4"
+
+[[package]]
+name = "xbench"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bloom",
+ "criterion",
+ "db-layer",
+ "indicatif",
+ "rand 0.9.1",
+ "rand_distr 0.5.1",
+ "rand_xoshiro",
+ "schemars",
+ "serde",
+ "serde_json",
+ "statrs",
+ "sweep-bptree",
+ "tracing",
+]
+
+[[package]]
+name = "xbench-cli"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "db-layer",
+ "rayon",
+ "serde_json",
+ "tracing",
+ "tracing-subscriber",
+ "walkdir",
+ "xbench",
+]
 
 [[package]]
 name = "xxhash-rust"

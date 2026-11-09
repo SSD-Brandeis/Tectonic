@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Parse large mixgraph traces for db_bench and Tectonic, and extract key-space access heatmap data."""
+"""Parse large mixgraph traces for db_bench and X-Bench, and extract key-space access heatmap data."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 
 def parse_trace(trace_path: Path) -> tuple[list[str], list[str]]:
-    """Parses a Tectonic flat trace file.
+    """Parses a X-Bench flat trace file.
     
     Returns:
       - all_keys: List of all keys encountered in the trace (for building sorted key sequence)
@@ -63,19 +63,19 @@ def parse_trace(trace_path: Path) -> tuple[list[str], list[str]]:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Extract heatmap data from mixgraph traces.")
     parser.add_argument("--db-bench-trace", required=True, help="Path to db_bench flat trace")
-    parser.add_argument("--tectonic-trace", required=True, help="Path to Tectonic flat trace")
+    parser.add_argument("--xbench-trace", required=True, help="Path to X-Bench flat trace")
     parser.add_argument("--output", required=True, help="Path to save output JSON data")
     args = parser.parse_args()
 
     db_bench_trace = Path(args.db_bench_trace)
-    tectonic_trace = Path(args.tectonic_trace)
+    xbench_trace = Path(args.xbench_trace)
     output_path = Path(args.output)
 
     print(f"Parsing db_bench trace: {db_bench_trace}...")
     db_all_keys, db_gets = parse_trace(db_bench_trace)
     
-    print(f"Parsing Tectonic trace: {tectonic_trace}...")
-    tec_all_keys, tec_gets = parse_trace(tec_trace_path := tectonic_trace)
+    print(f"Parsing X-Bench trace: {xbench_trace}...")
+    x_all_keys, x_gets = parse_trace(x_trace_path := xbench_trace)
 
     # Process db_bench heatmap data
     print("Processing db_bench key sequences...")
@@ -87,24 +87,24 @@ def main() -> None:
         if key in db_key_to_id:
             db_counts[db_key_to_id[key]] += 1
             
-    # Process Tectonic heatmap data
-    print("Processing Tectonic key sequences...")
-    tec_unique_keys = sorted(list(set(tec_all_keys)))
-    tec_key_to_id = {key: idx for idx, key in enumerate(tec_unique_keys)}
+    # Process X-Bench heatmap data
+    print("Processing X-Bench key sequences...")
+    x_unique_keys = sorted(list(set(x_all_keys)))
+    x_key_to_id = {key: idx for idx, key in enumerate(x_unique_keys)}
     
-    tec_counts = [0] * len(tec_unique_keys)
-    for key in tec_gets:
-        if key in tec_key_to_id:
-            tec_counts[tec_key_to_id[key]] += 1
+    x_counts = [0] * len(x_unique_keys)
+    for key in x_gets:
+        if key in x_key_to_id:
+            x_counts[x_key_to_id[key]] += 1
 
     payload = {
         "db_bench": {
             "key_sequence": list(range(len(db_unique_keys))),
             "access_counts": db_counts
         },
-        "tectonic": {
-            "key_sequence": list(range(len(tec_unique_keys))),
-            "access_counts": tec_counts
+        "xbench": {
+            "key_sequence": list(range(len(x_unique_keys))),
+            "access_counts": x_counts
         }
     }
 
@@ -114,7 +114,7 @@ def main() -> None:
 
     print(f"Saved parsed heatmap data to {output_path}")
     print(f"db_bench keys count: {len(db_unique_keys)}, total execution gets: {len(db_gets)}")
-    print(f"Tectonic keys count: {len(tec_unique_keys)}, total execution gets: {len(tec_gets)}")
+    print(f"X-Bench keys count: {len(x_unique_keys)}, total execution gets: {len(x_gets)}")
 
 if __name__ == "__main__":
     main()

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from pathlib import Path as _Path
+REPO_ROOT = str(_Path(__file__).resolve().parents[1])
 import os
 import json
 import numpy as np
@@ -14,8 +16,8 @@ sys.path.append(str(Path(__file__).resolve().parent))
 import plot_style
 
 # Data and output directories
-DATA_DIR = Path("/home/cc/Tectonic/rocksdb-benchmark-harness/experiments/workload-similarity/10x")
-OUTPUT_DIR = Path("/home/cc/Tectonic/experiment_plots")
+DATA_DIR = Path(REPO_ROOT + "/rocksdb-benchmark-harness/experiments/workload-similarity/10x")
+OUTPUT_DIR = Path(REPO_ROOT + "/experiment_plots")
 OUTPUT_DIR.mkdir(exist_ok=True)
 
 def load_iostat(path):
@@ -35,15 +37,15 @@ def load_iostat(path):
 
 def main():
     print("Loading iostat data...")
-    tec_reads, tec_writes = load_iostat(DATA_DIR / "iostat.tectonic.1.json")
+    x_reads, x_writes = load_iostat(DATA_DIR / "iostat.xbench.1.json")
     ycsb_reads, ycsb_writes = load_iostat(DATA_DIR / "iostat.ycsb.1.json")
     
     # Downsample factor (step=10 matches paper's point density of ~40 points over 400 seconds)
     step = 10
     
-    x_tec = np.arange(len(tec_reads))[::step]
-    tec_r = tec_reads[::step]
-    tec_w = tec_writes[::step]
+    x_x = np.arange(len(x_reads))[::step]
+    x_r = x_reads[::step]
+    x_w = x_writes[::step]
     
     x_ycsb = np.arange(len(ycsb_reads))[::step]
     ycsb_r = ycsb_reads[::step]
@@ -62,7 +64,7 @@ def main():
         "markeredgecolor": "grey",
     }
     
-    tectonic_style = {
+    xbench_style = {
         "color": "tab:red",
         "marker": "s",
         "markersize": 8,
@@ -73,8 +75,8 @@ def main():
     # Plot lines: solid for read, dashed for write
     ax.plot(x_ycsb, ycsb_r, label="read (YCSB)", linestyle="-", **ycsb_style)
     ax.plot(x_ycsb, ycsb_w, label="write (YCSB)", linestyle="--", **ycsb_style)
-    ax.plot(x_tec, tec_r, label="read (Tectonic)", linestyle="-", **tectonic_style)
-    ax.plot(x_tec, tec_w, label="write (Tectonic)", linestyle="--", **tectonic_style)
+    ax.plot(x_x, x_r, label="read (X-Bench)", linestyle="-", **xbench_style)
+    ax.plot(x_x, x_w, label="write (X-Bench)", linestyle="--", **xbench_style)
     
     # Enforce axis labels
     # Use "time (s)" and "Mb/s" strictly as per lowercase rules with exceptions

@@ -22,6 +22,8 @@ Measurement methodology is inherited unchanged from
 run_table5_post_fix_validation.py so results remain directly comparable to the
 earlier single-trial runs.
 """
+from pathlib import Path as _Path
+REPO_ROOT = str(_Path(__file__).resolve().parents[1])
 import os
 import re
 import sys
@@ -36,7 +38,7 @@ import threading
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import run_table5_post_fix_validation as base
 
-ROOT_DIR = "/home/cc/Tectonic"
+ROOT_DIR = REPO_ROOT
 OUT_DIR = f"{ROOT_DIR}/data/table-5-revision-multirun"
 WORKLOAD_DIR = f"{OUT_DIR}/workloads"
 RESULTS_DIR = f"{OUT_DIR}/results"
@@ -128,7 +130,7 @@ def enforce_disk_budget(stage):
 #  WORKLOAD GENERATION (persistent, distinctly named, checksummed)
 # =============================================================================
 def workload_path(workload, scale):
-    name = "xbench" if workload == "tectonic" else "ycsb"
+    name = "xbench" if workload == "xbench" else "ycsb"
     return f"{WORKLOAD_DIR}/{name}_workload_a_scale_{scale}.txt"
 
 
@@ -150,7 +152,7 @@ def record_checksum(workload, scale, path):
     key = os.path.basename(path)
     base.log(f"  [checksum] hashing {key} ...")
     checksums[key] = {
-        "workload": "X-Bench" if workload == "tectonic" else "YCSB",
+        "workload": "X-Bench" if workload == "xbench" else "YCSB",
         "scale": scale,
         "scale_label": f"2^{scale.bit_length() - 1}",
         "bytes": os.path.getsize(path),
@@ -170,7 +172,7 @@ def ensure_workload(workload, scale):
     if workload == "ycsb":
         base.generate_ycsb(scale, path)
     else:
-        base.generate_tectonic(scale, path)
+        base.generate_xbench(scale, path)
     if not base.validate_trace(path, scale):
         base.fail(f"generated workload {path} failed validation (expected {scale * 2} ops)")
     record_checksum(workload, scale, path)
@@ -229,7 +231,7 @@ def execute_trial(db, workload, scale, trial, trace_path):
 
     sec_r0, sec_w0 = base.get_disk_hardware_sectors(base.IOSTAT_DEVICE)
 
-    exec_cmd = [base.TECTONIC_CLI, "execute",
+    exec_cmd = [base.XBENCH_CLI, "execute",
                 "-i", trace_path,
                 "-d", base.DB_CLI_DRIVER[db],
                 "-p", base.DB_CLI_PATH[db],
@@ -259,7 +261,7 @@ def execute_trial(db, workload, scale, trial, trace_path):
         base.fail(f"{db} {workload} 2^{scale.bit_length() - 1} trial {trial} failed")
     elapsed = time.perf_counter() - t0
 
-    wl_folder = "X-Bench" if workload == "tectonic" else "YCSB"
+    wl_folder = "X-Bench" if workload == "xbench" else "YCSB"
     raw_dir = f"{DBSTATE_DIR}/trial{trial}/{db}/{wl_folder}"
     os.makedirs(raw_dir, exist_ok=True)
     raw_log = f"{raw_dir}/cli_raw_{db}_scale{scale}_{workload}_trial{trial}.log"
@@ -366,7 +368,7 @@ _TABLESTATS_METRICS = [
 # db -> (saved file suffix, source command, [(exact metric name, unit, regex)]).
 # A regex with a second group captures a size unit, converted to the stated unit.
 DB_REPORTED_METRICS = {
-    "rocksdb": ("_rocksdb_stats.txt", "`rocksdb.stats` property and, with `-c statistics=1`, RocksDB statistics (`Options::statistics`), both returned by RocksDB and printed verbatim by tectonic-cli at the end of the run", [
+    "rocksdb": ("_rocksdb_stats.txt", "`rocksdb.stats` property and, with `-c statistics=1`, RocksDB statistics (`Options::statistics`), both returned by RocksDB and printed verbatim by xbench-cli at the end of the run", [
         ("Cumulative writes: ingest", "GB",
          r"^Cumulative writes:.*?ingest:\s*([\d.]+)\s*(KB|MB|GB|TB)"),
         ("Cumulative WAL: written", "GB",
@@ -374,7 +376,7 @@ DB_REPORTED_METRICS = {
         ("Flush(GB): cumulative", "GB", r"^Flush\(GB\):\s*cumulative\s+([\d.]+)"),
         ("Cumulative compaction: GB write", "GB", r"^Cumulative compaction:\s*([\d.]+)\s*GB write"),
         ("Compaction Stats, Sum row: Size", "MB", r"^\s*Sum\s+\S+\s+([\d.]+)\s+(KB|MB|GB|TB)"),
-        # RocksDB statistics tickers (printed only with tectonic-cli -c statistics=1), exact bytes
+        # RocksDB statistics tickers (printed only with xbench-cli -c statistics=1), exact bytes
         ("rocksdb.bytes.written", "bytes", r"^rocksdb\.bytes\.written COUNT : (\d+)$"),
         ("rocksdb.wal.bytes", "bytes", r"^rocksdb\.wal\.bytes COUNT : (\d+)$"),
         ("rocksdb.flush.write.bytes", "bytes", r"^rocksdb\.flush\.write\.bytes COUNT : (\d+)$"),
@@ -388,9 +390,9 @@ DB_REPORTED_METRICS = {
         ("db0: keys", "count", r"^db0:keys=(\d+)"),
         ("used_memory_dataset", "bytes", r"^used_memory_dataset:(\d+)"),
     ]),
-    "cassandra": ("_cassandra_tablestats.txt", "`nodetool tablestats tectonic.data`",
+    "cassandra": ("_cassandra_tablestats.txt", "`nodetool tablestats xbench.data`",
                   _TABLESTATS_METRICS),
-    "scylla": ("_scylla_tablestats.txt", "`nodetool tablestats tectonic.data`",
+    "scylla": ("_scylla_tablestats.txt", "`nodetool tablestats xbench.data`",
                _TABLESTATS_METRICS),
 }
 
@@ -551,7 +553,7 @@ def write_table(summary, results):
         for scale in sorted(summary[db], key=int):
             slbl = f"2^{int(scale).bit_length() - 1}"
             ys = summary[db][scale].get("ycsb", {})
-            xs = summary[db][scale].get("tectonic", {})
+            xs = summary[db][scale].get("xbench", {})
             for label, s in (("YCSB", ys), ("X-Bench", xs)):
                 t, b = s.get("wall_time_s"), s.get("io_total_mb")
                 r, w = s.get("io_read_mb"), s.get("io_write_mb")
@@ -604,7 +606,7 @@ def write_table(summary, results):
             for s in scales:
                 cell = summary[db].get(str(s), {})
                 y = cell.get("ycsb", {}).get("db_reported_bytes_mb")
-                x = cell.get("tectonic", {}).get("db_reported_bytes_mb")
+                x = cell.get("xbench", {}).get("db_reported_bytes_mb")
                 vals.append(f"{fmt_reported(y, 'MB')} / {fmt_reported(x, 'MB')}")
                 cvs += [v["cv_pct"] for v in (x, y) if v and v["mean"] > 0]
             terms = [n for n in DB_REPORTED_BYTES[db] if not always_zero(summary, db, n)]
@@ -622,7 +624,7 @@ def write_table(summary, results):
             for s in scales:
                 cell = summary[db].get(str(s), {})
                 y = cell.get("ycsb", {}).get("db_reported", {}).get(name)
-                x = cell.get("tectonic", {}).get("db_reported", {}).get(name)
+                x = cell.get("xbench", {}).get("db_reported", {}).get(name)
                 vals.append(f"{fmt_reported(y, unit)} / {fmt_reported(x, unit)}")
             val_rows.append([exact(db, name), unit] + vals)
         val_sections += [f"### {db}", "",
@@ -634,7 +636,7 @@ def write_table(summary, results):
         "",
         f"Each cell is the mean over {TRIALS} independent trials. Every trial starts from a",
         "reset database instance with the OS page cache dropped. Execution time is the",
-        "client-perceived end-to-end wall-clock time reported by `tectonic-cli execute`,",
+        "client-perceived end-to-end wall-clock time reported by `xbench-cli execute`,",
         "which brackets connection setup and teardown exactly as YCSB's `ClientThread` does.",
         "",
         "Bytes transferred uses the original Table 5 definition: block-device read + write",
@@ -756,17 +758,17 @@ def write_latex_table(summary):
         if db not in summary:
             continue
         lines.append(r"\midrule")
-        db_scales = [s for s in scales if all(w in summary[db].get(str(s), {}) for w in ("ycsb", "tectonic"))]
+        db_scales = [s for s in scales if all(w in summary[db].get(str(s), {}) for w in ("ycsb", "xbench"))]
         if not db_scales:
             continue
         for j, scale in enumerate(db_scales):
             cell = summary[db][str(scale)]
-            for k, (workload, suite) in enumerate((("ycsb", "YCSB"), ("tectonic", r"\bench{}"))):
+            for k, (workload, suite) in enumerate((("ycsb", "YCSB"), ("xbench", r"\bench{}"))):
                 t = cell[workload]["wall_time_s"]
                 b = cell[workload]["db_reported_bytes_mb"]
-                diff = f"{mean_diff_pct(t, cell['ycsb']['wall_time_s']):.2f}" if workload == "tectonic" else "--"
+                diff = f"{mean_diff_pct(t, cell['ycsb']['wall_time_s']):.2f}" if workload == "xbench" else "--"
                 b_diff = (f"{mean_diff_pct(b, cell['ycsb']['db_reported_bytes_mb']):.2f}"
-                          if workload == "tectonic" else "--")
+                          if workload == "xbench" else "--")
                 db_cell = rf"\multirow{{{2 * len(db_scales)}}}{{*}}{{\textbf{{{name}}}}}" if j == 0 and k == 0 else ""
                 scale_cell = rf"\multirow{{2}}{{*}}{{$2^{{{scale.bit_length() - 1}}}$}}" if k == 0 else ""
                 lines.append(
@@ -811,17 +813,17 @@ def write_latex_table_single_column(summary, font=r"\footnotesize", tabcolsep="3
         if db not in summary:
             continue
         lines.append(r"\midrule")
-        db_scales = [s for s in scales if all(w in summary[db].get(str(s), {}) for w in ("ycsb", "tectonic"))]
+        db_scales = [s for s in scales if all(w in summary[db].get(str(s), {}) for w in ("ycsb", "xbench"))]
         if not db_scales:
             continue
         for j, scale in enumerate(db_scales):
             cell = summary[db][str(scale)]
-            for k, (workload, suite) in enumerate((("ycsb", "YCSB"), ("tectonic", r"\bench{}"))):
+            for k, (workload, suite) in enumerate((("ycsb", "YCSB"), ("xbench", r"\bench{}"))):
                 t = cell[workload]["wall_time_s"]
                 b = cell[workload]["io_total_mb"]
-                diff = f"{mean_diff_pct(t, cell['ycsb']['wall_time_s']):.2f}" if workload == "tectonic" else "--"
+                diff = f"{mean_diff_pct(t, cell['ycsb']['wall_time_s']):.2f}" if workload == "xbench" else "--"
                 b_diff = (f"{mean_diff_pct(b, cell['ycsb']['io_total_mb']):.2f}"
-                          if workload == "tectonic" else "--")
+                          if workload == "xbench" else "--")
                 db_cell = (rf"\multirow{{{2 * len(db_scales)}}}{{*}}{{\rotatebox{{90}}{{\textbf{{{name}}}}}}}"
                            if j == 0 and k == 0 else "")
                 scale_cell = rf"\multirow{{2}}{{*}}{{$2^{{{scale.bit_length() - 1}}}$}}" if k == 0 else ""
@@ -844,7 +846,7 @@ def write_documentation():
         "conditions are unambiguous. Nothing below is left at an undocumented implicit",
         "default: where a value is a shipped default, it is named as such.",
         "",
-        "## Client configuration (`tectonic-cli execute`)",
+        "## Client configuration (`xbench-cli execute`)",
         "",
         "Both the YCSB-generated and the X-Bench-generated workload for a given database",
         "are executed by the *same* client binary with the *same* flags, so the comparison",
@@ -924,8 +926,8 @@ def write_documentation():
         "docker run --name sim-cassandra -p 9042:9042 cassandra@<digest>",
         "```",
         "",
-        "Keyspace `tectonic` with `SimpleStrategy`, `replication_factor = 1`; table",
-        "`tectonic.data (key text PRIMARY KEY, value text)`. Created by",
+        "Keyspace `xbench` with `SimpleStrategy`, `replication_factor = 1`; table",
+        "`xbench.data (key text PRIMARY KEY, value text)`. Created by",
         "`db-layer/src/cassandra.rs` at connection time.",
         "",
         "### ScyllaDB",
@@ -956,7 +958,7 @@ def write_documentation():
         "",
         "| Metric | Definition |",
         "| :--- | :--- |",
-        "| Execution time | `tectonic-cli execute` end-to-end wall clock, including connection setup and teardown |",
+        "| Execution time | `xbench-cli execute` end-to-end wall clock, including connection setup and teardown |",
         f"| Bytes transferred (Table 5) | block-device read + write MB on `{base.IOSTAT_DEVICE}`, summed from "
         f"`iostat -x -d {base.IOSTAT_DEVICE} 1` over the execution window (`io_bytes_total` in `results_raw.json`) |",
         "",
@@ -986,7 +988,7 @@ def write_documentation():
         "",
         "```",
         "workloads/     both generated workloads per scale, with sha256 checksums",
-        "               xbench_workload_a_scale_<N>.txt   (generated by tectonic-cli)",
+        "               xbench_workload_a_scale_<N>.txt   (generated by xbench-cli)",
         "               ycsb_workload_a_scale_<N>.txt     (generated by YCSB FileClient)",
         "results/       results_raw.json        every trial, every metric",
         "               summary_mean_stdev.json per-cell mean / stdev / min / max / CV",
@@ -1040,8 +1042,8 @@ def main():
     parser = argparse.ArgumentParser(description="Table 5 revision multi-run experiment")
     parser.add_argument("--db", nargs="+", choices=DEFAULT_DATABASES, default=DEFAULT_DATABASES)
     parser.add_argument("--scales", nargs="+", type=int, default=DEFAULT_SCALES)
-    parser.add_argument("--workloads", nargs="+", choices=["ycsb", "tectonic"],
-                        default=["ycsb", "tectonic"])
+    parser.add_argument("--workloads", nargs="+", choices=["ycsb", "xbench"],
+                        default=["ycsb", "xbench"])
     parser.add_argument("--trials", type=int, default=TRIALS)
     parser.add_argument("--keep-shards", action="store_true",
                         help="keep per-thread trace shards instead of deleting after use")
@@ -1051,7 +1053,7 @@ def main():
     parser.add_argument("--out-dir", help=f"experiment directory (default {OUT_DIR}); "
                                           f"workload traces are always read from {WORKLOAD_DIR}")
     parser.add_argument("--rocksdb-config",
-                        help='tectonic-cli -c config for RocksDB, e.g. "statistics=1"')
+                        help='xbench-cli -c config for RocksDB, e.g. "statistics=1"')
     args = parser.parse_args()
 
     if args.out_dir:
@@ -1163,7 +1165,7 @@ def main():
                     remove_shards(trace, cfg["threads"])
 
             y = results.get(db, {}).get(str(scale), {}).get("ycsb", [])
-            x = results.get(db, {}).get(str(scale), {}).get("tectonic", [])
+            x = results.get(db, {}).get(str(scale), {}).get("xbench", [])
             if y and x:
                 ym = statistics.mean([t["wall_time_s"] for t in y])
                 xm = statistics.mean([t["wall_time_s"] for t in x])

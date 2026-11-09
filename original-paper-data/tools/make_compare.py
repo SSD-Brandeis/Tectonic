@@ -4,13 +4,15 @@ Side-by-side images of each paper figure (cropped from the PDF) above its regene
 (reproduced/<fig>/*.pdf). Writes original-paper-data/reproduced/compare/<fig>_paper_vs_reproduced.png.
 Run after reproduce_paper_figures.py.
 """
+from pathlib import Path as _Path
+REPO_ROOT = str(_Path(__file__).resolve().parents[2])
 
 import subprocess
 import tempfile
 from pathlib import Path
 from PIL import Image, ImageDraw
 
-PAPER = Path("/home/cc/Tectonic/original-paper-data")
+PAPER = Path(REPO_ROOT + "/original-paper-data")
 PDF = PAPER / "X_Bench (5).pdf"
 REP = PAPER / "reproduced"
 

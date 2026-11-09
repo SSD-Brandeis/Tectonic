@@ -4,7 +4,7 @@ Table 5 Generator (post-fix-validation fork):
 Produces exactly 3 distinctive tables and 1 canonical plotting data file for
 the post-timing-fix rerun in data/post-fix-validation/, so the original
 data/table5_rerun/ and data/discrepancy-investigation/ tables are never touched.
-1. table_5_client_driver.md: Client Driver End-to-End Time (tectonic-cli wall-clock)
+1. table_5_client_driver.md: Client Driver End-to-End Time (xbench-cli wall-clock)
 2. table_5_db_server_log.md: Database Server Log Internal Metrics (native DB engine telemetry)
 3. table_5_best_match.md: Smallest Execution Time Difference between Client Driver and Server Log
 4. table_5_plotting_data: Canonical plotting dataset with exact raw log field names
@@ -15,12 +15,14 @@ rerun's own measured number, so the comparison is honest.
 
 Automatically removes any stale, duplicate, or deprecated table variants.
 """
+from pathlib import Path as _Path
+REPO_ROOT = str(_Path(__file__).resolve().parents[1])
 
 import os
 import re
 import json
 
-ROOT_DIR = "/home/cc/Tectonic"
+ROOT_DIR = REPO_ROOT
 OUT_DIR = f"{ROOT_DIR}/data/post-fix-validation"
 RESULTS_PATH = f"{OUT_DIR}/results_io_bytes.json"
 
@@ -87,8 +89,8 @@ def format_aligned_markdown_table(headers, alignments, rows):
     return "\n".join(lines) + "\n"
 
 def get_server_stats(db, scale, workload, results_data):
-    wl_folder = "X-Bench" if workload in ["tectonic", "X-Bench"] else "YCSB"
-    wl_code = "tectonic" if workload in ["tectonic", "X-Bench"] else "ycsb"
+    wl_folder = "X-Bench" if workload in ["xbench", "X-Bench"] else "YCSB"
+    wl_code = "xbench" if workload in ["xbench", "X-Bench"] else "ycsb"
     prefix = f"{OUT_DIR}/{db}/{wl_folder}/{db}_scale{scale}_{wl_code}"
     
     server_time = 0.0
@@ -144,8 +146,8 @@ def get_server_stats(db, scale, workload, results_data):
         pp = f"{prefix}_scylla_metrics.prom"
         if os.path.exists(pp):
             txt = open(pp).read()
-            rm = re.search(r'scylla_column_family_read_latency_sum\{cf=\"data\",ks=\"tectonic\"\}\s*([\d\.\w\+\-]+)', txt)
-            wm = re.search(r'scylla_column_family_write_latency_sum\{cf=\"data\",ks=\"tectonic\"\}\s*([\d\.\w\+\-]+)', txt)
+            rm = re.search(r'scylla_column_family_read_latency_sum\{cf=\"data\",ks=\"xbench\"\}\s*([\d\.\w\+\-]+)', txt)
+            wm = re.search(r'scylla_column_family_write_latency_sum\{cf=\"data\",ks=\"xbench\"\}\s*([\d\.\w\+\-]+)', txt)
             if rm and wm:
                 server_time = (float(rm.group(1)) + float(wm.group(1))) / 1e6
             bytes_mb = round(sum(float(l.split()[-1]) for l in txt.splitlines() if l.startswith('scylla_commitlog_bytes_written{')) / (1024 * 1024), 2)
@@ -167,7 +169,7 @@ def main():
     # =========================================================================
     cli_lines = []
     cli_lines.append("# Table 5: Client Driver (CLI) End-to-End Execution Time\n")
-    cli_lines.append("This table presents the comparison between **YCSB** and **X-Bench** using **client-perceived end-to-end wall-clock execution time** measured by `tectonic-cli execute`, alongside direct database log data transfer metrics.\n\n")
+    cli_lines.append("This table presents the comparison between **YCSB** and **X-Bench** using **client-perceived end-to-end wall-clock execution time** measured by `xbench-cli execute`, alongside direct database log data transfer metrics.\n\n")
 
     cli_headers = [
         "Database", "Scale", "Workload",
@@ -245,18 +247,18 @@ def main():
         for scale in scales:
             lbl = f"2^{scale.bit_length() - 1}"
             sdata = results[db][str(scale)]
-            if "ycsb" not in sdata or "tectonic" not in sdata:
+            if "ycsb" not in sdata or "xbench" not in sdata:
                 continue
 
             y = sdata["ycsb"]
-            t = sdata["tectonic"]
+            t = sdata["xbench"]
 
             y_cli = y.get("overall_metrics", {}).get("end_to_end_time_s", y.get("wall_time_s", 0.0))
             t_cli = t.get("overall_metrics", {}).get("end_to_end_time_s", t.get("wall_time_s", 0.0))
             cli_diff = abs(t_cli - y_cli) / y_cli * 100.0 if y_cli > 0 else 0.0
 
             y_srv_t, time_desc, y_bytes, bytes_desc = get_server_stats(db, scale, "ycsb", results)
-            t_srv_t, _, t_bytes, _ = get_server_stats(db, scale, "tectonic", results)
+            t_srv_t, _, t_bytes, _ = get_server_stats(db, scale, "xbench", results)
 
             # Fallbacks if server stats 0 in files yet
             if y_bytes == 0.0:
@@ -359,7 +361,7 @@ def main():
 
     cli_lines.append(format_aligned_markdown_table(cli_headers, cli_align, cli_rows))
     cli_lines.append("\n## Notes on CLI Execution Time\n")
-    cli_lines.append("- **CLI Execution Time** measures the total duration from the client issuing the first query until all queries complete (`End to End Time` measured by the Rust driver `tectonic-cli`).\n")
+    cli_lines.append("- **CLI Execution Time** measures the total duration from the client issuing the first query until all queries complete (`End to End Time` measured by the Rust driver `xbench-cli`).\n")
     cli_lines.append("- This metric captures full turnaround time experienced by applications, including client serialization, network transmission, and server execution.\n")
 
     srv_lines.append(format_aligned_markdown_table(srv_headers, srv_align, srv_rows))
@@ -367,7 +369,7 @@ def main():
     srv_lines.append("Every metric in this table is extracted **directly from native database logs and administrative telemetry files**, completely bypassing client-side OS page caching and network roundtrip artifacts.\n\n")
     
     srv_lines.append("### 1. RocksDB (`rocksdb`)\n")
-    srv_lines.append("- **Raw Artifact Source**: `rocksdb_scale<scale>_{tectonic,ycsb}_rocksdb_stats.txt` / `LOG.txt` (written directly by the RocksDB C++ engine).\n")
+    srv_lines.append("- **Raw Artifact Source**: `rocksdb_scale<scale>_{xbench,ycsb}_rocksdb_stats.txt` / `LOG.txt` (written directly by the RocksDB C++ engine).\n")
     srv_lines.append("- **Server Execution Time**: **Engine Process Uptime**\n")
     srv_lines.append("  - **Extracted Line**: `Uptime(secs): <val> total`\n")
     srv_lines.append("  - **Full Calculation Formula**: `Server Execution Time (s) = float(val)`\n")
@@ -378,7 +380,7 @@ def main():
     srv_lines.append("  - **Description**: Physical data written to storage by the engine across background compaction merges, MemTable-to-L0 flushes, and the Write-Ahead Log.\n\n")
 
     srv_lines.append("### 2. Redis (`redis`)\n")
-    srv_lines.append("- **Raw Artifact Source**: `redis_scale<scale>_{tectonic,ycsb}_redis_info.txt` (captured via `redis-cli info all`).\n")
+    srv_lines.append("- **Raw Artifact Source**: `redis_scale<scale>_{xbench,ycsb}_redis_info.txt` (captured via `redis-cli info all`).\n")
     srv_lines.append("- **Server Execution Time**: **Engine Command Processing Time**\n")
     srv_lines.append("  - **Extracted Lines**: In section `# Commandstats`:\n")
     srv_lines.append("    - `cmdstat_get:calls=<N_get>,usec=<usec_get>,usec_per_call=...`\n")
@@ -391,10 +393,10 @@ def main():
     srv_lines.append("  - **Description**: Total byte stream transferred over the network socket into the Redis server process. Because Redis runs as an in-memory database with persistence disabled (`--appendonly no --save \"\"`), disk writes are 0 MB by definition; socket ingress represents the true physical workload data transfer.\n\n")
 
     srv_lines.append("### 3. Cassandra (`cassandra`)\n")
-    srv_lines.append("- **Raw Artifact Source**: `cassandra_scale<scale>_{tectonic,ycsb}_cassandra_tablestats.txt` (captured directly from the Cassandra engine via `nodetool tablestats tectonic.data`).\n")
+    srv_lines.append("- **Raw Artifact Source**: `cassandra_scale<scale>_{xbench,ycsb}_cassandra_tablestats.txt` (captured directly from the Cassandra engine via `nodetool tablestats xbench.data`).\n")
     srv_lines.append("- **Server Execution Time**: **nodetool tablestats: TotalLatency (Read + Write)**\n")
-    srv_lines.append("  - **Native Engine MBean**: `org.apache.cassandra.metrics:type=Table,keyspace=tectonic,scope=data,name=ReadLatency.TotalLatency` and `name=WriteLatency.TotalLatency`\n")
-    srv_lines.append("  - **Extracted Lines**: In Keyspace `tectonic`, Table `data`:\n")
+    srv_lines.append("  - **Native Engine MBean**: `org.apache.cassandra.metrics:type=Table,keyspace=xbench,scope=data,name=ReadLatency.TotalLatency` and `name=WriteLatency.TotalLatency`\n")
+    srv_lines.append("  - **Extracted Lines**: In Keyspace `xbench`, Table `data`:\n")
     srv_lines.append("    - `Read Count: <N_read>`\n")
     srv_lines.append("    - `Read Latency: <L_read> ms`\n")
     srv_lines.append("    - `Write Count: <N_write>`\n")
@@ -409,13 +411,13 @@ def main():
     srv_lines.append("  - **Description**: Total physical data stored by Cassandra across both on-disk flushed SSTables (`Space used (total)`) and active in-memory Memtables (`Memtable data size`). At smaller scales ($2^{18}$–$2^{20}$), on-disk space is 0 MB because data accumulates in RAM without triggering an SSTable flush; at larger scales ($2^{21}$–$2^{22}$), it accounts for both flushed SSTables on disk (~1.8–3.8 GB) and unflushed memtable mutations (~412–865 MB).\n\n")
 
     srv_lines.append("### 4. ScyllaDB (`scylla`)\n")
-    srv_lines.append("- **Raw Artifact Source**: `scylla_scale<scale>_{tectonic,ycsb}_scylla_metrics.prom` (captured via native Prometheus `/metrics` endpoint on port 9180).\n")
+    srv_lines.append("- **Raw Artifact Source**: `scylla_scale<scale>_{xbench,ycsb}_scylla_metrics.prom` (captured via native Prometheus `/metrics` endpoint on port 9180).\n")
     srv_lines.append("- **Server Execution Time**: **Reactor Core Query Latency Sum**\n")
     srv_lines.append("  - **Extracted Lines**:\n")
-    srv_lines.append("    - `scylla_column_family_read_latency_sum{cf=\"data\",ks=\"tectonic\"} <usec_read>`\n")
-    srv_lines.append("    - `scylla_column_family_write_latency_sum{cf=\"data\",ks=\"tectonic\"} <usec_write>`\n")
+    srv_lines.append("    - `scylla_column_family_read_latency_sum{cf=\"data\",ks=\"xbench\"} <usec_read>`\n")
+    srv_lines.append("    - `scylla_column_family_write_latency_sum{cf=\"data\",ks=\"xbench\"} <usec_write>`\n")
     srv_lines.append("  - **Full Calculation Formula**: `Server Execution Time (s) = (usec_read + usec_write) / 1,000,000.0`\n")
-    srv_lines.append("  - **Description**: Total cumulative execution time spent processing read and write queries across all 48 Seastar reactor cores for table `tectonic.data`.\n")
+    srv_lines.append("  - **Description**: Total cumulative execution time spent processing read and write queries across all 48 Seastar reactor cores for table `xbench.data`.\n")
     srv_lines.append("- **Database Log Measured**: **CommitLog Bytes Written (Across All Shards)**\n")
     srv_lines.append("  - **Extracted Line**: `scylla_commitlog_bytes_written{shard=\"<id>\"} <bytes>` (for shards 0 to 47)\n")
     srv_lines.append("  - **Full Calculation Formula**: `Database Log Measured (MB) = sum(scylla_commitlog_bytes_written for all 48 shards) / (1024.0 * 1024.0)`\n")

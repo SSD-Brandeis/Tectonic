@@ -14,13 +14,13 @@ import time
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 HARNESS_DIR = ROOT_DIR / "rocksdb-benchmark-harness"
-TECTONIC_CLI = Path(os.environ.get("TECTONIC_CLI", str(ROOT_DIR / "target/release/tectonic-cli")))
+XBENCH_CLI = Path(os.environ.get("XBENCH_CLI", str(ROOT_DIR / "target/release/xbench-cli")))
 YCSB_SPEC = ROOT_DIR / "example-specs/ycsb_untracked/e.spec.json"
 KV_BENCH = Path(os.environ.get("KV_BENCH_BIN", "/home/cc/KV-WorkloadGenerator/bin/load_gen"))
 YCSB_DIR = Path(os.environ.get("YCSB_DIR", str(HARNESS_DIR / "vendor/YCSB")))
 M2 = Path(os.environ.get("M2_REPO", "/home/cc/.m2/repository"))
 OUT_DIR = Path(os.environ.get("CPU_UTILIZATION_OUT_DIR", str(ROOT_DIR / "data/CPU-utilization")))
-TMP_DIR = Path("/tmp/tectonic_cpu_pidstat_multithread")
+TMP_DIR = Path("/tmp/xbench_cpu_pidstat_multithread")
 RESULTS_PATH = OUT_DIR / "pidstat_multithread_generation_results.json"
 PLOT_SCRIPT = ROOT_DIR / "plot_scripts/plot_cpu_pidstat_multithread_generation.py"
 PIDSTAT_INTERVAL_S = 1
@@ -53,8 +53,8 @@ YCSB_CP = ":".join([
     str(YCSB_DIR / "core/target/core-0.18.0-SNAPSHOT.jar"),
 ])
 
-MULTI_TOOL_KEYS = ("ycsb", "tectonic")
-SINGLE_TOOL_KEYS = ("ycsb", "tectonic", "kvbench")
+MULTI_TOOL_KEYS = ("ycsb", "xbench")
+SINGLE_TOOL_KEYS = ("ycsb", "xbench", "kvbench")
 
 
 def fail(message):
@@ -162,9 +162,9 @@ def fmt_gib(num_bytes):
 def estimate_peak_temp_bytes():
     ycsb_load = LOAD_COUNT * 1_500
     ycsb_run = RUN_RANGE_QUERY_COUNT * 96 + RUN_INSERT_COUNT * 1_500
-    tectonic = (LOAD_COUNT + RUN_INSERT_COUNT) * 1_200 + RUN_RANGE_QUERY_COUNT * 96
+    xbench = (LOAD_COUNT + RUN_INSERT_COUNT) * 1_200 + RUN_RANGE_QUERY_COUNT * 96
     kvbench = (LOAD_COUNT + RUN_INSERT_COUNT) * 1_200 + RUN_RANGE_QUERY_COUNT * 128
-    return int(max(ycsb_load, ycsb_run, tectonic, kvbench) * 1.5)
+    return int(max(ycsb_load, ycsb_run, xbench, kvbench) * 1.5)
 
 
 def check_temp_space(min_free_gib):
@@ -372,15 +372,15 @@ def generate_ycsb(threads, cpu_count):
     }
 
 
-def generate_tectonic(threads, cpu_count):
-    tag = f"tectonic_ycsbe10x_threads{threads}"
+def generate_xbench(threads, cpu_count):
+    tag = f"xbench_ycsbe10x_threads{threads}"
     output_path = TMP_DIR / f"{tag}.txt"
     remove_output_prefix(output_path)
     env = os.environ.copy()
-    env["TECTONIC_PARALLEL_GEN"] = "1"
+    env["XBENCH_PARALLEL_GEN"] = "1"
     result = run_monitored(
-        f"Tectonic generation threads={threads}",
-        [str(TECTONIC_CLI), "generate", "-w", str(YCSB_SPEC), "-o", str(output_path), "-t", str(threads), "-s", str(SCALE_MULTIPLIER)],
+        f"X-Bench generation threads={threads}",
+        [str(XBENCH_CLI), "generate", "-w", str(YCSB_SPEC), "-o", str(output_path), "-t", str(threads), "-s", str(SCALE_MULTIPLIER)],
         TMP_DIR / f"{tag}.log",
         cpu_count,
         cwd=ROOT_DIR,
@@ -457,7 +457,7 @@ def run_for_threads(threads, cpu_count, existing_run=None):
         results["ycsb"] = existing_run["ycsb"]
     else:
         results["ycsb"] = add_cpu_work_metric(generate_ycsb(threads, cpu_count))
-    results["tectonic"] = add_cpu_work_metric(generate_tectonic(threads, cpu_count))
+    results["xbench"] = add_cpu_work_metric(generate_xbench(threads, cpu_count))
     add_common_window_metric(results, cpu_count)
     return {"threads": threads, **results}
 
@@ -466,7 +466,7 @@ def run_single_thread(cpu_count):
     banner(f"{WORKLOAD_NAME} 10x single-thread generation with KVBench")
     results = {
         "ycsb": add_cpu_work_metric(generate_ycsb(1, cpu_count)),
-        "tectonic": add_cpu_work_metric(generate_tectonic(1, cpu_count)),
+        "xbench": add_cpu_work_metric(generate_xbench(1, cpu_count)),
         "kvbench": add_cpu_work_metric(generate_kvbench_single(cpu_count)),
     }
     add_common_window_metric(results, cpu_count)
@@ -491,7 +491,7 @@ def main():
             "reproduce the CPU-utilization figures on this machine:\n"
             f"  {REPRODUCTION_COMMAND}\n\n"
             "override output location with CPU_UTILIZATION_OUT_DIR; override external tool locations with "
-            "TECTONIC_CLI, YCSB_DIR, KV_BENCH_BIN, and M2_REPO."
+            "XBENCH_CLI, YCSB_DIR, KV_BENCH_BIN, and M2_REPO."
         ),
     )
     parser.add_argument("--threads", help="comma-separated thread counts for the multithread sweep")
@@ -500,8 +500,8 @@ def main():
     parser.add_argument("--no-plot", action="store_true")
     args = parser.parse_args()
 
-    ensure_file(TECTONIC_CLI, "tectonic-cli")
-    ensure_file(YCSB_SPEC, "Tectonic YCSB-E spec")
+    ensure_file(XBENCH_CLI, "xbench-cli")
+    ensure_file(YCSB_SPEC, "X-Bench YCSB-E spec")
     ensure_file(YCSB_DIR / "workloads" / YCSB_WORKLOAD_FILE, "YCSB-E workload")
     cpu_count = available_cpu_count()
     thread_counts = parse_threads(args.threads, cpu_count) if args.threads else default_threads(cpu_count)
@@ -521,7 +521,7 @@ def main():
     print(f"  threads    : {thread_counts}")
     print(f"  time series: {time_series_threads} threads")
     print(f"  output dir : {OUT_DIR}")
-    print("  multithread: YCSB and Tectonic")
+    print("  multithread: YCSB and X-Bench")
     print("  metric     : summed pidstat process %CPU divided by available logical cpus")
     print(SEP, flush=True)
 
@@ -554,8 +554,8 @@ def main():
         "workload": WORKLOAD_NAME,
         "workload_file": YCSB_WORKLOAD_FILE,
         "scale_multiplier": SCALE_MULTIPLIER,
-        "tectonic_spec_path": str(YCSB_SPEC),
-        "multithread_tools": ["YCSB", "Tectonic"],
+        "xbench_spec_path": str(YCSB_SPEC),
+        "multithread_tools": ["YCSB", "X-Bench"],
         "load_count": LOAD_COUNT,
         "operation_count": OPERATION_COUNT,
         "run_range_query_count": RUN_RANGE_QUERY_COUNT,

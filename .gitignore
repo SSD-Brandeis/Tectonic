@@ -51,5 +51,11 @@ rocksdb-v10.4.2-scanlog/
 !example-specs/**/*.spec.json
 !x-bench-specs/**/*.spec.json
 
-# Archived tectonic-cli binaries of experiments (2026-11-02; ~540 MB each, kept on disk only)
+# Archived xbench-cli binaries of experiments (2026-11-02; ~540 MB each, kept on disk only)
 bin/
+
+# 0.1x-scale specs: local only, not published (2026-11-09)
+*_0.1x.spec.json
+example-specs/kvbench-0.1x/
+# Local-only notes
+example-specs/ycsb-ivs/README.md

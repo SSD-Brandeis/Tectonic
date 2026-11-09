@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from pathlib import Path as _Path
+REPO_ROOT = str(_Path(__file__).resolve().parents[1])
 import os
 import sys
 import json
@@ -8,11 +10,11 @@ import argparse
 import collections
 
 # Paths
-TECTONIC_CLI = "/home/cc/Tectonic/target/release/tectonic-cli"
-HARNESS_DIR  = "/home/cc/Tectonic/rocksdb-benchmark-harness"
+XBENCH_CLI = REPO_ROOT + "/target/release/xbench-cli"
+HARNESS_DIR  = REPO_ROOT + "/rocksdb-benchmark-harness"
 YCSB_DIR     = f"{HARNESS_DIR}/vendor/YCSB"
 M2           = "/home/cc/.m2/repository"
-TECTONIC_SPEC = "/home/cc/Tectonic/example-specs/ycsb/b.spec.json"
+XBENCH_SPEC = REPO_ROOT + "/example-specs/ycsb/b.spec.json"
 
 YCSB_CP = ":".join([
     f"{YCSB_DIR}/file/conf",
@@ -24,7 +26,7 @@ YCSB_CP = ":".join([
     f"{YCSB_DIR}/core/target/core-0.18.0-SNAPSHOT.jar",
 ])
 
-DATA_DIR = "/home/cc/Tectonic/data/ycsb_tectonic_correctness"
+DATA_DIR = REPO_ROOT + "/data/ycsb_xbench_correctness"
 os.makedirs(DATA_DIR, exist_ok=True)
 
 def run_cmd(cmd, cwd=None):
@@ -92,15 +94,15 @@ def generate_ycsb(scale, base_scale):
     os.remove(combined) # Clean up to save space
     return counts
 
-def generate_tectonic(scale, base_scale):
-    print(f"\n--- Generating Tectonic Workload B (scale={scale}x, base={base_scale}) ---")
+def generate_xbench(scale, base_scale):
+    print(f"\n--- Generating X-Bench Workload B (scale={scale}x, base={base_scale}) ---")
     
     # Calculate scale factor relative to 1M spec
     scale_factor = (base_scale * scale) / 1_000_000.0
-    out_path = os.path.join(DATA_DIR, f"tectonic_scale_{scale}.txt")
+    out_path = os.path.join(DATA_DIR, f"xbench_scale_{scale}.txt")
     
-    run_cmd([TECTONIC_CLI, "generate",
-             "-w", TECTONIC_SPEC,
+    run_cmd([XBENCH_CLI, "generate",
+             "-w", XBENCH_SPEC,
              "-o", out_path,
              "-s", str(scale_factor)])
              
@@ -116,7 +118,7 @@ def run_experiment_group(scales, base_scale):
         expected_updates = int(base_scale * 0.05 * scale)
         
         ycsb_counts = generate_ycsb(scale, base_scale)
-        tectonic_counts = generate_tectonic(scale, base_scale)
+        xbench_counts = generate_xbench(scale, base_scale)
         
         run_data = {
             "scale": scale,
@@ -126,7 +128,7 @@ def run_experiment_group(scales, base_scale):
                 "U": expected_updates
             },
             "ycsb": ycsb_counts,
-            "tectonic": tectonic_counts
+            "xbench": xbench_counts
         }
         group_runs.append(run_data)
         
@@ -134,11 +136,11 @@ def run_experiment_group(scales, base_scale):
         print(f"Scale {scale}x:")
         print(f"  Expected - Inserts: {expected_inserts}, Queries: {expected_queries}, Updates: {expected_updates}")
         print(f"  YCSB     - Inserts: {ycsb_counts['I']}, Queries: {ycsb_counts['P']}, Updates: {ycsb_counts['U']}")
-        print(f"  Tectonic - Inserts: {tectonic_counts['I']}, Queries: {tectonic_counts['P']}, Updates: {tectonic_counts['U']}")
+        print(f"  X-Bench - Inserts: {xbench_counts['I']}, Queries: {xbench_counts['P']}, Updates: {xbench_counts['U']}")
     return group_runs
 
 def main():
-    parser = argparse.ArgumentParser(description="Run YCSB vs Tectonic Correctness Experiment")
+    parser = argparse.ArgumentParser(description="Run YCSB vs X-Bench Correctness Experiment")
     parser.add_argument("--base-scale", type=int, default=10000, help="Base scale for 1x in number of operations")
     args = parser.parse_args()
     

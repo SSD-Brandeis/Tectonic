@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from pathlib import Path as _Path
+REPO_ROOT = str(_Path(__file__).resolve().parents[1])
 import json
 import os
 import subprocess
@@ -16,11 +18,11 @@ def run_cmd(cmd):
     return res.stdout
 
 def main():
-    ROOT = "/home/cc/Tectonic"
+    ROOT = REPO_ROOT
     DATA_DIR = os.path.join(ROOT, "data/udb_assoc")
     os.makedirs(DATA_DIR, exist_ok=True)
     
-    spec_dir = os.path.join(ROOT, "tectonic-specs")
+    spec_dir = os.path.join(ROOT, "xbench-specs")
     preload_spec = os.path.join(spec_dir, "udb_assoc_preload.spec.json")
     runtime_spec = os.path.join(spec_dir, "udb_assoc_runtime.spec.json")
     
@@ -29,7 +31,7 @@ def main():
         print("Spec files not found. Generating them first...")
         run_cmd([sys.executable, os.path.join(ROOT, "run_scripts/create_udb_assoc_spec.py")])
         
-    cli_path = os.path.join(ROOT, "target/release/tectonic-cli")
+    cli_path = os.path.join(ROOT, "target/release/xbench-cli")
     db_path = "/tmp/rocksdb_udb_assoc"
     
     # Clean up old DB path to ensure empty baseline state
@@ -139,7 +141,7 @@ def main():
             "data_directory": "data/udb_assoc/",
             "plot_directory": "data/udb_assoc/",
             "artifact_directory": "/home/cc/.gemini/antigravity-ide/brain/eaff35b0-472c-45c6-8218-bff10f70fb23/",
-            "command_setup": "./target/release/tectonic-cli execute -i data/udb_assoc/udb_assoc_runtime_trace.txt -d rocksdb -p /tmp/rocksdb_udb_assoc",
+            "command_setup": "./target/release/xbench-cli execute -i data/udb_assoc/udb_assoc_runtime_trace.txt -d rocksdb -p /tmp/rocksdb_udb_assoc",
             "metric_definitions": {
                 "diurnal_ops": "Count of operations (Get/P, Put/I, Seek/SC) in each diurnal phase group",
                 "key_lens": "Distribution of key sizes in bytes",

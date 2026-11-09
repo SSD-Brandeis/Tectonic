@@ -10,6 +10,8 @@ plots/README.md describes each figure and explains its terms (-Xmx, GC, heap, ..
 
 plot_style turns on text.usetex, so a literal percent sign must be written as \\%.
 """
+from pathlib import Path as _Path
+REPO_ROOT = str(_Path(__file__).resolve().parents[1])
 
 import re
 import sys
@@ -20,7 +22,7 @@ import matplotlib.pyplot as plt
 import matplotlib.transforms as mtransforms
 import matplotlib.ticker as mticker
 
-ROOT = Path("/home/cc/Tectonic")
+ROOT = Path(REPO_ROOT)
 EXP_DIR = ROOT / "data" / "revision" / "R2.O2_ycsb-bounded-memory"
 RESULTS_DIR = EXP_DIR / "results"
 ENV_DIR = EXP_DIR / "logs" / "env"

@@ -30,7 +30,7 @@ SOURCE_PLOT = ROOT_DIR / "plot_scripts" / "plot_concurrent_untracked_generation_
 SOURCE_RESULTS = ROOT_DIR / "data" / "concurrent_untracked_experiment" / "results.json"
 SOURCE_PDF = ROOT_DIR / "untracked_unique_compare" / "generation_speedup_comparison.pdf"
 
-TECTONIC_CLI = ROOT_DIR / "target" / "release" / "tectonic-cli"
+XBENCH_CLI = ROOT_DIR / "target" / "release" / "xbench-cli"
 YCSB_DIR = ROOT_DIR / "rocksdb-benchmark-harness" / "vendor" / "YCSB"
 M2 = Path("/home/cc/.m2/repository")
 
@@ -52,10 +52,10 @@ OPERATION_COUNT = 10_000_000
 SCALE = 10
 TMP_OUTPUTS = {
     "ycsb": Path("/tmp/ycsb_out.txt"),
-    "tectonic": Path("/tmp/tectonic_out.txt"),
-    "tectonic_unique": Path("/tmp/tectonic_unique_out.txt"),
+    "xbench": Path("/tmp/xbench_out.txt"),
+    "xbench_unique": Path("/tmp/xbench_unique_out.txt"),
 }
-TOOLS = ("ycsb", "tectonic", "tectonic_unique")
+TOOLS = ("ycsb", "xbench", "xbench_unique")
 CLK_TCK = os.sysconf(os.sysconf_names["SC_CLK_TCK"])
 
 
@@ -87,8 +87,8 @@ def parse_threads(value: str | None) -> list[int]:
 
 
 def ensure_setup() -> None:
-    if not TECTONIC_CLI.exists():
-        raise FileNotFoundError(f"tectonic cli not found: {TECTONIC_CLI}")
+    if not XBENCH_CLI.exists():
+        raise FileNotFoundError(f"xbench cli not found: {XBENCH_CLI}")
     if not YCSB_DIR.exists():
         raise FileNotFoundError(f"YCSB directory not found: {YCSB_DIR}")
     for path in (DATA_DIR, LOG_DIR, PLOT_DIR):
@@ -110,7 +110,7 @@ def cleanup_files() -> None:
     for path in TMP_OUTPUTS.values():
         path.unlink(missing_ok=True)
     for t in range(128):
-        for prefix in (TMP_OUTPUTS["tectonic"], TMP_OUTPUTS["tectonic_unique"]):
+        for prefix in (TMP_OUTPUTS["xbench"], TMP_OUTPUTS["xbench_unique"]):
             Path(f"{prefix}.{t}").unlink(missing_ok=True)
 
 
@@ -397,11 +397,11 @@ def ycsb_run_cmd(threads: int) -> list[str]:
     ]
 
 
-def tectonic_cmd(threads: int, unique: bool) -> list[str]:
+def xbench_cmd(threads: int, unique: bool) -> list[str]:
     spec = ROOT_DIR / "example-specs" / ("ycsb-unique" if unique else "ycsb_untracked") / "c.spec.json"
-    output = TMP_OUTPUTS["tectonic_unique" if unique else "tectonic"]
+    output = TMP_OUTPUTS["xbench_unique" if unique else "xbench"]
     return [
-        str(TECTONIC_CLI),
+        str(XBENCH_CLI),
         "generate",
         "-w",
         str(spec),
@@ -446,7 +446,7 @@ def run_ycsb(threads: int, iteration: int, poll_interval: float, cpu_total: int)
     return combine_phase_results("ycsb", threads, iteration, phases, TMP_OUTPUTS["ycsb"], cpu_total)
 
 
-def run_tectonic(
+def run_xbench(
     tool: str,
     threads: int,
     iteration: int,
@@ -454,12 +454,12 @@ def run_tectonic(
     cpu_total: int,
 ) -> dict[str, Any] | None:
     cleanup_files()
-    unique = tool == "tectonic_unique"
+    unique = tool == "xbench_unique"
     env = os.environ.copy()
-    env["TECTONIC_PARALLEL_GEN"] = "1"
+    env["XBENCH_PARALLEL_GEN"] = "1"
     result = run_monitored(
         tool,
-        tectonic_cmd(threads, unique),
+        xbench_cmd(threads, unique),
         LOG_DIR / f"{EXPERIMENT_NAME}_{tool}_threads_{threads:02d}_iter_{iteration}.log",
         env,
         None,
@@ -544,10 +544,10 @@ def base_results(threads_list: list[int], iterations: int, poll_interval: float,
             "iterations": iterations,
             "poll_interval_s": poll_interval,
             "cpu_count_available": cpu_total,
-            "tectonic_parallel_gen": "1",
+            "xbench_parallel_gen": "1",
             "temporary_outputs": {tool: str(path) for tool, path in TMP_OUTPUTS.items()},
             "ycsb_dir": str(YCSB_DIR),
-            "tectonic_cli": str(TECTONIC_CLI),
+            "xbench_cli": str(XBENCH_CLI),
         },
         "metric_definitions": {
             "duration_s": "wall-clock latency measured around each generator command; YCSB is load plus run phase",
@@ -608,8 +608,8 @@ def main() -> None:
                 if ycsb is not None:
                     data["runs"].append(ycsb)
                     write_results(data, threads_list)
-                for tool in ("tectonic", "tectonic_unique"):
-                    result = run_tectonic(tool, threads, iteration, args.poll_interval, cpu_total)
+                for tool in ("xbench", "xbench_unique"):
+                    result = run_xbench(tool, threads, iteration, args.poll_interval, cpu_total)
                     if result is not None:
                         data["runs"].append(result)
                         write_results(data, threads_list)

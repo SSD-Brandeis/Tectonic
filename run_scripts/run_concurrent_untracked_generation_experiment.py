@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
+from pathlib import Path as _Path
+REPO_ROOT = str(_Path(__file__).resolve().parents[1])
 import os
 import sys
 import time
 import json
 import subprocess
 
-TECTONIC_CLI = "/home/cc/Tectonic/target/release/tectonic-cli"
-YCSB_DIR = "/home/cc/Tectonic/rocksdb-benchmark-harness/vendor/YCSB"
+XBENCH_CLI = REPO_ROOT + "/target/release/xbench-cli"
+YCSB_DIR = REPO_ROOT + "/rocksdb-benchmark-harness/vendor/YCSB"
 M2 = "/home/cc/.m2/repository"
 
 YCSB_CP = (
@@ -20,7 +22,7 @@ YCSB_CP = (
 )
 
 # Output directory for the experiment
-EXP_DIR = "/home/cc/Tectonic/data/concurrent_untracked_experiment"
+EXP_DIR = REPO_ROOT + "/data/concurrent_untracked_experiment"
 os.makedirs(EXP_DIR, exist_ok=True)
 
 # Threads to test
@@ -29,16 +31,16 @@ ITERATIONS = 1  # Run 1 iteration to speed up execution
 
 def cleanup_files():
     # Remove any temp output files to ensure disk space and clean slate
-    temp_files = ["/tmp/ycsb_out.txt", "/tmp/tectonic_out.txt", "/tmp/tectonic_unique_out.txt"]
+    temp_files = ["/tmp/ycsb_out.txt", "/tmp/xbench_out.txt", "/tmp/xbench_unique_out.txt"]
     for f in temp_files:
         if os.path.exists(f):
             try:
                 os.remove(f)
             except OSError:
                 pass
-    # Clean Tectonic thread output files (tectonic_out.txt.0, tectonic_out.txt.1, etc.)
+    # Clean X-Bench thread output files (xbench_out.txt.0, xbench_out.txt.1, etc.)
     for t in range(64):
-        for prefix in ["/tmp/tectonic_out.txt", "/tmp/tectonic_unique_out.txt"]:
+        for prefix in ["/tmp/xbench_out.txt", "/tmp/xbench_unique_out.txt"]:
             f = f"{prefix}.{t}"
             if os.path.exists(f):
                 try:
@@ -63,8 +65,8 @@ def main():
     print(f"Iterations per run: {ITERATIONS}")
 
     ycsb_results = {}
-    tectonic_results = {}
-    tectonic_unique_results = {}
+    xbench_results = {}
+    xbench_unique_results = {}
 
     for threads in THREADS_LIST:
         print(f"\n--- Benchmarking Thread Count: {threads} ---")
@@ -112,65 +114,65 @@ def main():
         ycsb_results[threads] = min(ycsb_times) if ycsb_times else 0.0
         print(f"  Best YCSB End-to-End Latency: {ycsb_results[threads]:.2f} s")
 
-        # 2. Tectonic Latency
-        tectonic_times = []
+        # 2. X-Bench Latency
+        xbench_times = []
         for it in range(ITERATIONS):
             cleanup_files()
-            print(f"  Tectonic Iteration {it + 1}/{ITERATIONS}...")
+            print(f"  X-Bench Iteration {it + 1}/{ITERATIONS}...")
             
-            # Tectonic generate command with TECTONIC_PARALLEL_GEN enabled
+            # X-Bench generate command with XBENCH_PARALLEL_GEN enabled
             env = os.environ.copy()
-            env["TECTONIC_PARALLEL_GEN"] = "1"
+            env["XBENCH_PARALLEL_GEN"] = "1"
             
             cmd = [
-                TECTONIC_CLI,
+                XBENCH_CLI,
                 "generate",
-                "-w", "/home/cc/Tectonic/example-specs/ycsb_untracked/c.spec.json",
-                "-o", "/tmp/tectonic_out.txt",
+                "-w", REPO_ROOT + "/example-specs/ycsb_untracked/c.spec.json",
+                "-o", "/tmp/xbench_out.txt",
                 "-s", "10",
                 "-t", str(threads)
             ]
             
             dur = run_cmd(cmd, env=env)
             if dur is not None:
-                print(f"    Tectonic Generation: {dur:.2f}s")
-                tectonic_times.append(dur)
+                print(f"    X-Bench Generation: {dur:.2f}s")
+                xbench_times.append(dur)
                 
-        tectonic_results[threads] = min(tectonic_times) if tectonic_times else 0.0
-        print(f"  Best Tectonic End-to-End Latency: {tectonic_results[threads]:.2f} s")
+        xbench_results[threads] = min(xbench_times) if xbench_times else 0.0
+        print(f"  Best X-Bench End-to-End Latency: {xbench_results[threads]:.2f} s")
 
-        # 3. Tectonic Unique Latency
-        tectonic_unique_times = []
+        # 3. X-Bench Unique Latency
+        xbench_unique_times = []
         for it in range(ITERATIONS):
             cleanup_files()
-            print(f"  Tectonic Unique Iteration {it + 1}/{ITERATIONS}...")
+            print(f"  X-Bench Unique Iteration {it + 1}/{ITERATIONS}...")
             
             env = os.environ.copy()
-            env["TECTONIC_PARALLEL_GEN"] = "1"
+            env["XBENCH_PARALLEL_GEN"] = "1"
             
             cmd = [
-                TECTONIC_CLI,
+                XBENCH_CLI,
                 "generate",
-                "-w", "/home/cc/Tectonic/example-specs/ycsb-unique/c.spec.json",
-                "-o", "/tmp/tectonic_unique_out.txt",
+                "-w", REPO_ROOT + "/example-specs/ycsb-unique/c.spec.json",
+                "-o", "/tmp/xbench_unique_out.txt",
                 "-s", "10",
                 "-t", str(threads)
             ]
             
             dur = run_cmd(cmd, env=env)
             if dur is not None:
-                print(f"    Tectonic Unique Generation: {dur:.2f}s")
-                tectonic_unique_times.append(dur)
+                print(f"    X-Bench Unique Generation: {dur:.2f}s")
+                xbench_unique_times.append(dur)
                 
-        tectonic_unique_results[threads] = min(tectonic_unique_times) if tectonic_unique_times else 0.0
-        print(f"  Best Tectonic Unique End-to-End Latency: {tectonic_unique_results[threads]:.2f} s")
+        xbench_unique_results[threads] = min(xbench_unique_times) if xbench_unique_times else 0.0
+        print(f"  Best X-Bench Unique End-to-End Latency: {xbench_unique_results[threads]:.2f} s")
 
     # Save results to JSON
     data = {
         "threads": THREADS_LIST,
         "ycsb": [ycsb_results[t] for t in THREADS_LIST],
-        "tectonic": [tectonic_results[t] for t in THREADS_LIST],
-        "tectonic_unique": [tectonic_unique_results[t] for t in THREADS_LIST]
+        "xbench": [xbench_results[t] for t in THREADS_LIST],
+        "xbench_unique": [xbench_unique_results[t] for t in THREADS_LIST]
     }
     
     with open(f"{EXP_DIR}/results.json", "w") as f:
@@ -178,7 +180,7 @@ def main():
     print(f"\nResults saved to {EXP_DIR}/results.json")
 
     # 3. Plotting (invoked via the separate plotting script)
-    plot_script = "/home/cc/Tectonic/plot_scripts/plot_concurrent_untracked_generation_experiment.py"
+    plot_script = REPO_ROOT + "/plot_scripts/plot_concurrent_untracked_generation_experiment.py"
     if os.path.exists(plot_script):
         print("\nInvoking separate plotting script...")
         subprocess.run([sys.executable, plot_script])
@@ -186,14 +188,14 @@ def main():
         print(f"\nPlotting script not found at {plot_script}")
     
     # Print summary speedup
-    print("\nSpeedup Summary (YCSB / Tectonic):")
+    print("\nSpeedup Summary (YCSB / X-Bench):")
     for t in THREADS_LIST:
         y_val = ycsb_results[t]
-        t_val = tectonic_results[t]
-        tu_val = tectonic_unique_results[t]
+        t_val = xbench_results[t]
+        tu_val = xbench_unique_results[t]
         su = y_val / t_val if t_val > 0 else 0.0
         su_u = y_val / tu_val if tu_val > 0 else 0.0
-        print(f"  {t} Threads: YCSB = {y_val:.2f}s, Tectonic = {t_val:.2f}s (Speedup = {su:.2f}x), Tectonic Unique = {tu_val:.2f}s (Speedup = {su_u:.2f}x)")
+        print(f"  {t} Threads: YCSB = {y_val:.2f}s, X-Bench = {t_val:.2f}s (Speedup = {su:.2f}x), X-Bench Unique = {tu_val:.2f}s (Speedup = {su_u:.2f}x)")
 
 if __name__ == "__main__":
     main()

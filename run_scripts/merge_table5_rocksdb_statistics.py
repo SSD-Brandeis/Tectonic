@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build the final Table 5 revision results: Redis, Cassandra and ScyllaDB from the
 original multi-run experiment, RocksDB from the rerun with RocksDB statistics enabled
-(tectonic-cli -c statistics=1), which reports exact byte counters; and two cells, Redis 2^18 and
+(xbench-cli -c statistics=1), which reports exact byte counters; and two cells, Redis 2^18 and
 Cassandra 2^19 (both workloads, all metrics), from their rerun of 2026-11-03 on fixedkeyset-2
 (run_scripts/run_table5_two_cells.py: the same harness, binary fc63df5f, trace files, images and client
 configuration). Their bytes transferred (iostat) differed by 7.06% and 9.35% between YCSB and X-Bench in
@@ -11,12 +11,14 @@ Writes <out>/results/results_raw.json; rebuild the summary, table and documentat
   python3 run_scripts/run_table5_revision_multirun.py --report-only \
       --out-dir <out> --rocksdb-config statistics=1
 """
+from pathlib import Path as _Path
+REPO_ROOT = str(_Path(__file__).resolve().parents[1])
 import os
 import sys
 import json
 import argparse
 
-ROOT_DIR = "/home/cc/Tectonic"
+ROOT_DIR = REPO_ROOT
 ORIGINAL = f"{ROOT_DIR}/data/table-5-revision-multirun"
 ROCKSDB_RERUN = f"{ROOT_DIR}/data/table-5-revision-multirun-rocksdb-statistics"
 TWO_CELL_RERUN = f"{ROOT_DIR}/data/table-5-revision-two-cell-rerun-2026-11-03"
@@ -40,7 +42,7 @@ def main():
     rocksdb = rerun["results"].get("rocksdb", {})
     problems = []
     for scale in original["results"]["rocksdb"]:
-        for workload in ("ycsb", "tectonic"):
+        for workload in ("ycsb", "xbench"):
             trials = rocksdb.get(scale, {}).get(workload, [])
             if len(trials) != TRIALS:
                 problems.append(f"rocksdb {scale} {workload}: {len(trials)} trials")
@@ -55,7 +57,7 @@ def main():
         if two_cell["config"][key] != original["config"][key]:
             problems.append(f"two-cell rerun: {key} differs from the original run")
     for db, scale in TWO_CELLS:
-        for workload in ("ycsb", "tectonic"):
+        for workload in ("ycsb", "xbench"):
             n = len(two_cell["results"].get(db, {}).get(scale, {}).get(workload, []))
             if n != TRIALS:
                 problems.append(f"two-cell rerun {db} {scale} {workload}: {n} trials")

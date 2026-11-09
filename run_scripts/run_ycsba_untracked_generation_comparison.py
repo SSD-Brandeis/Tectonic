@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compare db_bench-style and Tectonic YCSB-A untracked workload generation."""
+"""Compare db_bench-style and X-Bench YCSB-A untracked workload generation."""
 
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ TMP_DIR = Path("/tmp/db_bench_ycsba_untracked_generation")
 GENERATOR_SCRIPT = RUN_SCRIPTS_DIR / "generate_db_bench_ycsba_untracked_workload_file.py"
 PLOT_SCRIPT = PLOT_SCRIPTS_DIR / "plot_ycsba_untracked_generation_comparison.py"
 YCSBA_UNTRACKED_SPEC = ROOT_DIR / "example-specs" / "ycsb_untracked" / "a.spec.json"
-DEFAULT_TECTONIC_CLI = ROOT_DIR / "target" / "release" / "tectonic-cli"
+DEFAULT_XBENCH_CLI = ROOT_DIR / "target" / "release" / "xbench-cli"
 DEFAULT_SCALES = "0.005,0.01,0.02"
 DEFAULT_THREADS = 1
 BASE_RECORD_COUNT = 1_000_000
@@ -252,7 +252,7 @@ def run_scale(
     threads: int,
     cpu_id: int | None,
     poll_interval: float,
-    tectonic_cli: Path,
+    xbench_cli: Path,
 ) -> dict[str, Any]:
     record_count = scaled_count(BASE_RECORD_COUNT, scale)
     operation_count = scaled_count(BASE_OPERATION_COUNT, scale)
@@ -261,10 +261,10 @@ def run_scale(
     total_ops = record_count + operation_count
     tag = f"scale_{scale:g}".replace(".", "p")
     db_output = TMP_DIR / f"db_bench_ycsba_untracked_{tag}.txt"
-    tectonic_output = TMP_DIR / f"tectonic_ycsba_untracked_{tag}.txt"
+    xbench_output = TMP_DIR / f"xbench_ycsba_untracked_{tag}.txt"
     metadata_output = OUT_DIR / f"db_bench_ycsba_untracked_{tag}.metadata.json"
 
-    for path in (db_output, tectonic_output):
+    for path in (db_output, xbench_output):
         if path.exists():
             path.unlink()
 
@@ -286,21 +286,21 @@ def run_scale(
         poll_interval,
         ROOT_DIR,
     )
-    tectonic_result = run_monitored(
-        f"Tectonic YCSB-A untracked generation scale={scale:g}",
+    xbench_result = run_monitored(
+        f"X-Bench YCSB-A untracked generation scale={scale:g}",
         [
-            str(tectonic_cli),
+            str(xbench_cli),
             "generate",
             "-w",
             str(YCSBA_UNTRACKED_SPEC),
             "-o",
-            str(tectonic_output),
+            str(xbench_output),
             "-s",
             str(scale),
             "-t",
             str(threads),
         ],
-        OUT_DIR / f"tectonic_ycsba_untracked_generate_{tag}.log",
+        OUT_DIR / f"xbench_ycsba_untracked_generate_{tag}.log",
         cpu_id,
         poll_interval,
         ROOT_DIR,
@@ -317,7 +317,7 @@ def run_scale(
         "threads": threads,
         "cpu_affinity": [cpu_id] if cpu_id is not None else None,
         "db_bench_style": add_file_metrics(db_result, db_output, total_ops),
-        "tectonic": add_file_metrics(tectonic_result, tectonic_output, total_ops),
+        "xbench": add_file_metrics(xbench_result, xbench_output, total_ops),
     }
 
 
@@ -334,12 +334,12 @@ def write_results(payload: dict[str, Any], results_path: Path) -> Path:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Run db_bench-style vs Tectonic YCSB-A untracked generation comparison.",
+        description="Run db_bench-style vs X-Bench YCSB-A untracked generation comparison.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument("--scales", default=DEFAULT_SCALES, help="comma-separated scale factors")
-    parser.add_argument("--threads", type=int, default=DEFAULT_THREADS, help="Tectonic generate -t value")
-    parser.add_argument("--tectonic-cli", default=str(DEFAULT_TECTONIC_CLI))
+    parser.add_argument("--threads", type=int, default=DEFAULT_THREADS, help="X-Bench generate -t value")
+    parser.add_argument("--xbench-cli", default=str(DEFAULT_XBENCH_CLI))
     parser.add_argument("--cpu", type=int, help="logical CPU id for single-core pinning")
     parser.add_argument("--no-affinity", action="store_true", help="do not pin generator processes to one CPU")
     parser.add_argument("--poll-interval", type=float, default=0.05)
@@ -353,19 +353,19 @@ def main() -> None:
         fail("--poll-interval must be positive")
 
     scales = parse_scales(args.scales)
-    tectonic_cli = Path(args.tectonic_cli).expanduser().resolve()
+    xbench_cli = Path(args.xbench_cli).expanduser().resolve()
     cpu_id = None if args.no_affinity else (args.cpu if args.cpu is not None else available_cpu())
     if cpu_id is not None and cpu_id not in os.sched_getaffinity(0):
         fail(f"requested CPU {cpu_id} is not in current affinity mask: {sorted(os.sched_getaffinity(0))}")
 
     ensure_file(GENERATOR_SCRIPT, "db_bench-style YCSB-A untracked generator")
-    ensure_file(YCSBA_UNTRACKED_SPEC, "Tectonic YCSB-A untracked spec")
-    ensure_file(tectonic_cli, "tectonic-cli")
+    ensure_file(YCSBA_UNTRACKED_SPEC, "X-Bench YCSB-A untracked spec")
+    ensure_file(xbench_cli, "xbench-cli")
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     TMP_DIR.mkdir(parents=True, exist_ok=True)
 
     print(SEP)
-    print("  experiment : db_bench-style vs Tectonic YCSB-A untracked workload generation")
+    print("  experiment : db_bench-style vs X-Bench YCSB-A untracked workload generation")
     print(f"  spec       : {YCSBA_UNTRACKED_SPEC}")
     print(f"  scales     : {scales}")
     print(f"  threads    : {args.threads}")
@@ -373,27 +373,27 @@ def main() -> None:
     print(f"  output dir : {OUT_DIR}")
     print(SEP, flush=True)
 
-    runs = [run_scale(scale, args.threads, cpu_id, args.poll_interval, tectonic_cli) for scale in scales]
+    runs = [run_scale(scale, args.threads, cpu_id, args.poll_interval, xbench_cli) for scale in scales]
     payload = {
         "experiment": "db_bench_exp_test",
-        "mode": "db_bench_style_vs_tectonic_ycsba_untracked_generation",
+        "mode": "db_bench_style_vs_xbench_ycsba_untracked_generation",
         "root_dir": str(ROOT_DIR),
         "output_dir": str(OUT_DIR),
         "tmp_dir": str(TMP_DIR),
         "workload": "YCSB-A untracked",
-        "tectonic_spec": str(YCSBA_UNTRACKED_SPEC),
+        "xbench_spec": str(YCSBA_UNTRACKED_SPEC),
         "generator_script": str(GENERATOR_SCRIPT),
-        "tectonic_cli": str(tectonic_cli),
+        "xbench_cli": str(xbench_cli),
         "scales": scales,
         "threads": args.threads,
         "cpu_affinity": [cpu_id] if cpu_id is not None else None,
         "single_thread_note": (
-            "The runner uses Tectonic -t 1 by default and pins both processes to one logical CPU. "
-            "Tectonic untracked point-key pregeneration can still create worker OS threads internally; "
+            "The runner uses X-Bench -t 1 by default and pins both processes to one logical CPU. "
+            "X-Bench untracked point-key pregeneration can still create worker OS threads internally; "
             "peak_threads records that behavior."
         ),
         "comparison_caveat": (
-            "Native RocksDB db_bench does not output a Tectonic/YCSB text workload file. "
+            "Native RocksDB db_bench does not output a X-Bench/YCSB text workload file. "
             "The db_bench_style side is a compatibility generator that emits the same YCSB-A untracked "
             "operation shape for file-level generation comparison."
         ),

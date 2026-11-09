@@ -1,22 +1,24 @@
 #!/usr/bin/env python3
+from pathlib import Path as _Path
+REPO_ROOT = str(_Path(__file__).resolve().parents[1])
 import os
 import json
 import re
 import time
 import subprocess
 
-SPECS_DIR = "/home/cc/Tectonic/example-specs/tectonic"
-STATS_DIR = "/home/cc/Tectonic/data/concurrent_experiment"
+SPECS_DIR = REPO_ROOT + "/example-specs/xbench"
+STATS_DIR = REPO_ROOT + "/data/concurrent_experiment"
 os.makedirs(STATS_DIR, exist_ok=True)
 
 workload_files = [
-    "Tec-1_multi_phase_workload.spec.json",
-    "Tec-2_interleave_wl.spec.json",
-    "Tec-3_varied_sortedness.spec.json",
-    "Tec-4_slowly_shifting.spec.json",
-    "Tec-5_abruptly_shifting.spec.json",
-    "Tec-6_varied_kv_length.spec.json",
-    "Tec-7_hot_key.spec.json"
+    "X-1_multi_phase_workload.spec.json",
+    "X-2_interleave_wl.spec.json",
+    "X-3_varied_sortedness.spec.json",
+    "X-4_slowly_shifting.spec.json",
+    "X-5_abruptly_shifting.spec.json",
+    "X-6_varied_kv_length.spec.json",
+    "X-7_hot_key.spec.json"
 ]
 
 def get_op_count(op):
@@ -128,7 +130,7 @@ def run_and_parse(cmd, env):
     
     timeline = {}
     pattern = re.compile(
-        r'\[Tectonic (Sequential|Parallel) Gen\] Section \d+ \((.*?)\) started at (.*?)s, finished at (.*?)s \(duration: (.*?)s\)'
+        r'\[X-Bench (Sequential|Parallel) Gen\] Section \d+ \((.*?)\) started at (.*?)s, finished at (.*?)s \(duration: (.*?)s\)'
     )
     
     for line in process.stdout:
@@ -144,7 +146,7 @@ def run_and_parse(cmd, env):
             
     process.wait()
     if process.returncode != 0:
-        raise RuntimeError(f"Tectonic failed with exit code {process.returncode}")
+        raise RuntimeError(f"X-Bench failed with exit code {process.returncode}")
         
     return timeline
 
@@ -158,17 +160,17 @@ def main():
     # Warm-up run
     print("\nPerforming warm-up run...")
     env_warmup = os.environ.copy()
-    if "TECTONIC_PARALLEL_GEN" in env_warmup:
-        del env_warmup["TECTONIC_PARALLEL_GEN"]
+    if "XBENCH_PARALLEL_GEN" in env_warmup:
+        del env_warmup["XBENCH_PARALLEL_GEN"]
     subprocess.run([
-        "/home/cc/Tectonic/target/release/tectonic-cli",
+        REPO_ROOT + "/target/release/xbench-cli",
         "generate",
-        "-w", os.path.join(SPECS_DIR, "Tec-4_slowly_shifting.spec.json"),
-        "-o", "/tmp/tectonic_warmup.txt"
+        "-w", os.path.join(SPECS_DIR, "X-4_slowly_shifting.spec.json"),
+        "-o", "/tmp/xbench_warmup.txt"
     ], capture_output=True, env=env_warmup)
     
-    if os.path.exists("/tmp/tectonic_warmup.txt"):
-        os.remove("/tmp/tectonic_warmup.txt")
+    if os.path.exists("/tmp/xbench_warmup.txt"):
+        os.remove("/tmp/xbench_warmup.txt")
 
     all_seq_runs = []
     all_par_runs = []
@@ -179,13 +181,13 @@ def main():
         
         # 1. Sequential Generation
         print("  Running Sequential Generation Baseline...")
-        seq_out = f"/tmp/tectonic_seq_out_{i}.txt"
+        seq_out = f"/tmp/xbench_seq_out_{i}.txt"
         env_seq = os.environ.copy()
-        if "TECTONIC_PARALLEL_GEN" in env_seq:
-            del env_seq["TECTONIC_PARALLEL_GEN"]
+        if "XBENCH_PARALLEL_GEN" in env_seq:
+            del env_seq["XBENCH_PARALLEL_GEN"]
             
         cmd_seq = [
-            "/home/cc/Tectonic/target/release/tectonic-cli",
+            REPO_ROOT + "/target/release/xbench-cli",
             "generate",
             "-w", merged_spec_path,
             "-o", seq_out
@@ -201,13 +203,13 @@ def main():
             os.remove(seq_out)
             
         # 2. Parallel Generation
-        print("  Running Parallel Generation (Internal Tectonic Thread Spawning)...")
-        par_out = f"/tmp/tectonic_par_out_{i}.txt"
+        print("  Running Parallel Generation (Internal X-Bench Thread Spawning)...")
+        par_out = f"/tmp/xbench_par_out_{i}.txt"
         env_par = os.environ.copy()
-        env_par["TECTONIC_PARALLEL_GEN"] = "1"
+        env_par["XBENCH_PARALLEL_GEN"] = "1"
         
         cmd_par = [
-            "/home/cc/Tectonic/target/release/tectonic-cli",
+            REPO_ROOT + "/target/release/xbench-cli",
             "generate",
             "-w", merged_spec_path,
             "-o", par_out

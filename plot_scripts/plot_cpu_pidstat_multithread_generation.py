@@ -24,13 +24,13 @@ RESULTS_PATH = OUT_DIR / "pidstat_multithread_generation_results.json"
 FONT_PATH = ROOT_DIR / "LinLibertine_Mah.ttf"
 FONT_SIZE = 26
 
-MULTI_TOOL_ORDER = ["YCSB", "Tectonic"]
-SINGLE_TOOL_ORDER = ["YCSB", "Tectonic", "KVBench"]
-TOOL_KEYS = {"YCSB": "ycsb", "Tectonic": "tectonic", "KVBench": "kvbench"}
-TOOL_LABELS = {"YCSB": "YCSB", "Tectonic": "X-Bench (untracked)", "KVBench": "KVBench"}
+MULTI_TOOL_ORDER = ["YCSB", "X-Bench"]
+SINGLE_TOOL_ORDER = ["YCSB", "X-Bench", "KVBench"]
+TOOL_KEYS = {"YCSB": "ycsb", "X-Bench": "xbench", "KVBench": "kvbench"}
+TOOL_LABELS = {"YCSB": "YCSB", "X-Bench": "X-Bench (untracked)", "KVBench": "KVBench"}
 STYLE = {
     "YCSB": {"color": "grey", "linestyle": "-", "marker": "^", "hatch": "///"},
-    "Tectonic": {"color": "tab:red", "linestyle": "-.", "marker": "s", "hatch": "\\\\"},
+    "X-Bench": {"color": "tab:red", "linestyle": "-.", "marker": "s", "hatch": "\\\\"},
     "KVBench": {"color": "tab:blue", "linestyle": "--", "marker": "v", "hatch": "xx"},
 }
 

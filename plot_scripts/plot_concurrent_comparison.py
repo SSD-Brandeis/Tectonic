@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from pathlib import Path as _Path
+REPO_ROOT = str(_Path(__file__).resolve().parents[1])
 import os
 import json
 import matplotlib.pyplot as plt
@@ -77,8 +79,8 @@ def save_legend(fig_or_ax, path_without_ext):
     fig_leg.savefig(f"{path_without_ext}_legend.pdf", bbox_inches='tight')
     plt.close(fig_leg)
 
-STATS_DIR = "/home/cc/Tectonic/data/concurrent_experiment"
-PLOTS_DIR = "/home/cc/Tectonic/concurrent_experiment_plots"
+STATS_DIR = REPO_ROOT + "/data/concurrent_experiment"
+PLOTS_DIR = REPO_ROOT + "/concurrent_experiment_plots"
 os.makedirs(PLOTS_DIR, exist_ok=True)
 
 def load_results():
@@ -112,9 +114,9 @@ def main():
     
     categories = [format_label("sequential"), format_label("parallel")]
     
-    # Apply seq/par styles for Tectonic
-    seq_style = get_seq_par_style("Tectonic", "sequential")
-    par_style = get_seq_par_style("Tectonic", "parallel")
+    # Apply seq/par styles for X-Bench
+    seq_style = get_seq_par_style("X-Bench", "sequential")
+    par_style = get_seq_par_style("X-Bench", "parallel")
     
     bar_seq = ax1.bar(categories[0], seq_total, width=0.5,
                      facecolor=seq_style['facecolor'],
@@ -156,7 +158,7 @@ def main():
     save_fig(fig1, os.path.join(PLOTS_DIR, "fig1"))
     
     # ------------------ FIGURE 2: Gantt Chart/Timeline (Split) ------------------
-    workloads = sorted(list(seq_timeline.keys())) # Tec-1 to Tec-7
+    workloads = sorted(list(seq_timeline.keys())) # X-1 to X-7
     y_pos = np.arange(len(workloads))
     
     # Custom harmonious color scheme for the workloads

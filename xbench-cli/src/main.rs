@@ -8,7 +8,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
 };
-use tectonic::{
+use xbench::{
     KeySetChoice, benchmark_workload, generate_workload, generate_workload_spec_schema,
     scale_and_benchmark_workload, scale_and_generate_workload,
 };
@@ -52,7 +52,7 @@ enum Command {
     Schema,
     /// Execute a generated workload on a specific database
     Execute {
-        /// Tectonic generated workload file
+        /// X-Bench generated workload file
         #[arg(short = 'i', long = "input-workload")]
         generated_workload: String,
         /// Name of the database on which to execute operations
@@ -212,7 +212,7 @@ fn main() -> Result<()> {
             threads,
             keyset,
         } => {
-            tectonic::set_keyset_choice(keyset)?;
+            xbench::set_keyset_choice(keyset)?;
             let workload_path = workload_path.into_path()?;
             let base_scale = scale.unwrap_or(1.0);
             let thread_scale = base_scale / (threads as f64);
@@ -362,7 +362,7 @@ fn invoke_generate(
 ) -> Result<()> {
     use rayon::iter::IntoParallelIterator;
     use rayon::iter::ParallelIterator;
-    use tectonic::spec::WorkloadSpec;
+    use xbench::spec::WorkloadSpec;
 
     let workload_path = PathBuf::from(workload_path);
     if !workload_path.exists() {
@@ -398,13 +398,13 @@ fn invoke_generate(
                 info!("Generating workload for: {}", path.display());
                 let contents = fs::read_to_string(path)?;
 
-                let env_ok = std::env::var("TECTONIC_PARALLEL_GEN").is_ok();
+                let env_ok = std::env::var("XBENCH_PARALLEL_GEN").is_ok();
                 let run_parallel = threads > 1 && env_ok;
 
                 if threads > 1 && !env_ok {
                     eprintln!("=================================================================================");
                     eprintln!("WARNING: MULTI-THREADED WORKLOAD GENERATION FALLING BACK TO SEQUENTIAL EXECUTION!");
-                    eprintln!("  Reason: The environment variable TECTONIC_PARALLEL_GEN is not set.");
+                    eprintln!("  Reason: The environment variable XBENCH_PARALLEL_GEN is not set.");
                     eprintln!("=================================================================================");
                 }
 
@@ -440,13 +440,13 @@ fn invoke_generate(
 
         let contents = fs::read_to_string(&workload_path)?;
 
-        let env_ok = std::env::var("TECTONIC_PARALLEL_GEN").is_ok();
+        let env_ok = std::env::var("XBENCH_PARALLEL_GEN").is_ok();
         let run_parallel = threads > 1 && env_ok;
 
         if threads > 1 && !env_ok {
             eprintln!("=================================================================================");
             eprintln!("WARNING: MULTI-THREADED WORKLOAD GENERATION FALLING BACK TO SEQUENTIAL EXECUTION!");
-            eprintln!("  Reason: The environment variable TECTONIC_PARALLEL_GEN is not set.");
+            eprintln!("  Reason: The environment variable XBENCH_PARALLEL_GEN is not set.");
             eprintln!("=================================================================================");
         }
 

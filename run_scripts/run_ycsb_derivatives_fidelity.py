@@ -17,7 +17,7 @@ Stages (checkpointed, run with --stage <name>, or all in this order):
   analyze       trace properties: op mix per phase window, key popularity, reuse distance,
                 value sizes, timestamp positions, time-window widths and starts
   trace-spread  the same distances for further independent draws of both generators
-  execute       TRIALS trials per trace with `tectonic-cli execute` on RocksDB (fresh database,
+  execute       TRIALS trials per trace with `xbench-cli execute` on RocksDB (fresh database,
                 dropped page cache): throughput, per-phase latency percentiles, bytes read and
                 written, end-of-run database state
   report        report.md from all of the above
@@ -31,6 +31,8 @@ direct-io-wal-off/: with it, iostat adds up to RocksDB's counters (R1.O7-R1.O9_d
 
 Output: data/revision/R1.O7_ycsb-derivatives/ (see its README.md).
 """
+from pathlib import Path as _Path
+REPO_ROOT = str(_Path(__file__).resolve().parents[1])
 import os
 import re
 import sys
@@ -45,8 +47,8 @@ import statistics
 import subprocess
 import threading
 
-ROOT_DIR = "/home/cc/Tectonic"
-TECTONIC_CLI = os.environ.get("TECTONIC_CLI", f"{ROOT_DIR}/target/release/tectonic-cli")  # override: the WAL-off rerun
+ROOT_DIR = REPO_ROOT
+XBENCH_CLI = os.environ.get("XBENCH_CLI", f"{ROOT_DIR}/target/release/xbench-cli")  # override: the WAL-off rerun
 VALUE_SIZES_BIN = f"{ROOT_DIR}/target/release/examples/rocksdb_value_sizes"
 
 DERIV_DIR = f"{ROOT_DIR}/ycsb-derivatives"
@@ -457,7 +459,7 @@ def generate_xbench(spec_path, trace_path):
     # snapshot of the spec the trace was generated from, next to the trace
     shutil.copy2(spec_path, os.path.join(os.path.dirname(trace_path), "xbench.spec.json"))
     cost = GenCost()
-    cost.add(*timed_run([TECTONIC_CLI, "generate", "-w", spec_path, "-o", trace_path]))
+    cost.add(*timed_run([XBENCH_CLI, "generate", "-w", spec_path, "-o", trace_path]))
     return cost
 
 
@@ -1023,7 +1025,7 @@ def execute_trial(name, side, trace, trial, merge_mode, state_dir=None):
     scan_log = f"{out_dir}/range_query_keys.txt"
     shutil.copyfile(trace, SHM_TRACE)
     drop_caches()
-    cmd = [TECTONIC_CLI, "execute", "-i", SHM_TRACE, "-d", "rocksdb", "-p", ROCKSDB_DIR, "-t", "1",
+    cmd = [XBENCH_CLI, "execute", "-i", SHM_TRACE, "-d", "rocksdb", "-p", ROCKSDB_DIR, "-t", "1",
            "--merge-mode", merge_mode, "-c", f"scan_log={scan_log};statistics=1{EXECUTOR_CONFIG}"]
     log(f"  $ {' '.join(cmd)}   (trace: {trace})")
     iostat = Iostat(IOSTAT_DEVICE)
@@ -1255,7 +1257,7 @@ def write_report(summary, analysis):
          f"Generated {time.strftime('%Y-%m-%d %H:%M:%S')} by `run_scripts/run_ycsb_derivatives_fidelity.py`.", "",
          "For every workload, the trace of the derivative's own Java generator (*YCSB derivative*) is compared with "
          "X-Bench's trace and with a second, independent run of the derivative's generator (*YCSB rerun*), which "
-         "shows how much the derivative differs from itself. Execution: `tectonic-cli execute` on RocksDB, "
+         "shows how much the derivative differs from itself. Execution: `xbench-cli execute` on RocksDB, "
          "1 client thread, `--merge-mode append`, fresh database and dropped page cache per trial, "
          f"{TRIALS} trials per trace; mean ± stdev.", ""]
 

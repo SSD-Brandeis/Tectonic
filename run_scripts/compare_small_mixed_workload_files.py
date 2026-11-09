@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate and compare small mixed db_bench-compatible and Tectonic workloads."""
+"""Generate and compare small mixed db_bench-compatible and X-Bench workloads."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from generate_db_bench_workload_file import DEFAULT_KEY_SIZE, DEFAULT_VALUE_SIZE
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 OUT_DIR = ROOT_DIR / "data" / "db_bench_exp_test" / "small_mixed"
-DEFAULT_TECTONIC_CLI = ROOT_DIR / "target" / "release" / "tectonic-cli"
+DEFAULT_XBENCH_CLI = ROOT_DIR / "target" / "release" / "xbench-cli"
 DEFAULT_LOAD_INSERTS = 100
 DEFAULT_UPDATES = 50
 DEFAULT_POINT_QUERIES = 50
@@ -29,7 +29,7 @@ def fail(message: str) -> None:
     sys.exit(1)
 
 
-def write_tectonic_spec(path: Path, args: argparse.Namespace) -> None:
+def write_xbench_spec(path: Path, args: argparse.Namespace) -> None:
     spec = {
         "$schema": "../../../workload_schema.json",
         "sections": [
@@ -121,16 +121,16 @@ def generate_db_bench_mixed(path: Path, args: argparse.Namespace) -> dict:
         "total_operations": sum(writer.operation_counts.values()),
         "note": (
             "This is a compatible text generator for the db_bench workload family. "
-            "Native db_bench does not output Tectonic text workloads."
+            "Native db_bench does not output X-Bench text workloads."
         ),
     }
 
 
-def run_tectonic_generate(tectonic_cli: Path, spec_path: Path, output_path: Path) -> None:
-    if not tectonic_cli.exists():
-        fail(f"tectonic-cli not found: {tectonic_cli}")
+def run_xbench_generate(xbench_cli: Path, spec_path: Path, output_path: Path) -> None:
+    if not xbench_cli.exists():
+        fail(f"xbench-cli not found: {xbench_cli}")
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    cmd = [str(tectonic_cli), "generate", "-w", str(spec_path), "-o", str(output_path)]
+    cmd = [str(xbench_cli), "generate", "-w", str(spec_path), "-o", str(output_path)]
     print(f"  $ {' '.join(cmd)}", flush=True)
     subprocess.run(cmd, cwd=ROOT_DIR, check=True)
 
@@ -191,20 +191,20 @@ def summarize_workload(path: Path) -> dict:
     }
 
 
-def compare_summaries(db_summary: dict, tectonic_summary: dict) -> dict:
-    all_ops = sorted(set(db_summary["operation_counts"]) | set(tectonic_summary["operation_counts"]))
+def compare_summaries(db_summary: dict, xbench_summary: dict) -> dict:
+    all_ops = sorted(set(db_summary["operation_counts"]) | set(xbench_summary["operation_counts"]))
     count_delta = {
-        op: db_summary["operation_counts"].get(op, 0) - tectonic_summary["operation_counts"].get(op, 0)
+        op: db_summary["operation_counts"].get(op, 0) - xbench_summary["operation_counts"].get(op, 0)
         for op in all_ops
     }
     return {
-        "operation_count_delta_db_bench_minus_tectonic": count_delta,
+        "operation_count_delta_db_bench_minus_xbench": count_delta,
         "operation_counts_match": all(delta == 0 for delta in count_delta.values()),
-        "key_lengths_match": db_summary["key_lengths"] == tectonic_summary["key_lengths"],
-        "value_lengths_match": db_summary["value_lengths"] == tectonic_summary["value_lengths"],
-        "scan_lengths_match": db_summary["scan_lengths"] == tectonic_summary["scan_lengths"],
+        "key_lengths_match": db_summary["key_lengths"] == xbench_summary["key_lengths"],
+        "value_lengths_match": db_summary["value_lengths"] == xbench_summary["value_lengths"],
+        "scan_lengths_match": db_summary["scan_lengths"] == xbench_summary["scan_lengths"],
         "operation_sequence_prefix_match": (
-            db_summary["operation_sequence_prefix"] == tectonic_summary["operation_sequence_prefix"]
+            db_summary["operation_sequence_prefix"] == xbench_summary["operation_sequence_prefix"]
         ),
     }
 
@@ -215,13 +215,13 @@ def write_report(path: Path, payload: dict) -> None:
     lines.append("=" * 44)
     lines.append("")
     lines.append(f"db_bench-compatible file: {payload['db_bench']['path']}")
-    lines.append(f"tectonic file           : {payload['tectonic']['path']}")
+    lines.append(f"xbench file           : {payload['xbench']['path']}")
     lines.append("")
     lines.append("operation counts")
     for op in ["I", "P", "U", "SC"]:
         db_count = payload["db_bench"]["operation_counts"].get(op, 0)
-        tec_count = payload["tectonic"]["operation_counts"].get(op, 0)
-        lines.append(f"  {op:<2} db_bench={db_count:<6} tectonic={tec_count:<6}")
+        x_count = payload["xbench"]["operation_counts"].get(op, 0)
+        lines.append(f"  {op:<2} db_bench={db_count:<6} xbench={x_count:<6}")
     lines.append("")
     lines.append(f"operation counts match : {payload['comparison']['operation_counts_match']}")
     lines.append(f"key lengths match      : {payload['comparison']['key_lengths_match']}")
@@ -232,15 +232,15 @@ def write_report(path: Path, payload: dict) -> None:
     lines.append("db_bench-compatible sample")
     lines.extend(f"  {line}" for line in payload["db_bench"]["sample_lines"])
     lines.append("")
-    lines.append("tectonic sample")
-    lines.extend(f"  {line}" for line in payload["tectonic"]["sample_lines"])
+    lines.append("xbench sample")
+    lines.extend(f"  {line}" for line in payload["xbench"]["sample_lines"])
     path.write_text("\n".join(lines) + "\n")
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Generate and compare small mixed workload files.")
     parser.add_argument("--out-dir", default=str(OUT_DIR))
-    parser.add_argument("--tectonic-cli", default=str(DEFAULT_TECTONIC_CLI))
+    parser.add_argument("--xbench-cli", default=str(DEFAULT_XBENCH_CLI))
     parser.add_argument("--load-inserts", type=int, default=DEFAULT_LOAD_INSERTS)
     parser.add_argument("--updates", type=int, default=DEFAULT_UPDATES)
     parser.add_argument("--point-queries", type=int, default=DEFAULT_POINT_QUERIES)
@@ -260,18 +260,18 @@ def main() -> None:
 
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    spec_path = out_dir / "tectonic_small_mixed.spec.json"
+    spec_path = out_dir / "xbench_small_mixed.spec.json"
     db_bench_path = out_dir / "db_bench_small_mixed.txt"
-    tectonic_path = out_dir / "tectonic_small_mixed.txt"
+    xbench_path = out_dir / "xbench_small_mixed.txt"
     comparison_path = out_dir / "small_mixed_comparison.json"
     report_path = out_dir / "small_mixed_comparison_report.txt"
 
-    write_tectonic_spec(spec_path, args)
+    write_xbench_spec(spec_path, args)
     db_metadata = generate_db_bench_mixed(db_bench_path, args)
-    run_tectonic_generate(Path(args.tectonic_cli).expanduser().resolve(), spec_path, tectonic_path)
+    run_xbench_generate(Path(args.xbench_cli).expanduser().resolve(), spec_path, xbench_path)
 
     db_summary = summarize_workload(db_bench_path)
-    tectonic_summary = summarize_workload(tectonic_path)
+    xbench_summary = summarize_workload(xbench_path)
     payload = {
         "parameters": {
             "load_inserts": args.load_inserts,
@@ -283,17 +283,17 @@ def main() -> None:
             "value_size": args.value_size,
             "seed": args.seed,
         },
-        "tectonic_spec": str(spec_path),
+        "xbench_spec": str(spec_path),
         "db_bench_metadata": db_metadata,
         "db_bench": db_summary,
-        "tectonic": tectonic_summary,
-        "comparison": compare_summaries(db_summary, tectonic_summary),
+        "xbench": xbench_summary,
+        "comparison": compare_summaries(db_summary, xbench_summary),
     }
     with comparison_path.open("w") as f:
         json.dump(payload, f, indent=2)
     write_report(report_path, payload)
     print(f"db_bench-compatible workload: {db_bench_path}")
-    print(f"tectonic workload           : {tectonic_path}")
+    print(f"xbench workload           : {xbench_path}")
     print(f"comparison json            : {comparison_path}")
     print(f"comparison report          : {report_path}")
 

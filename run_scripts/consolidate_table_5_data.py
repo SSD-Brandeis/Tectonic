@@ -3,14 +3,14 @@
 consolidate_table_5_data.py
 ===========================
 Consolidates the exact experimental data used in Table 5 of the paper into:
-    /home/cc/Tectonic/data/table_5_data/
+    data/table_5_data/
 
 Sources:
-  - Machine 1 (Local): /home/cc/Tectonic/data/ycsb_tectonic_similarity_io_bytes/
+  - Machine 1 (Local): data/ycsb_xbench_similarity_io_bytes/
       * Cassandra (all 5 scales: 2^18 to 2^22)
       * Redis (all 5 scales: 2^18 to 2^22)
       * ScyllaDB (scales 2^19, 2^20, 2^21; scale 2^22 YCSB)
-  - Machine 2 (Rerun): /home/cc/Tectonic/data/machine2_ycsb_tectonic_similarity_io_bytes/
+  - Machine 2 (Rerun): data/machine2_ycsb_xbench_similarity_io_bytes/
       * RocksDB (all 5 scales: 2^18 to 2^22)
       * ScyllaDB (scale 2^18 YCSB and X-Bench; scale 2^22 X-Bench)
 
@@ -19,6 +19,8 @@ Note on ScyllaDB 2^22 X-Bench Bytes Transferred:
   Following Option A, the physical measurements (Read=4,701.93, Write=11,883.21, Total=16,585.14)
   are preserved in results_io_bytes.json and table_5_plotting_data, with an explicit documentation note.
 """
+from pathlib import Path as _Path
+REPO_ROOT = str(_Path(__file__).resolve().parents[1])
 
 import os
 import sys
@@ -26,13 +28,13 @@ import json
 import shutil
 from datetime import datetime
 
-M1_DIR = "/home/cc/Tectonic/data/ycsb_tectonic_similarity_io_bytes"
-M2_DIR = "/home/cc/Tectonic/data/machine2_ycsb_tectonic_similarity_io_bytes"
-OUT_DIR = "/home/cc/Tectonic/data/table_5_data"
+M1_DIR = REPO_ROOT + "/data/ycsb_xbench_similarity_io_bytes"
+M2_DIR = REPO_ROOT + "/data/machine2_ycsb_xbench_similarity_io_bytes"
+OUT_DIR = REPO_ROOT + "/data/table_5_data"
 
 SCALES_INT = [262144, 524288, 1048576, 2097152, 4194304]
 DATABASES = ["cassandra", "redis", "rocksdb", "scylla"]
-WORKLOADS = ["ycsb", "tectonic"]
+WORKLOADS = ["ycsb", "xbench"]
 
 def scale_label(scale_int):
     return f"2^{scale_int.bit_length() - 1}"
@@ -47,7 +49,7 @@ def get_source(db, scale_int, wl):
         if scale_int == 262144:
             return M2_DIR, "Machine 2 (Rerun)"
         elif scale_int == 4194304:
-            if wl == "tectonic":
+            if wl == "xbench":
                 return M2_DIR, "Machine 2 (Rerun)"
             else:
                 return M1_DIR, "Machine 1 (Local)"
@@ -77,20 +79,20 @@ def main():
     # Paper Table 5 lookup for provenance checking
     paper_table = {
         "cassandra": {
-            "execution_time": {"ycsb": [249, 533, 1066, 2282, 4506], "tectonic": [266, 506, 1018, 2118, 4262]},
-            "bytes_transferred": {"ycsb": [334, 666, 1323, 4488, 8977], "tectonic": [335, 663, 1323, 4536, 9109]}
+            "execution_time": {"ycsb": [249, 533, 1066, 2282, 4506], "xbench": [266, 506, 1018, 2118, 4262]},
+            "bytes_transferred": {"ycsb": [334, 666, 1323, 4488, 8977], "xbench": [335, 663, 1323, 4536, 9109]}
         },
         "redis": {
-            "execution_time": {"ycsb": [65, 154, 304, 626, 1189], "tectonic": [77, 149, 324, 634, 1208]},
-            "bytes_transferred": {"ycsb": [3, 47, 25, 24, 55.47], "tectonic": [3, 21, 9, 19, 61.81]}
+            "execution_time": {"ycsb": [65, 154, 304, 626, 1189], "xbench": [77, 149, 324, 634, 1208]},
+            "bytes_transferred": {"ycsb": [3, 47, 25, 24, 55.47], "xbench": [3, 21, 9, 19, 61.81]}
         },
         "rocksdb": {
-            "execution_time": {"ycsb": [4.63, 9.35, 21.23, 50.80, 128.5], "tectonic": [4.11, 8.45, 20.23, 49, 108.2]},
-            "bytes_transferred": {"ycsb": [772, 1956, 4417, 11585, 26991], "tectonic": [621, 1889, 4369, 10640, 25158]}
+            "execution_time": {"ycsb": [4.63, 9.35, 21.23, 50.80, 128.5], "xbench": [4.11, 8.45, 20.23, 49, 108.2]},
+            "bytes_transferred": {"ycsb": [772, 1956, 4417, 11585, 26991], "xbench": [621, 1889, 4369, 10640, 25158]}
         },
         "scylla": {
-            "execution_time": {"ycsb": [348, 692, 1390, 2773, 5629], "tectonic": [345, 681, 1355, 2718, 5684]},
-            "bytes_transferred": {"ycsb": [1769, 1841, 3493, 6408, 12932], "tectonic": [1963, 1679, 2734, 5709, 11883]}
+            "execution_time": {"ycsb": [348, 692, 1390, 2773, 5629], "xbench": [345, 681, 1355, 2718, 5684]},
+            "bytes_transferred": {"ycsb": [1769, 1841, 3493, 6408, 12932], "xbench": [1963, 1679, 2734, 5709, 11883]}
         }
     }
 
@@ -132,7 +134,7 @@ def main():
                 paper_bytes = paper_table[db]["bytes_transferred"][wl][scale_idx]
 
                 paper_str = f"Time: {paper_time}, Bytes: {paper_bytes}"
-                if db == "scylla" and scale_int == 4194304 and wl == "tectonic":
+                if db == "scylla" and scale_int == 4194304 and wl == "xbench":
                     paper_str += " (*Write-only in paper)"
 
                 table_rows.append(
@@ -165,7 +167,7 @@ def main():
                     "paper_table_5": {
                         "execution_time_s": paper_time,
                         "bytes_transferred_mb": paper_bytes,
-                        "note": "Reported Disk Write only (4701.93 MB read omitted in paper table)" if (db == "scylla" and scale_int == 4194304 and wl == "tectonic") else "Sum of Read + Write (or Read ~ 0)"
+                        "note": "Reported Disk Write only (4701.93 MB read omitted in paper table)" if (db == "scylla" and scale_int == 4194304 and wl == "xbench") else "Sum of Read + Write (or Read ~ 0)"
                     }
                 })
 
@@ -190,7 +192,7 @@ def main():
             "scales": SCALES_INT,
             "databases": DATABASES,
             "ycsb_workload": "workloads/workloada",
-            "tectonic_spec": "/home/cc/Tectonic/example-specs/ycsb/a.spec.json",
+            "xbench_spec": REPO_ROOT + "/example-specs/ycsb/a.spec.json",
             "exec_threads": 1,
             "iostat_device": "sda",
             "metric_definitions": {

@@ -7,7 +7,7 @@ R1.O7: X-Bench vs. YCSB-IVS / YCSB-TS on RocksDB, plotted like Fig. 12 of the pa
   (A) bytes transferred (MB) over time: iostat of the database device, mean over the trials of each
       trace for every second (one iostat sample per second, no smoothing);
   (B) latency per operation type: p0, p25, p50, p75, p99 of the whole run (mean over the trials);
-  (C) bytes RocksDB read and wrote (GB), from its statistics (mean over the trials):
+  (C) bytes RocksDB read and wrote (MB), from its statistics (mean over the trials):
       read  = rocksdb.non.last.level.read.bytes + rocksdb.last.level.read.bytes
       write = rocksdb.wal.bytes + rocksdb.flush.write.bytes + rocksdb.compact.write.bytes
       (the read is the bytes read from the SST files, compactions included, as (A) measures; Fig. 12's
@@ -15,10 +15,13 @@ R1.O7: X-Bench vs. YCSB-IVS / YCSB-TS on RocksDB, plotted like Fig. 12 of the pa
 
 Input : data/revision/R1.O7_ycsb-derivatives/results/execution.json (execute stage of
         run_scripts/run_ycsb_derivatives_fidelity.py)
+With --fig12: data/revision/Fig12_ycsb-a-x10/direct-io-wal-off/ (Fig. 12, YCSB-A at 10x; plots/ycsb_legend.pdf).
 Output: data/revision/R1.O7_ycsb-derivatives/plots/<workload>_{throughput,latency,data_movement}.pdf,
         plots/<workload>_throughput_log.pdf ((A) on a log y-axis starting at 10^0 MB),
-        plots/ycsb-{ivs,ts}_legend.pdf (one per YCSB derivative), plots/<workload>_preview.png (the three panels side by side)
+        plots/ycsb-{ivs,ts}_legend.pdf (one per YCSB derivative), plots/<workload>_preview.{png,pdf} (the three panels side by side)
 """
+from pathlib import Path as _Path
+REPO_ROOT = str(_Path(__file__).resolve().parents[1])
 import os
 import sys
 import json
@@ -34,15 +37,21 @@ import matplotlib.pyplot as plt
 sys.path.append(str(Path(__file__).resolve().parent))
 import plot_style
 
-OUT_DIR = "/home/cc/Tectonic/data/revision/R1.O7_ycsb-derivatives"
+OUT_DIR = REPO_ROOT + "/data/revision/R1.O7_ycsb-derivatives"
 if "--direct-io" in sys.argv:  # the rerun with RocksDB's direct I/O (2026-10-31): its execution.json and plots
     # with --wal-off: the rerun with the WAL off too (2026-11-03, direct_io=1;disable_wal=1)
     OUT_DIR = f"{OUT_DIR}/direct-io-wal-off" if "--wal-off" in sys.argv else f"{OUT_DIR}/direct-io-enabled"
+# --fig12: the paper's Fig. 12 (YCSB-A at 10x) run again with direct I/O on and the WAL off (user, 2026-11-04;
+# run_scripts/run_fig12_direct_io_wal_off.py)
+FIG12 = "--fig12" in sys.argv
+if FIG12:
+    OUT_DIR = os.environ.get("FIG12_DIR", REPO_ROOT + "/data/revision/Fig12_ycsb-a-x10/direct-io-wal-off")
 EXEC_PATH = f"{OUT_DIR}/results/execution.json"
 PLOT_DIR = f"{OUT_DIR}/plots"
 
 # the trace X-Bench is compared against; the YCSB rerun is the noise floor (in report.md)
-SIDES = (("ycsb_derivative", "YCSB"), ("xbench", "Tectonic"))
+YCSB_SIDE = "ycsb" if FIG12 else "ycsb_derivative"
+SIDES = ((YCSB_SIDE, "YCSB"), ("xbench", "X-Bench"))
 OP_LABELS = {"Insert": "insert", "Point Query": "PQ", "Update": "update", "Merge": "merge",
              "Range Query": "RQ"}
 PERCENTILES = (("whislo", "Minimum Latency"), ("q1", "25th Percentile Latency"),
@@ -50,7 +59,7 @@ PERCENTILES = (("whislo", "Minimum Latency"), ("q1", "25th Percentile Latency"),
                ("whishi", "99th Percentile Latency"))
 READ_TICKERS = ("rocksdb.non.last.level.read.bytes", "rocksdb.last.level.read.bytes")
 WRITE_TICKERS = ("rocksdb.wal.bytes", "rocksdb.flush.write.bytes", "rocksdb.compact.write.bytes")
-BYTE_TO_GB = 1024 ** 3
+BYTE_TO_MB = 1024 ** 2  # panel (C) in MB (user, 2026-11-03), as iostat in panel (A)
 FIGSIZE = (5, 3.6)
 DATA_MOVEMENT_FIGSIZE = (2.8, 3.6)
 LEFT_MARGIN_IN = 1.1  # room for the y tick labels and the y label at the style's 22 pt
@@ -59,12 +68,12 @@ WIDTH = 0.25
 
 
 def label(side, ycsb):
-    return ycsb if side == "ycsb_derivative" else "X-Bench"
+    return ycsb if side == YCSB_SIDE else "X-Bench"
 
 
 def ycsb_name(workload):
-    """The YCSB derivative a workload comes from: ivs-* is YCSB-IVS, ts-* is YCSB-TS."""
-    return {"ivs": "YCSB-IVS", "ts": "YCSB-TS"}[workload.split("-", 1)[0]]
+    """The YCSB derivative a workload comes from: ivs-* is YCSB-IVS, ts-* is YCSB-TS; Fig. 12's is YCSB."""
+    return {"ivs": "YCSB-IVS", "ts": "YCSB-TS", "ycsb": "YCSB"}[workload.split("-", 1)[0]]
 
 
 def mean_iostat(trials):
@@ -129,7 +138,7 @@ def panel_latency(ax, trials, ycsb):
     ax.set_yscale("log")
     ax.set_ylabel(plot_style.format_label(r"latency ($\mu$s)"))
     plot_style.apply_plot_style(ax)
-    ax.set_ylim(bottom=min(lowest) / 2)
+    ax.set_ylim(bottom=1.0)  # every log axis from 10^0 (user rule, 2026-10-30)
 
 
 def panel_data_movement(ax, trials, ycsb):
@@ -137,22 +146,22 @@ def panel_data_movement(ax, trials, ycsb):
     x = np.arange(len(categories)) * 0.75
     all_vals, bars = [], []
     for j, (side, style) in enumerate(SIDES):
-        vals = [statistics.mean(sum(t["rocksdb_statistics"][k] for k in tickers) for t in trials[side]) / BYTE_TO_GB
+        vals = [statistics.mean(sum(t["rocksdb_statistics"][k] for k in tickers) for t in trials[side]) / BYTE_TO_MB
                 for tickers in (READ_TICKERS, WRITE_TICKERS)]
         all_vals += vals
         bars += ax.bar(x + (j - 0.5) * WIDTH, vals, WIDTH, label=label(side, ycsb), **plot_style.BAR_STYLES[style])
     ax.set_xticks(x)
     ax.set_xticklabels(categories)
     ax.set_xlim(x[0] - WIDTH - 0.12, x[-1] + WIDTH + 0.12)
-    ax.set_ylabel(plot_style.format_label("bytes (GB)"))
+    ax.set_ylabel(plot_style.format_label("bytes (MB)"))
     # YCSB-TS range queries read ~100x what the workload writes: a linear axis would hide the writes
     log = max(all_vals) / min(all_vals) > 20
     if log:
         ax.set_yscale("log")
     plot_style.apply_plot_style(ax)
     if log:
-        ax.set_ylim(bottom=min(all_vals) / 3)
-    plot_style.label_bar_values(ax, bars)  # the absolute GB of every bar
+        ax.set_ylim(bottom=1.0)  # 10^0, as every log axis; in MB every bar is above it
+    plot_style.bar_headroom(ax, bars)  # no value labels on the bars (user, 2026-11-03); exact MB in the README
 
 
 PANELS = (("throughput", panel_throughput, FIGSIZE), ("latency", panel_latency, FIGSIZE),
@@ -182,12 +191,9 @@ def main():
         fig, axes = plt.subplots(1, 3, figsize=(13, 4.4), gridspec_kw={"width_ratios": [5, 5, 2]})
         for ax, (_, draw, _) in zip(axes, PANELS):
             draw(ax, trials, ycsb)
-        for ax, tag in zip(axes, "ABC"):
-            ax.text(-0.1, -0.36, f"({tag})", transform=ax.transAxes)
-        fig.tight_layout()
-        fig.savefig(f"{PLOT_DIR}/{name}_preview.png", dpi=120)
+        plot_style.save_preview(fig, axes, f"{PLOT_DIR}/{name}_preview")  # .png and .pdf
         plt.close(fig)
-        print(f"{PLOT_DIR}/{name}_{{throughput,latency,data_movement}}.pdf, {name}_preview.png")
+        print(f"{PLOT_DIR}/{name}_{{throughput,latency,data_movement}}.pdf, {name}_preview.{{png,pdf}}")
     for ycsb, entries in handles.items():
         legend_fig, legend_ax = plt.subplots()
         legend_ax.axis("off")

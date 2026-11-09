@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Emit a db_bench-style correctness workload in Tectonic text format.
+"""Emit a db_bench-style correctness workload in X-Bench text format.
 
 This adapter models the native db_bench thread-count behavior relevant to the
 correctness experiment: every worker receives the full configured phase count.
@@ -115,7 +115,7 @@ def write_workload(args: argparse.Namespace) -> dict:
         "insert_value_size": args.insert_value_size,
         "update_value_size": args.update_value_size,
         "output_path": str(output_path),
-        "format": "Tectonic text workload: I key value, P key, U key value",
+        "format": "X-Bench text workload: I key value, P key, U key value",
     }
     if args.metadata:
         metadata_path = Path(args.metadata)

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from pathlib import Path as _Path
+REPO_ROOT = str(_Path(__file__).resolve().parents[1])
 import json
 import os
 import sys
@@ -7,7 +9,7 @@ import matplotlib.pyplot as plt
 import matplotlib.font_manager as font_manager
 
 # Load Font
-FONT_PATH = "/home/cc/Tectonic/LinLibertine_Mah.ttf"
+FONT_PATH = REPO_ROOT + "/LinLibertine_Mah.ttf"
 if not os.path.exists(FONT_PATH):
     raise FileNotFoundError(f"Strict font file not found: {FONT_PATH}")
 
@@ -160,7 +162,7 @@ def plot_experiment(results_path, output_dir):
     save_fig_pdf(fig, os.path.join(output_dir, "udb_assoc_diurnal.pdf"))
 
 def main():
-    ROOT = "/home/cc/Tectonic"
+    ROOT = REPO_ROOT
     plot_experiment(
         os.path.join(ROOT, "data/udb_assoc/udb_assoc_results.json"),
         os.path.join(ROOT, "data/udb_assoc/")

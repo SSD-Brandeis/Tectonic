@@ -23,6 +23,8 @@ X-Bench-vs-YCSB diffs already measured.
 Writes to data/official_ycsb_variance_check/ (does not touch
 data/table5_rerun/ or data/discrepancy-investigation/).
 """
+from pathlib import Path as _Path
+REPO_ROOT = str(_Path(__file__).resolve().parents[2])
 import os
 import re
 import sys
@@ -35,7 +37,7 @@ import statistics
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import run_table5_rerun as t5  # reuse restart_db/teardown_db/run/log/banner/drop_caches
 
-ROOT_DIR = "/home/cc/Tectonic"
+ROOT_DIR = REPO_ROOT
 # Use the pristine, unmodified upstream YCSB checkout (github.com/brianfrankcooper/YCSB)
 # rather than the project's vendored fork under rocksdb-benchmark-harness/vendor/YCSB
 # (which is an older commit with a custom FileClient binding bolted on) — this is a

@@ -3,8 +3,10 @@
 
 By default this pins each generator to one logical CPU. That keeps this aligned
 with the single-thread workload-generation plot and avoids mixing the earlier
-multi-core Tectonic untracked-key pregeneration spike into the monitor comparison.
+multi-core X-Bench untracked-key pregeneration spike into the monitor comparison.
 """
+from pathlib import Path as _Path
+REPO_ROOT = str(_Path(__file__).resolve().parents[1])
 
 import argparse
 import json
@@ -15,9 +17,9 @@ import threading
 import time
 
 
-ROOT_DIR = "/home/cc/Tectonic"
+ROOT_DIR = REPO_ROOT
 HARNESS_DIR = f"{ROOT_DIR}/rocksdb-benchmark-harness"
-TECTONIC_CLI = f"{ROOT_DIR}/target/release/tectonic-cli"
+XBENCH_CLI = f"{ROOT_DIR}/target/release/xbench-cli"
 YCSB_DIR = f"{HARNESS_DIR}/vendor/YCSB"
 M2 = "/home/cc/.m2/repository"
 OUT_DIR = f"{ROOT_DIR}/data/CPU-utilization"
@@ -334,17 +336,17 @@ def generate_ycsb(workload, scale, cpu_id, tag):
     }
 
 
-def generate_tectonic(workload, scale, cpu_id, tag):
-    banner(f"generate Tectonic workload {workload.upper()} untracked")
+def generate_xbench(workload, scale, cpu_id, tag):
+    banner(f"generate X-Bench workload {workload.upper()} untracked")
     spec_path = f"{ROOT_DIR}/example-specs/ycsb_untracked/{workload}.spec.json"
-    output_path = f"{OUT_DIR}/monitor_{tag}_tectonic.txt"
+    output_path = f"{OUT_DIR}/monitor_{tag}_xbench.txt"
     remove_if_exists(output_path)
-    ensure_file(spec_path, "Tectonic untracked spec")
+    ensure_file(spec_path, "X-Bench untracked spec")
     scale_factor = scale / 1_000_000.0
     result = run_monitored(
-        "Tectonic generation",
-        [TECTONIC_CLI, "generate", "-w", spec_path, "-o", output_path, "-s", str(scale_factor)],
-        f"{OUT_DIR}/monitor_{tag}_tectonic_generate.log",
+        "X-Bench generation",
+        [XBENCH_CLI, "generate", "-w", spec_path, "-o", output_path, "-s", str(scale_factor)],
+        f"{OUT_DIR}/monitor_{tag}_xbench_generate.log",
         cpu_id=cpu_id,
         cwd=ROOT_DIR,
     )
@@ -386,7 +388,7 @@ def main():
     args = parser.parse_args()
 
     os.makedirs(OUT_DIR, exist_ok=True)
-    ensure_file(TECTONIC_CLI, "tectonic-cli")
+    ensure_file(XBENCH_CLI, "xbench-cli")
     cpu_id = None if args.all_cpus else available_cpu()
     print(SEP)
     print("  experiment : CPU-utilization monitor comparison, workload generation only")
@@ -399,7 +401,7 @@ def main():
     tag = output_tag(args.workload, args.scale, cpu_id)
     results_path = result_path(tag)
     ycsb = generate_ycsb(args.workload, args.scale, cpu_id, tag)
-    tectonic = generate_tectonic(args.workload, args.scale, cpu_id, tag)
+    xbench = generate_xbench(args.workload, args.scale, cpu_id, tag)
     payload = {
         "experiment": "CPU-utilization",
         "mode": "workload_generation_monitor_comparison",
@@ -411,7 +413,7 @@ def main():
         "output_tag": tag,
         "cpu_metric": "process cpu percent; 100% equals one fully used logical cpu",
         "monitors": ["procfs", "pidstat", "top"],
-        "generation": {"ycsb": ycsb, "tectonic": tectonic},
+        "generation": {"ycsb": ycsb, "xbench": xbench},
     }
     write_results(payload, results_path)
     print(f"\n  results saved: {results_path}", flush=True)

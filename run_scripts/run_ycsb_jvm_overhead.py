@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
+from pathlib import Path as _Path
+REPO_ROOT = str(_Path(__file__).resolve().parents[1])
 import os
 import sys
 import time
 import subprocess
 import json
 
-STATS_DIR = "/home/cc/Tectonic/data/ycsb_jvm_overhead"
+STATS_DIR = REPO_ROOT + "/data/ycsb_jvm_overhead"
 os.makedirs(STATS_DIR, exist_ok=True)
 
-YCSB_DIR = "/home/cc/Tectonic/rocksdb-benchmark-harness/vendor/YCSB"
+YCSB_DIR = REPO_ROOT + "/rocksdb-benchmark-harness/vendor/YCSB"
 M2 = "/home/cc/.m2/repository"
 
 YCSB_CP = (
@@ -68,14 +70,14 @@ def trace_run(cmd, poll_interval=0.010, cwd=None):
 def main():
     # 1. Trace JVM Default
     print("\n--- Running JVM Default (Sleep) ---")
-    cmd_jvm_def = ["java", "-cp", "/home/cc/Tectonic", "Sleep"]
+    cmd_jvm_def = ["java", "-cp", REPO_ROOT, "Sleep"]
     res_jvm_def = trace_run(cmd_jvm_def)
     with open(f"{STATS_DIR}/jvm_default.json", "w") as f:
         json.dump(res_jvm_def, f)
 
     # 2. Trace JVM Small Heap
     print("\n--- Running JVM Small Heap (Sleep) ---")
-    cmd_jvm_small = ["java", "-Xms32m", "-Xmx32m", "-cp", "/home/cc/Tectonic", "Sleep"]
+    cmd_jvm_small = ["java", "-Xms32m", "-Xmx32m", "-cp", REPO_ROOT, "Sleep"]
     res_jvm_small = trace_run(cmd_jvm_small)
     with open(f"{STATS_DIR}/jvm_small.json", "w") as f:
         json.dump(res_jvm_small, f)

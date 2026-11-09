@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
+from pathlib import Path as _Path
+REPO_ROOT = str(_Path(__file__).resolve().parents[1])
 import os
 import sys
 import time
 import subprocess
 import json
 
-STATS_DIR = "/home/cc/Tectonic/data/generator_comparison"
+STATS_DIR = REPO_ROOT + "/data/generator_comparison"
 os.makedirs(STATS_DIR, exist_ok=True)
 
-TECTONIC_CLI = "/home/cc/Tectonic/target/release/tectonic-cli"
+XBENCH_CLI = REPO_ROOT + "/target/release/xbench-cli"
 KVBENCH_CLI = "/home/cc/KV-WorkloadGenerator/bin/load_gen"
-YCSB_DIR = "/home/cc/Tectonic/rocksdb-benchmark-harness/vendor/YCSB"
+YCSB_DIR = REPO_ROOT + "/rocksdb-benchmark-harness/vendor/YCSB"
 M2 = "/home/cc/.m2/repository"
 
 YCSB_CP = (
@@ -23,11 +25,11 @@ YCSB_CP = (
     f"{YCSB_DIR}/core/target/core-0.18.0-SNAPSHOT.jar"
 )
 
-def compile_tectonic():
-    print("=== Step 1: Compiling Tectonic ===")
+def compile_xbench():
+    print("=== Step 1: Compiling X-Bench ===")
     try:
-        subprocess.run(["cargo", "build", "--release"], cwd="/home/cc/Tectonic", check=True)
-        print("Tectonic compiled successfully.")
+        subprocess.run(["cargo", "build", "--release"], cwd=REPO_ROOT, check=True)
+        print("X-Bench compiled successfully.")
     except subprocess.CalledProcessError as e:
         print(f"Compilation failed: {e}")
         sys.exit(1)
@@ -93,12 +95,12 @@ def trace_generator(cmd, out_filepath, target_inserts_x=None, poll_interval=0.01
 
     for line in stdout_lines:
         line_strip = line.strip()
-        if "Tectonic_Op_Timings:" in line_strip:
+        if "XBench_Op_Timings:" in line_strip:
             try:
-                payload = line_strip.split("Tectonic_Op_Timings:")[1].strip()
+                payload = line_strip.split("XBench_Op_Timings:")[1].strip()
                 empirical_op_durations = json.loads(payload)
             except Exception as e:
-                print(f"Error parsing Tectonic timings: {e}")
+                print(f"Error parsing X-Bench timings: {e}")
         elif "KVbench_Op_Timings:" in line_strip:
             try:
                 payload = line_strip.split("KVbench_Op_Timings:")[1].strip()
@@ -110,13 +112,13 @@ def trace_generator(cmd, out_filepath, target_inserts_x=None, poll_interval=0.01
                 loading_phase_end_time = float(line_strip.split("KVbench_LoadPhase_End:")[1].strip())
             except Exception as e:
                 print(f"Error parsing KVbench load end: {e}")
-        elif "[Tectonic Sequential Gen] Section 0" in line_strip and "finished at" in line_strip:
+        elif "[X-Bench Sequential Gen] Section 0" in line_strip and "finished at" in line_strip:
             try:
                 parts = line_strip.split("finished at")
                 val = parts[1].strip().split("s")[0].strip()
                 loading_phase_end_time = float(val)
             except Exception as e:
-                print(f"Error parsing Tectonic load end: {e}")
+                print(f"Error parsing X-Bench load end: {e}")
 
     if os.path.exists(out_filepath):
         try:
@@ -173,8 +175,8 @@ def run_set2_ycsb():
         with open(f"{STATS_DIR}/ycsb_{w_lower}_trace.json", "w") as f:
             json.dump(trace_data, f)
 
-    # 2. Tectonic Run
-    tectonic_specs = {
+    # 2. X-Bench Run
+    xbench_specs = {
         "A": "example-specs/ycsb_untracked/a.spec.json",
         "B": "example-specs/ycsb_untracked/b.spec.json",
         "C": "example-specs/ycsb_untracked/c.spec.json",
@@ -182,13 +184,13 @@ def run_set2_ycsb():
         "E": "example-specs/ycsb_untracked/e.spec.json",
         "F": "example-specs/ycsb_untracked/f.spec.json",
     }
-    for w, spec in tectonic_specs.items():
+    for w, spec in xbench_specs.items():
         w_lower = w.lower()
-        print(f"\n--- Tectonic Workload {w} ---")
-        cmd = [TECTONIC_CLI, "generate", "-w", spec, "-o", "/tmp/tectonic_out.txt"]
-        res = trace_generator(cmd, "/tmp/tectonic_out.txt", target_inserts_x=1000000)
+        print(f"\n--- X-Bench Workload {w} ---")
+        cmd = [XBENCH_CLI, "generate", "-w", spec, "-o", "/tmp/xbench_out.txt"]
+        res = trace_generator(cmd, "/tmp/xbench_out.txt", target_inserts_x=1000000)
         
-        with open(f"{STATS_DIR}/tectonic_{w_lower}_trace.json", "w") as f:
+        with open(f"{STATS_DIR}/xbench_{w_lower}_trace.json", "w") as f:
             json.dump(res, f)
 
     # 3. KVbench Run (A-E, F is missing)
@@ -236,25 +238,25 @@ def run_set1_kvbench():
         with open(f"{STATS_DIR}/kvbench_{w_lower}_trace.json", "w") as f:
             json.dump(res, f)
 
-    # 2. Tectonic Run
-    tectonic_specs = {
+    # 2. X-Bench Run
+    xbench_specs = {
         "I": "example-specs/kvbench/i.spec.json",
         "II": "example-specs/kvbench/ii.spec.json",
         "III": "example-specs/kvbench/iii.spec.json",
         "IV": "example-specs/kvbench/iv.spec.json",
         "V": "example-specs/kvbench/v.spec.json",
     }
-    for w, spec in tectonic_specs.items():
+    for w, spec in xbench_specs.items():
         w_lower = w.lower()
-        print(f"\n--- Tectonic Workload {w} ---")
-        cmd = [TECTONIC_CLI, "generate", "-w", spec, "-o", "/tmp/tectonic_out.txt"]
-        res = trace_generator(cmd, "/tmp/tectonic_out.txt")
+        print(f"\n--- X-Bench Workload {w} ---")
+        cmd = [XBENCH_CLI, "generate", "-w", spec, "-o", "/tmp/xbench_out.txt"]
+        res = trace_generator(cmd, "/tmp/xbench_out.txt")
         
-        with open(f"{STATS_DIR}/tectonic_{w_lower}_trace.json", "w") as f:
+        with open(f"{STATS_DIR}/xbench_{w_lower}_trace.json", "w") as f:
             json.dump(res, f)
 
 if __name__ == "__main__":
-    compile_tectonic()
+    compile_xbench()
     run_set2_ycsb()
     run_set1_kvbench()
     print("\n=== All generator benchmarks finished and logged! ===")

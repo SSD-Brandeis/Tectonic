@@ -5,6 +5,8 @@ Sanity runner for figure_6_validate.
 This script runs one YCSB workload and one KVBench workload, captures human-readable
 logs, and stores parsed empirical timing data under data/figure_6_validate.
 """
+from pathlib import Path as _Path
+REPO_ROOT = str(_Path(__file__).resolve().parents[1])
 
 import argparse
 import json
@@ -18,7 +20,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
-ROOT = Path("/home/cc/Tectonic")
+ROOT = Path(REPO_ROOT)
 OUT_DIR = ROOT / "data" / "figure_6_validate"
 SANITY_DIR = OUT_DIR / "sanity"
 LOG_PATH = OUT_DIR / "figure_6_validate_sanity.log"

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Plot db_bench vs Tectonic RocksDB experiment results."""
+"""Plot db_bench vs X-Bench RocksDB experiment results."""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ FONT_PATH = ROOT_DIR / "LinLibertine_Mah.ttf"
 
 TOOLS = [
     ("native_db_bench", r"db\_bench", {"facecolor": "white", "edgecolor": "0.25", "hatch": "///"}),
-    ("tectonic", "Tectonic", {"facecolor": "tab:red", "edgecolor": "tab:red", "hatch": ""}),
+    ("xbench", "X-Bench", {"facecolor": "tab:red", "edgecolor": "tab:red", "hatch": ""}),
 ]
 
 

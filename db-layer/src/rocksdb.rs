@@ -99,7 +99,7 @@ impl RocksDB {
                 PathBuf::from_str(db_path).context("Not a valid database path")?
             } else {
                 let mut dir = temp_dir();
-                dir.push("tectonic-rocksdb/");
+                dir.push("xbench-rocksdb/");
                 dir
             }
         };

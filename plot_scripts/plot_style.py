@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from pathlib import Path as _Path
+REPO_ROOT = str(_Path(__file__).resolve().parents[1])
 import os
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning, module="matplotlib")
@@ -6,7 +8,7 @@ import matplotlib.pyplot as plt
 import matplotlib.font_manager as font_manager
 
 # Font configuration
-FONT_PATH = "/home/cc/Tectonic/LinLibertine_Mah.ttf"
+FONT_PATH = REPO_ROOT + "/LinLibertine_Mah.ttf"
 if not os.path.exists(FONT_PATH):
     raise FileNotFoundError(f"Strict font file not found: {FONT_PATH}")
 
@@ -45,18 +47,18 @@ def format_number_clean(y):
         return s[:-1]
     return s
 
-# Unified styles for YCSB, Tectonic, and KVBench
+# Unified styles for YCSB, X-Bench, and KVBench
 BAR_STYLES = {
-    "Tectonic": {"facecolor": "tab:blue", "edgecolor": "tab:blue", "hatch": ""},
-    "Tectonic Unique": {"facecolor": "tab:orange", "edgecolor": "tab:orange", "hatch": ""},
+    "X-Bench": {"facecolor": "tab:blue", "edgecolor": "tab:blue", "hatch": ""},
+    "X-Bench Unique": {"facecolor": "tab:orange", "edgecolor": "tab:orange", "hatch": ""},
     "YCSB": {"facecolor": "white", "edgecolor": "grey", "hatch": "///"},
     "KVBench": {"facecolor": "white", "edgecolor": "tab:blue", "hatch": "\\\\"},
     "KVbench": {"facecolor": "white", "edgecolor": "tab:blue", "hatch": "\\\\"}
 }
 
 LINE_STYLES = {
-    "Tectonic": {"color": "tab:blue", "linestyle": "-.", "marker": "s", "markersize": 15, "markerfacecolor": "none"},
-    "Tectonic Unique": {"color": "tab:orange", "linestyle": ":", "marker": "o", "markersize": 15, "markerfacecolor": "none"},
+    "X-Bench": {"color": "tab:blue", "linestyle": "-.", "marker": "s", "markersize": 15, "markerfacecolor": "none"},
+    "X-Bench Unique": {"color": "tab:orange", "linestyle": ":", "marker": "o", "markersize": 15, "markerfacecolor": "none"},
     "YCSB": {"color": "grey", "linestyle": "-", "marker": "^", "markersize": 15, "markerfacecolor": "none"},
     "KVBench": {"color": "tab:blue", "linestyle": "--", "marker": "v", "markersize": 15, "markerfacecolor": "none"},
     "KVbench": {"color": "tab:blue", "linestyle": "--", "marker": "v", "markersize": 15, "markerfacecolor": "none"}
@@ -64,12 +66,12 @@ LINE_STYLES = {
 
 def get_seq_par_style(generator, setting):
     """
-    Returns appropriate style (dict) for a generator ('YCSB', 'Tectonic', 'KVBench')
+    Returns appropriate style (dict) for a generator ('YCSB', 'X-Bench', 'KVBench')
     and setting ('sequential', 'parallel').
     """
-    if generator.lower() == 'tectonic':
+    if generator.lower() == 'xbench':
         color = 'tab:red'
-    elif generator.lower() in ('tectonic_unique', 'tectonic unique'):
+    elif generator.lower() in ('xbench_unique', 'xbench unique'):
         color = 'tab:orange'
     elif generator.lower() in ('kvbench', 'kvbench'):
         color = 'tab:blue'
@@ -77,7 +79,7 @@ def get_seq_par_style(generator, setting):
         color = 'grey'
         
     if setting == 'sequential':
-        hatch = '///' if generator.lower() not in ('kvbench', 'tectonic_unique', 'tectonic unique') else '\\\\'
+        hatch = '///' if generator.lower() not in ('kvbench', 'xbench_unique', 'xbench unique') else '\\\\'
         return {
             "facecolor": "white",
             "edgecolor": color,
@@ -91,7 +93,7 @@ def get_seq_par_style(generator, setting):
         }
 
 def get_seq_par_line_style(generator, setting):
-    base = LINE_STYLES.get(generator, LINE_STYLES['Tectonic']).copy()
+    base = LINE_STYLES.get(generator, LINE_STYLES['X-Bench']).copy()
     if setting == 'sequential':
         base['markerfacecolor'] = 'none'
     else:
@@ -220,6 +222,27 @@ def label_bar_values(ax, bars, fontsize=14, headroom=0.68):
         ax.set_ylim(bottom, 10 ** (lo + (hi - lo) / headroom))
     else:
         ax.set_ylim(bottom, max(heights) / headroom)
+
+def bar_headroom(ax, bars, headroom=0.9):
+    """Raises the top of the y-axis so the tallest bar ends at `headroom` of the axis height (log: of its decades)."""
+    import math
+    bottom, top = ax.get_ylim()[0], max(b.get_height() for b in bars)
+    if ax.get_yscale() == "log":
+        lo, hi = math.log10(bottom), math.log10(top)
+        ax.set_ylim(bottom, 10 ** (lo + (hi - lo) / headroom))
+    else:
+        ax.set_ylim(bottom, top / headroom)
+
+def save_preview(fig, axes, path_without_ext, letter_y=-0.165):
+    """
+    Saves a row of panels as <path>.png and <path>.pdf with little white space (user, 2026-11-03): panel letters
+    (A), (B), ... at `letter_y` (axes fraction, level with an x-axis label) and the margins cropped to the content.
+    """
+    for ax, tag in zip(axes, "ABCDEFGH"):
+        ax.text(-0.1, letter_y, f"({tag})", transform=ax.transAxes, va="top")
+    fig.tight_layout(pad=0.3)
+    fig.savefig(f"{path_without_ext}.png", dpi=120, bbox_inches="tight", pad_inches=0.03)
+    fig.savefig(f"{path_without_ext}.pdf", bbox_inches="tight", pad_inches=0.03)
 
 def save_legend(fig_or_ax, path_without_ext):
     """

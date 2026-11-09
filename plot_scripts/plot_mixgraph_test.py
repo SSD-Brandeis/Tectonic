@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Plot db_bench vs Tectonic mixgraph experiment results."""
+"""Plot db_bench vs X-Bench mixgraph experiment results."""
 
 from __future__ import annotations
 
@@ -21,11 +21,11 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 FONT_PATH = ROOT_DIR / "LinLibertine_Mah.ttf"
 
 # Styles for benchmark generators
-# X-Bench (Tectonic): Color: tab:red. Since it is sequential, hollow bar (white facecolor) with distinct hatch ///.
+# X-Bench (X-Bench): Color: tab:red. Since it is sequential, hollow bar (white facecolor) with distinct hatch ///.
 # db_bench (represented as YCSB-style): Color: grey. Hollow bar with distinct hatch \\\
 TOOLS = [
     ("native_db_bench", "db_bench", {"facecolor": "white", "edgecolor": "grey", "hatch": r"\\\\"}),
-    ("tectonic", "X-Bench", {"facecolor": "white", "edgecolor": "tab:red", "hatch": "///"}),
+    ("xbench", "X-Bench", {"facecolor": "white", "edgecolor": "tab:red", "hatch": "///"}),
 ]
 
 def font(size: int) -> font_manager.FontProperties:

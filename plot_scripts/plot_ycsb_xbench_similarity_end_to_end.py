@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """
-Plot: YCSB vs Tectonic Workload A execution time.
+Plot: YCSB vs X-Bench Workload A execution time.
 
 Produces PDF line plots from results.json. The plotted metric is
 wall_time_s, which is the elapsed time to execute a full trace against a
 database.
 """
+from pathlib import Path as _Path
+REPO_ROOT = str(_Path(__file__).resolve().parents[1])
 
 import json
 import os
@@ -20,10 +22,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
-RESULTS_PATH = "/home/cc/Tectonic/data/ycsb_tectonic_similarity_all_dbs/results.json"
-OUT_DIR = "/home/cc/Tectonic/data/ycsb_tectonic_similarity_all_dbs"
+RESULTS_PATH = REPO_ROOT + "/data/ycsb_xbench_similarity_all_dbs/results.json"
+OUT_DIR = REPO_ROOT + "/data/ycsb_xbench_similarity_all_dbs"
 
-FONT_PATH = "/home/cc/Tectonic/LinLibertine_Mah.ttf"
+FONT_PATH = REPO_ROOT + "/LinLibertine_Mah.ttf"
 if os.path.exists(FONT_PATH):
     fm.fontManager.addfont(FONT_PATH)
     prop = fm.FontProperties(fname=FONT_PATH)
@@ -39,11 +41,11 @@ DB_LABELS = {
 }
 
 YCSB_COLOR = "grey"
-TEC_COLOR = "tab:red"
+X_COLOR = "tab:red"
 YCSB_MARKER = "^"
-TEC_MARKER = "s"
+X_MARKER = "s"
 YCSB_LINESTYLE = "-"
-TEC_LINESTYLE = "-."
+X_LINESTYLE = "-."
 FONT_SIZE = 20
 SINGLE_FIGSIZE = (6.4, 4.8)
 ALL_DBS_FIGSIZE = (13.2, 9.6)
@@ -92,7 +94,7 @@ def style_axis(ax):
 def plot_database(db, db_results):
     fig, ax = plt.subplots(figsize=SINGLE_FIGSIZE)
     yx, yy = get_series(db_results, "ycsb")
-    tx, ty = get_series(db_results, "tectonic")
+    tx, ty = get_series(db_results, "xbench")
 
     if yx:
         ax.plot(
@@ -111,14 +113,14 @@ def plot_database(db, db_results):
         ax.plot(
             tx,
             ty,
-            color=TEC_COLOR,
-            linestyle=TEC_LINESTYLE,
-            marker=TEC_MARKER,
+            color=X_COLOR,
+            linestyle=X_LINESTYLE,
+            marker=X_MARKER,
             markersize=7.0,
-            markerfacecolor=TEC_COLOR,
-            markeredgecolor=TEC_COLOR,
+            markerfacecolor=X_COLOR,
+            markeredgecolor=X_COLOR,
             linewidth=2.0,
-            label="Tectonic+",
+            label="X-Bench+",
         )
 
     style_axis(ax)
@@ -140,7 +142,7 @@ def plot_all_databases(db_results_all):
     for ax, db in zip(axes, DATABASES):
         db_results = db_results_all.get(db, {})
         yx, yy = get_series(db_results, "ycsb")
-        tx, ty = get_series(db_results, "tectonic")
+        tx, ty = get_series(db_results, "xbench")
         if yx:
             ax.plot(
                 yx,
@@ -157,18 +159,18 @@ def plot_all_databases(db_results_all):
             ax.plot(
                 tx,
                 ty,
-                color=TEC_COLOR,
-                linestyle=TEC_LINESTYLE,
-                marker=TEC_MARKER,
+                color=X_COLOR,
+                linestyle=X_LINESTYLE,
+                marker=X_MARKER,
                 markersize=6.5,
-                markerfacecolor=TEC_COLOR,
-                markeredgecolor=TEC_COLOR,
+                markerfacecolor=X_COLOR,
+                markeredgecolor=X_COLOR,
                 linewidth=1.8,
             )
         style_axis(ax)
         ax.set_title(DB_LABELS.get(db, db), fontsize=FONT_SIZE)
 
-    fig.suptitle("YCSB vs Tectonic+ workload A execution time", fontsize=FONT_SIZE, y=0.99)
+    fig.suptitle("YCSB vs X-Bench+ workload A execution time", fontsize=FONT_SIZE, y=0.99)
     fig.tight_layout(pad=1.0, rect=(0, 0, 1, 0.96))
 
     base = f"{OUT_DIR}/all_dbs_end_to_end_wall_time"
@@ -198,14 +200,14 @@ def plot_legend():
         Line2D(
             [0],
             [0],
-            color=TEC_COLOR,
-            linestyle=TEC_LINESTYLE,
-            marker=TEC_MARKER,
+            color=X_COLOR,
+            linestyle=X_LINESTYLE,
+            marker=X_MARKER,
             markersize=7,
-            markerfacecolor=TEC_COLOR,
-            markeredgecolor=TEC_COLOR,
+            markerfacecolor=X_COLOR,
+            markeredgecolor=X_COLOR,
             linewidth=2.0,
-            label="Tectonic+",
+            label="X-Bench+",
         ),
     ]
     ax.legend(handles=handles, loc="center", ncol=2, fontsize=FONT_SIZE, frameon=False)

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Programmatically create a Tectonic .spec.json file for the mixgraph benchmark."""
+"""Programmatically create a X-Bench .spec.json file for the mixgraph benchmark."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import math
 from pathlib import Path
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Create a Tectonic mixgraph spec file.")
+    parser = argparse.ArgumentParser(description="Create a X-Bench mixgraph spec file.")
     parser.add_argument("--num", type=int, default=10000, help="Number of entries to load")
     parser.add_argument("--reads", type=int, default=4200, help="Number of execution queries")
     parser.add_argument("--key-size", type=int, default=48, help="Key size in bytes")
@@ -169,7 +169,7 @@ def main() -> None:
     with out_path.open("w") as f:
         json.dump(spec, f, indent=2)
     
-    print(f"Created Tectonic spec file: {out_path}")
+    print(f"Created X-Bench spec file: {out_path}")
     print(f"Load Phase: {args.num} inserts")
     print(f"Execution Phase: {gets} Gets, {puts} Puts, {seeks} Seeks")
 

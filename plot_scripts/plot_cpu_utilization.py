@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """
-Plot CPU-utilization time series for YCSB vs Tectonic.
+Plot CPU-utilization time series for YCSB vs X-Bench.
 """
+from pathlib import Path as _Path
+REPO_ROOT = str(_Path(__file__).resolve().parents[1])
 
 import json
 import os
@@ -17,7 +19,7 @@ import matplotlib.ticker as ticker
 import plot_style
 
 
-ROOT_DIR = "/home/cc/Tectonic"
+ROOT_DIR = REPO_ROOT
 OUT_DIR = f"{ROOT_DIR}/data/CPU-utilization"
 RESULTS_PATH = f"{OUT_DIR}/results.json"
 FONT_PATH = f"{ROOT_DIR}/LinLibertine_Mah.ttf"
@@ -31,7 +33,7 @@ YCSB_STYLE = {
     "markeredgecolor": "grey",
     "linewidth": 1.4,
 }
-TECTONIC_STYLE = {
+XBENCH_STYLE = {
     "color": "tab:red",
     "linestyle": "-.",
     "marker": "s",
@@ -138,10 +140,10 @@ def save_legend(handles, labels, base):
     plt.close(fig)
 
 
-def save_single_panel(base, title, x_right, ycsb_log, tectonic_log, cpu_count, boundaries=None):
+def save_single_panel(base, title, x_right, ycsb_log, xbench_log, cpu_count, boundaries=None):
     fig, ax = plt.subplots(1, 1, figsize=(4.2, 2.8))
     ycsb_handle = plot_line(ax, ycsb_log, "YCSB", YCSB_STYLE, cpu_count)
-    tectonic_handle = plot_line(ax, tectonic_log, "Tectonic", TECTONIC_STYLE, cpu_count)
+    xbench_handle = plot_line(ax, xbench_log, "X-Bench", XBENCH_STYLE, cpu_count)
     for boundary in boundaries or []:
         ax.axvline(boundary, color="grey", linestyle=":", linewidth=0.8)
     style_axis(ax, title, x_right)
@@ -150,8 +152,8 @@ def save_single_panel(base, title, x_right, ycsb_log, tectonic_log, cpu_count, b
     fig.savefig(f"{base}.png", bbox_inches="tight", dpi=300)
     plt.close(fig)
 
-    handles = [handle for handle in (ycsb_handle, tectonic_handle) if handle is not None]
-    labels = ["YCSB", "Tectonic"][:len(handles)]
+    handles = [handle for handle in (ycsb_handle, xbench_handle) if handle is not None]
+    labels = ["YCSB", "X-Bench"][:len(handles)]
     if handles:
         save_legend(handles, labels, base)
     print(f"saved: {base}.pdf")
@@ -165,8 +167,8 @@ def main():
 
     generation = data["generation"]
     execution = data["execution"]
-    generation_window_s = max(generation["ycsb"]["duration_s"], generation["tectonic"]["duration_s"])
-    execution_window_s = max(execution["ycsb"]["duration_s"], execution["tectonic"]["duration_s"])
+    generation_window_s = max(generation["ycsb"]["duration_s"], generation["xbench"]["duration_s"])
+    execution_window_s = max(execution["ycsb"]["duration_s"], execution["xbench"]["duration_s"])
 
     fig, axes = plt.subplots(1, 2, figsize=(7.4, 2.8))
 
@@ -175,9 +177,9 @@ def main():
         generation["ycsb"]["duration_s"],
         generation_window_s,
     )
-    tectonic_gen_log = pad_cpu_log(
-        generation["tectonic"].get("cpu_log", []),
-        generation["tectonic"]["duration_s"],
+    xbench_gen_log = pad_cpu_log(
+        generation["xbench"].get("cpu_log", []),
+        generation["xbench"]["duration_s"],
         generation_window_s,
     )
     ycsb_exec_log = pad_cpu_log(
@@ -185,19 +187,19 @@ def main():
         execution["ycsb"]["duration_s"],
         execution_window_s,
     )
-    tectonic_exec_log = pad_cpu_log(
-        execution["tectonic"].get("cpu_log", []),
-        execution["tectonic"]["duration_s"],
+    xbench_exec_log = pad_cpu_log(
+        execution["xbench"].get("cpu_log", []),
+        execution["xbench"]["duration_s"],
         execution_window_s,
     )
 
     ycsb_gen = plot_line(axes[0], ycsb_gen_log, "YCSB", YCSB_STYLE, cpu_count)
-    tectonic_gen = plot_line(axes[0], tectonic_gen_log, "Tectonic", TECTONIC_STYLE, cpu_count)
+    xbench_gen = plot_line(axes[0], xbench_gen_log, "X-Bench", XBENCH_STYLE, cpu_count)
     for boundary in generation["ycsb"].get("phase_boundaries_s", []):
         axes[0].axvline(boundary, color="grey", linestyle=":", linewidth=0.8)
 
     ycsb_exec = plot_line(axes[1], ycsb_exec_log, "YCSB", YCSB_STYLE, cpu_count)
-    tectonic_exec = plot_line(axes[1], tectonic_exec_log, "Tectonic", TECTONIC_STYLE, cpu_count)
+    xbench_exec = plot_line(axes[1], xbench_exec_log, "X-Bench", XBENCH_STYLE, cpu_count)
 
     style_axis(axes[0], "workload generation", generation_window_s)
     style_axis(axes[1], "rocksdb execution", execution_window_s)
@@ -208,8 +210,8 @@ def main():
     fig.savefig(f"{base}.png", bbox_inches="tight", dpi=300)
     plt.close(fig)
 
-    handles = [handle for handle in (ycsb_gen or ycsb_exec, tectonic_gen or tectonic_exec) if handle is not None]
-    labels = ["YCSB", "Tectonic"][:len(handles)]
+    handles = [handle for handle in (ycsb_gen or ycsb_exec, xbench_gen or xbench_exec) if handle is not None]
+    labels = ["YCSB", "X-Bench"][:len(handles)]
     if handles:
         save_legend(handles, labels, base)
 
@@ -221,7 +223,7 @@ def main():
         "workload generation",
         generation_window_s,
         ycsb_gen_log,
-        tectonic_gen_log,
+        xbench_gen_log,
         cpu_count,
         generation["ycsb"].get("phase_boundaries_s", []),
     )
@@ -230,7 +232,7 @@ def main():
         "rocksdb execution",
         execution_window_s,
         ycsb_exec_log,
-        tectonic_exec_log,
+        xbench_exec_log,
         cpu_count,
     )
 

@@ -40,7 +40,7 @@ def phase(p):
             kind[{"WS": "direct", "WSM": "journal", "WFSM": "journal", "W": "writeback", "WM": "meta"}.get(rwbs, "other")] += int(v)
     dirt = collections.Counter()
     for comm, _, v in re.findall(r"^@dirtied_pages\[(.+?), (\d+)\]: (\d+)", bt, re.M):
-        dirt[LOGGERS.get(comm, "tectonic-cli" if comm == "tectonic-cli" else "other")] += int(v) * 4096
+        dirt[LOGGERS.get(comm, "xbench-cli" if comm == "xbench-cli" else "other")] += int(v) * 4096
     commits = int((re.findall(r"@jbd2_commits: (\d+)", bt) or [0])[0])
     entries = len((p / "journal.txt").read_text().splitlines()) if (p / "journal.txt").exists() else None
     rocks = None
@@ -54,13 +54,13 @@ def main():
     m = lambda v: f"{v / MIB:,.2f}"
     print("| Run | Phase | Seconds | Device write | RocksDB flush + compaction | Device - RocksDB | Direct (WS) "
           "| WS - RocksDB | ext4 journal (WSM, WFSM) | Writeback (W) | Metadata (WM) | Unclassified "
-          "| Dirtied: journald / rsyslog / jbd2 / tectonic-cli / other | jbd2 commits | Journal entries |")
+          "| Dirtied: journald / rsyslog / jbd2 / xbench-cli / other | jbd2 commits | Journal entries |")
     print("| --- " * 15 + "|")
     for p in sorted(Path(x) for x in glob.glob(str(D / "run*" / "*")) if (Path(x) / "bpftrace.txt").exists()):
         secs, dev_w, rocks, k, dirt, commits, entries = phase(p)
         classified = k["direct"] + k["journal"] + k["writeback"] + k["meta"]
         r = lambda f: f(rocks) if rocks is not None else "-"
-        d = " / ".join(m(dirt[x]) for x in ("journald", "rsyslog", "ext4 journal (jbd2)", "tectonic-cli", "other"))
+        d = " / ".join(m(dirt[x]) for x in ("journald", "rsyslog", "ext4 journal (jbd2)", "xbench-cli", "other"))
         print(f"| {p.parent.name} | {p.name} | {secs:.0f} | {m(dev_w)} | {r(m)} | {r(lambda v: m(dev_w - v))} | "
               f"{m(k['direct'])} | {r(lambda v: m(k['direct'] - v))} | {m(k['journal'])} | {m(k['writeback'])} | "
               f"{m(k['meta'])} | {m(dev_w - classified)} | {d} | {commits} | {entries} |")

@@ -6,20 +6,22 @@ Execution time = wall_time_s; bytes transferred = total_read_mb + total_write_mb
 A cell matches if the paper's number equals the data rounded to the paper's number of decimals.
 Writes original-paper-data/reproduced/table5/table5_check.md.
 """
+from pathlib import Path as _Path
+REPO_ROOT = str(_Path(__file__).resolve().parents[2])
 
 import json
 import re
 import subprocess
 from pathlib import Path
 
-ROOT = Path("/home/cc/Tectonic")
+ROOT = Path(REPO_ROOT)
 PDF = ROOT / "original-paper-data" / "X_Bench (5).pdf"
 SUMMARY = ROOT / "data" / "table_5_data" / "plotting_data_summary.json"
 OUT = ROOT / "original-paper-data" / "reproduced" / "table5" / "table5_check.md"
 DBS = ["cassandra", "redis", "rocksdb", "scylla"]
 NAMES = {"cassandra": "Cassandra", "redis": "Redis", "rocksdb": "RocksDB", "scylla": "ScyllaDB"}
 SCALES = ["2^18", "2^19", "2^20", "2^21", "2^22"]
-TOOLS = {"YCSB": "ycsb", "X-Bench": "tectonic"}
+TOOLS = {"YCSB": "ycsb", "X-Bench": "xbench"}
 
 
 def paper_rows():

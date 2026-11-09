@@ -11,7 +11,7 @@ iostat window, same client configuration and database images). The rerun's cells
 Table 5 (execution time, bytes transferred and DB-reported bytes), with a note.
 
 This wrapper only
-  - points the harness at --cli (the harness hard-codes target/release/tectonic-cli; the rerun uses fc63df5f, the
+  - points the harness at --cli (the harness hard-codes target/release/xbench-cli; the rerun uses fc63df5f, the
     binary of the October Table 5 run, so that the local build is left as it is), and records its sha256;
   - verifies the sha256 of the trace files of the selected scales against workloads/checksums.json first;
   - lets the harness's markdown report (write_table) fail without stopping the run: it assumes every database ran
@@ -20,7 +20,7 @@ This wrapper only
     are written before it; the two cells are merged into Table 5 from those.
 Every other argument goes to run_table5_revision_multirun.py.
 
-Usage: python3 run_scripts/run_table5_two_cells.py --cli <tectonic-cli> --db redis --scales 262144 --out-dir <dir>
+Usage: python3 run_scripts/run_table5_two_cells.py --cli <xbench-cli> --db redis --scales 262144 --out-dir <dir>
 """
 import os
 import sys
@@ -51,7 +51,7 @@ def main():
 
     checksums = json.load(open(mr.CHECKSUM_PATH))
     for scale in scales:
-        for w in ("ycsb", "tectonic"):
+        for w in ("ycsb", "xbench"):
             path = mr.workload_path(w, scale)
             want = checksums[os.path.basename(path)]["sha256"]
             got = sha256(path)
@@ -63,11 +63,11 @@ def main():
     prov_path = f"{out_dir}/provenance.json"
     prov = json.load(open(prov_path)) if os.path.exists(prov_path) else []
     prov.append({"started": time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime()), "argv": argv,
-                 "tectonic_cli": cli, "tectonic_cli_sha256": sha256(cli)})
+                 "xbench_cli": cli, "xbench_cli_sha256": sha256(cli)})
     with open(prov_path, "w") as f:
         json.dump(prov, f, indent=2)
 
-    base.TECTONIC_CLI = cli
+    base.XBENCH_CLI = cli
     write_table = mr.write_table
 
     def write_table_tolerant(summary, results):

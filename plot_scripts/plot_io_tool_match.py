@@ -31,7 +31,7 @@ sys.path.append(str(Path(__file__).resolve().parent.parent / "run_scripts"))
 import plot_style
 from run_io_tool_match import parse_bpftrace, category
 
-SIDES = (("ycsb-derivative", "YCSB"), ("xbench", "Tectonic"))
+SIDES = (("ycsb-derivative", "YCSB"), ("xbench", "X-Bench"))
 READ_TICKERS = ("rocksdb.non.last.level.read.bytes", "rocksdb.last.level.read.bytes")
 WRITE_TICKERS = ("rocksdb.wal.bytes", "rocksdb.flush.write.bytes", "rocksdb.compact.write.bytes")
 WAL_HEADER = 7  # bytes per WAL record (log::kHeaderSize), not counted by rocksdb.wal.bytes

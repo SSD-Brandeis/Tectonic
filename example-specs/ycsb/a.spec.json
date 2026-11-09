@@ -1,5 +1,5 @@
 {
-  "$schema": "../../vendor/tectonic/workload_schema.json",
+  "$schema": "../../vendor/xbench/workload_schema.json",
   "sections": [
     {
       "groups": [

@@ -6,12 +6,14 @@ Writes data/revision/R2.O2_ycsb-bounded-memory/results/tables.md. Every number i
 report.md and README.md is copied from that file. Means over trials; "sd" is the sample standard
 deviation (n - 1).
 """
+from pathlib import Path as _Path
+REPO_ROOT = str(_Path(__file__).resolve().parents[1])
 
 import json
 import statistics
 from pathlib import Path
 
-EXP_DIR = Path("/home/cc/Tectonic/data/revision/R2.O2_ycsb-bounded-memory")
+EXP_DIR = Path(REPO_ROOT + "/data/revision/R2.O2_ycsb-bounded-memory")
 RESULTS_DIR = EXP_DIR / "results"
 WORKLOADS = ["a", "b", "c", "d", "e", "f"]
 HEAPS = ["6m", "8m", "16m", "32m", "64m", "128m", "256m", "512m", "1024m", "default"]
@@ -83,7 +85,7 @@ def new_tables(ycsb, xbench_old, breakdown):
 
     md += [f"## T11: X-Bench resident memory at peak RSS (`xbench_breakdown.json`, binary built {xb['binary_mtime']} UTC, "
            f"HEAD {xb['git_head']}), 5 trials each", "",
-           "File-backed = the `tectonic-cli` binary, libc, libstdc++, ...; allocated = all anonymous memory "
+           "File-backed = the `xbench-cli` binary, libc, libstdc++, ...; allocated = all anonymous memory "
            "(X-Bench's data, buffers, stacks). Last column: the 2026-10-25 runs of T7 (older binary).", ""]
     rows = []
     for w in WORKLOADS:
@@ -216,7 +218,7 @@ def main():
                      f"{mean([t['duration_s'] for t in d['trials']]):.3f}"])
     md += [table(["Command", "Peak RSS (MB)", "Duration (s)"], rows), ""]
 
-    md += ["## T7: X-Bench (`tectonic-cli generate`, one process: load + run, 2M operations), 5 trials each", ""]
+    md += ["## T7: X-Bench (`xbench-cli generate`, one process: load + run, 2M operations), 5 trials each", ""]
     rows = []
     for w in WORKLOADS:
         tr = xbench[w]["trials"]

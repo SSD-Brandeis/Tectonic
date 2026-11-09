@@ -16,6 +16,8 @@ The only changes to the paper's commands: the scale (num, reads), `--trace_file`
 
 Output: data/revision/R1.O9-R2.O1_mixgraph/ (see its README.md).
 """
+from pathlib import Path as _Path
+REPO_ROOT = str(_Path(__file__).resolve().parents[1])
 import argparse
 import hashlib
 import json
@@ -26,14 +28,14 @@ import subprocess
 import sys
 import time
 
-ROOT_DIR = "/home/cc/Tectonic"
+ROOT_DIR = REPO_ROOT
 ROCKSDB_SRC = f"{ROOT_DIR}/rocksdb-v10.4.2"
 DB_BENCH = f"{ROCKSDB_SRC}/db_bench"
 TRACE_ANALYZER = f"{ROCKSDB_SRC}/trace_analyzer"
 # The same source with references/db_bench_scan_length_log.patch: one log line per Seek (key id, scan length
 # drawn, Next calls made), because RocksDB's tracer does not record Next. No other change.
 DB_BENCH_SCANLOG = f"{ROOT_DIR}/rocksdb-v10.4.2-scanlog/db_bench"
-TECTONIC_CLI = os.environ.get("TECTONIC_CLI", f"{ROOT_DIR}/target/release/tectonic-cli")  # override: the WAL-off rerun
+XBENCH_CLI = os.environ.get("XBENCH_CLI", f"{ROOT_DIR}/target/release/xbench-cli")  # override: the WAL-off rerun
 
 OUT_DIR = f"{ROOT_DIR}/data/revision/R1.O9-R2.O1_mixgraph"
 DBBENCH_DIR = f"{OUT_DIR}/dbbench"
@@ -699,7 +701,7 @@ def stage_xbench(args):
     os.makedirs(XBENCH_DIR, exist_ok=True)
     trace = f"{XBENCH_DIR}/mixgraph.txt"
     shutil.copy2(SPEC_PATH, f"{XBENCH_DIR}/prefix_dist.spec.json")
-    wall = run([TECTONIC_CLI, "generate", "-w", SPEC_PATH, "-o", trace], f"{XBENCH_DIR}/generate.out")
+    wall = run([XBENCH_CLI, "generate", "-w", SPEC_PATH, "-o", trace], f"{XBENCH_DIR}/generate.out")
     with open(f"{RESULTS_DIR}/xbench.json", "w") as f:
         json.dump({"spec": SPEC_PATH, "trace": trace, "generate_wall_s": wall, "trace_sha256": sha256_file(trace),
                    "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")}, f, indent=2)
@@ -963,7 +965,7 @@ def stage_ycsb(args):
 # =============================================================================
 #  STEP 4b: EXECUTE ON ROCKSDB
 # =============================================================================
-# The same executor and harness as R1.O7 (run_ycsb_derivatives_fidelity.py): tectonic-cli execute on
+# The same executor and harness as R1.O7 (run_ycsb_derivatives_fidelity.py): xbench-cli execute on
 # RocksDB, 1 thread, statistics on; per trial a fresh database, the trace in /dev/shm, dropped caches,
 # iostat of the device; stat markers around the load and each of RUN_WINDOWS windows of the run.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -1077,7 +1079,7 @@ def execute_trial(side, trace, trial):
     os.makedirs(out_dir, exist_ok=True)
     shutil.copyfile(trace, SHM_TRACE)
     r1o7.drop_caches()
-    cmd = [TECTONIC_CLI, "execute", "-i", SHM_TRACE, "-d", "rocksdb", "-p", ROCKSDB_DIR, "-t", "1",
+    cmd = [XBENCH_CLI, "execute", "-i", SHM_TRACE, "-d", "rocksdb", "-p", ROCKSDB_DIR, "-t", "1",
            "-c", f"scan_log={out_dir}/range_query_keys.txt;statistics=1{EXECUTOR_CONFIG}"]
     log(f"  $ {' '.join(cmd)}   (trace: {trace})")
     iostat = r1o7.Iostat(r1o7.IOSTAT_DEVICE)
@@ -1226,7 +1228,7 @@ def stage_report(args):
         names = {"dbbench": "db_bench trace", "xbench": "X-Bench", "ycsb": "YCSB"}
         sides = [s_ for s_ in EXEC_SIDES if ex.get(s_)]
         L += ["", "## 2. Execution on RocksDB", "",
-              f"`tectonic-cli execute` (same binary, options and harness as R1.O7), {len(ex[sides[0]])} trials per "
+              f"`xbench-cli execute` (same binary, options and harness as R1.O7), {len(ex[sides[0]])} trials per "
               "trace in rounds with rotated order; mean ± stdev; Diff to the db_bench trace.", "",
               "| Metric | " + " | ".join(f"{names[s_]} | Diff" if s_ != "dbbench" else names[s_] for s_ in sides) + " |",
               "| --- |" + " --- |" * (2 * len(sides) - 1)]

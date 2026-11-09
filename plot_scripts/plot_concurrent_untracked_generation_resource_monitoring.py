@@ -32,12 +32,12 @@ TOOLS = [
         {"color": "grey", "linestyle": "-", "marker": "^", "markerfacecolor": "none"},
     ),
     (
-        "tectonic",
+        "xbench",
         "X-Bench (untracked)",
         {"color": "tab:red", "linestyle": "-.", "marker": "s", "markerfacecolor": "none"},
     ),
     (
-        "tectonic_unique",
+        "xbench_unique",
         "X-Bench",
         {"color": "tab:blue", "linestyle": ":", "marker": "o", "markerfacecolor": "none"},
     ),

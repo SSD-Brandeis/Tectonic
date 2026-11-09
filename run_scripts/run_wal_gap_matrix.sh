@@ -16,7 +16,7 @@
 # loop device alone; "sda" = the DB on the root file system, as in the experiments, iostat of sda.
 # Per run: iostat (1 s), /proc/diskstats of the device before and after (after `sync` + 2 s), the executor output
 # (RocksDB tickers), LOG, OPTIONS, the DB's files and archive/.
-# Usage (in tmux): run_wal_gap_matrix.sh <out-dir> <tectonic-cli> "<devices>" <workload>=<trace> ...
+# Usage (in tmux): run_wal_gap_matrix.sh <out-dir> <xbench-cli> "<devices>" <workload>=<trace> ...
 set -eu
 OUT=$1 BIN=$2 DEVICES=$3; shift 3
 WORKLOADS=("$@")

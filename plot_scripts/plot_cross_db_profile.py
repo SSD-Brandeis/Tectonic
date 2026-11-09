@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from pathlib import Path as _Path
+REPO_ROOT = str(_Path(__file__).resolve().parents[1])
 import os
 import json
 import re
@@ -6,8 +8,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 from plot_style import DB_COLORS, DB_HATCHES, apply_plot_style, save_fig, format_label, save_legend
 
-STATS_DIR = "/home/cc/Tectonic/data/cross_db_profile"
-PLOTS_DIR = "/home/cc/Tectonic/experiment_plots_cross_db_profile"
+STATS_DIR = REPO_ROOT + "/data/cross_db_profile"
+PLOTS_DIR = REPO_ROOT + "/experiment_plots_cross_db_profile"
 os.makedirs(PLOTS_DIR, exist_ok=True)
 
 # Regex patterns
@@ -17,7 +19,7 @@ OVERALL_PAT = re.compile(r"\[\[\*\*\*Overall Stats\*\*\*\]\]")
 
 def parse_log_file(filepath):
     """
-    Parses a Tectonic benchmark log file and extracts throughput values.
+    Parses a X-Bench benchmark log file and extracts throughput values.
     Returns a dictionary of phase_name -> throughput (float)
     """
     results = {}
@@ -80,9 +82,9 @@ def main():
             log_path = os.path.join(STATS_DIR, f"{db}_{wl_name}.log")
             data[db][wl_name] = parse_log_file(log_path)
             
-        # Parse Tectonic
-        log_path = os.path.join(STATS_DIR, f"{db}_tectonic_1.log")
-        data[db]["tectonic_1"] = parse_log_file(log_path)
+        # Parse X-Bench
+        log_path = os.path.join(STATS_DIR, f"{db}_xbench_1.log")
+        data[db]["xbench_1"] = parse_log_file(log_path)
 
     # Save summary json
     summary_path = os.path.join(STATS_DIR, "summary.json")
@@ -173,28 +175,28 @@ def main():
     save_legend(fig_dbb, os.path.join(PLOTS_DIR, "db_bench_throughput"))
     save_fig(fig_dbb, os.path.join(PLOTS_DIR, "db_bench_throughput"))
 
-    # 4. Tectonic Plot
-    fig_tec, ax_tec = plt.subplots(figsize=(8, 5))
-    tectonic_phases = ["write heavy", "read heavy", "balanced"]
-    def tec_tp(db, phase):
-        return data[db].get("tectonic_1", {}).get(phase, 0.0)
+    # 4. X-Bench Plot
+    fig_x, ax_x = plt.subplots(figsize=(8, 5))
+    xbench_phases = ["write heavy", "read heavy", "balanced"]
+    def x_tp(db, phase):
+        return data[db].get("xbench_1", {}).get(phase, 0.0)
     render_bar_chart(
-        ax_tec, 
-        "tectonic workload performance by phase (single threaded)", 
-        tectonic_phases, 
+        ax_x, 
+        "xbench workload performance by phase (single threaded)", 
+        xbench_phases, 
         databases, 
-        tectonic_phases, 
-        tec_tp
+        xbench_phases, 
+        x_tp
     )
-    save_legend(fig_tec, os.path.join(PLOTS_DIR, "tectonic_throughput"))
-    save_fig(fig_tec, os.path.join(PLOTS_DIR, "tectonic_throughput"))
+    save_legend(fig_x, os.path.join(PLOTS_DIR, "xbench_throughput"))
+    save_fig(fig_x, os.path.join(PLOTS_DIR, "xbench_throughput"))
 
     # 5. Combined 2x2 Plot
     fig_comb, axs = plt.subplots(2, 2, figsize=(16, 10))
     render_bar_chart(axs[0, 0], "(a) ycsb workloads", ycsb_wls, databases, [w.lower() for w in ycsb_wls], ycsb_tp)
     render_bar_chart(axs[0, 1], "(b) kvbench workloads", kv_wls, databases, [w.lower() for w in kv_wls], kv_tp)
     render_bar_chart(axs[1, 0], "(c) db_bench workloads", db_bench_wls, databases, db_bench_wls, dbb_tp)
-    render_bar_chart(axs[1, 1], "(d) tectonic workload phases", tectonic_phases, databases, tectonic_phases, tec_tp)
+    render_bar_chart(axs[1, 1], "(d) xbench workload phases", xbench_phases, databases, xbench_phases, x_tp)
     
     fig_comb.suptitle(format_label("cross-database benchmark performance suite (single threaded)"), fontsize=16, fontweight="bold", y=0.98)
     save_legend(fig_comb, os.path.join(PLOTS_DIR, "combined_db_profile_throughputs"))

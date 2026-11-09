@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Run workload-count correctness checks for Tectonic, YCSB, and db_bench.
+"""Run workload-count correctness checks for X-Bench, YCSB, and db_bench.
 
 The experiment uses YCSB Workload B composition with compact values:
   load: 100 percent inserts
   run:  95 percent point queries and 5 percent updates
 
-Tectonic has exact per-operation counts in its spec. YCSB uses probabilistic
+X-Bench has exact per-operation counts in its spec. YCSB uses probabilistic
 operation selection for the 95/5 run phase. The db_bench-compatible adapter
 models native db_bench's per-worker phase counts, where every worker receives
 the full configured --num/--reads/--writes count.
@@ -26,13 +26,13 @@ from typing import Any
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
-DATA_DIR = ROOT_DIR / "data" / "ycsb_tectonic_correctness_thread_modes"
+DATA_DIR = ROOT_DIR / "data" / "ycsb_xbench_correctness_thread_modes"
 SPEC_DIR = DATA_DIR / "specs"
 TRACE_DIR = DATA_DIR / "workloads"
 LOG_DIR = DATA_DIR / "logs"
 RESULTS_PATH = DATA_DIR / "results.json"
-PLOT_SCRIPT = ROOT_DIR / "plot_scripts" / "plot_ycsb_tectonic_db_bench_correctness_thread_modes.py"
-TECTONIC_CLI = ROOT_DIR / "target" / "release" / "tectonic-cli"
+PLOT_SCRIPT = ROOT_DIR / "plot_scripts" / "plot_ycsb_xbench_db_bench_correctness_thread_modes.py"
+XBENCH_CLI = ROOT_DIR / "target" / "release" / "xbench-cli"
 DB_BENCH_ADAPTER = ROOT_DIR / "run_scripts" / "generate_db_bench_correctness_workload_file.py"
 HARNESS_DIR = ROOT_DIR / "rocksdb-benchmark-harness"
 YCSB_DIR = HARNESS_DIR / "vendor" / "YCSB"
@@ -242,12 +242,12 @@ def remove_paths(paths: list[Path]) -> None:
             pass
 
 
-def generate_tectonic(spec_path: Path, record_count: int, threads: int, repetition: int, keep_workloads: bool) -> dict[str, Any]:
+def generate_xbench(spec_path: Path, record_count: int, threads: int, repetition: int, keep_workloads: bool) -> dict[str, Any]:
     rep = repetition_tag(repetition)
-    base = TRACE_DIR / f"tectonic_b_count{record_count}_t{threads}_{rep}.txt"
+    base = TRACE_DIR / f"xbench_b_count{record_count}_t{threads}_{rep}.txt"
     remove_paths([base] + [output_for_thread(base, t) for t in range(threads)])
     cmd = [
-        str(TECTONIC_CLI),
+        str(XBENCH_CLI),
         "generate",
         "-w",
         str(spec_path),
@@ -260,11 +260,11 @@ def generate_tectonic(spec_path: Path, record_count: int, threads: int, repetiti
     ]
     env = os.environ.copy()
     if threads > 1:
-        env["TECTONIC_PARALLEL_GEN"] = "1"
+        env["XBENCH_PARALLEL_GEN"] = "1"
     command = run_cmd(
-        "Tectonic",
+        "X-Bench",
         cmd,
-        LOG_DIR / f"tectonic_count{record_count}_t{threads}_{rep}.log",
+        LOG_DIR / f"xbench_count{record_count}_t{threads}_{rep}.log",
         cwd=ROOT_DIR,
         env=env,
     )
@@ -379,7 +379,7 @@ def run_repetition(
     expected = expected_counts(record_count)
     print(f"\n=== count={record_count:,} threads={threads} repetition={repetition} ===", flush=True)
     tool_runs = {
-        "tectonic": generate_tectonic(spec_path, record_count, threads, repetition, keep_workloads),
+        "xbench": generate_xbench(spec_path, record_count, threads, repetition, keep_workloads),
         "ycsb": generate_ycsb(record_count, threads, repetition, keep_workloads),
         "db_bench": generate_db_bench(record_count, threads, repetition, keep_workloads),
     }
@@ -455,7 +455,7 @@ def run_config(
         run_repetition(spec_path, record_count, threads, repetition, keep_workloads, stats_path)
         for repetition in range(1, repetitions + 1)
     ]
-    tools = {tool: aggregate_tool(tool, raw_runs, expected) for tool in ("tectonic", "ycsb", "db_bench")}
+    tools = {tool: aggregate_tool(tool, raw_runs, expected) for tool in ("xbench", "ycsb", "db_bench")}
     summary = {
         "record_type": "config_average_stats",
         "record_count": record_count,
@@ -468,7 +468,7 @@ def run_config(
     append_stats_record(stats_path, summary)
     print(
         f"  averaged over {repetitions} runs: "
-        f"Tectonic+={tools['tectonic']['minimum_operation_accuracy_percent']:.2f}% "
+        f"X-Bench+={tools['xbench']['minimum_operation_accuracy_percent']:.2f}% "
         f"YCSB={tools['ycsb']['minimum_operation_accuracy_percent']:.2f}% "
         f"db_bench={tools['db_bench']['minimum_operation_accuracy_percent']:.2f}%",
         flush=True,
@@ -496,7 +496,7 @@ def write_results(payload: dict[str, Any]) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Run Tectonic/YCSB/db_bench workload-count correctness experiment.",
+        description="Run X-Bench/YCSB/db_bench workload-count correctness experiment.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument("--counts", default=",".join(str(value) for value in DEFAULT_COUNTS))
@@ -525,7 +525,7 @@ def main() -> None:
                 )
 
     for path, label in (
-        (TECTONIC_CLI, "tectonic-cli"),
+        (XBENCH_CLI, "xbench-cli"),
         (DB_BENCH_ADAPTER, "db_bench-compatible adapter"),
         (YCSB_DIR / "file" / "target" / "file-binding-0.18.0-SNAPSHOT.jar", "YCSB file binding jar"),
         (YCSB_DIR / "core" / "target" / "core-0.18.0-SNAPSHOT.jar", "YCSB core jar"),
@@ -548,13 +548,13 @@ def main() -> None:
             for record_count in counts:
                 runs.append(run_config(spec_path, record_count, threads, args.repetitions, args.keep_workloads, current_stats_path))
         payload = {
-            "experiment": "ycsb_tectonic_correctness_thread_modes",
+            "experiment": "ycsb_xbench_correctness_thread_modes",
             "mode": "workload_b_operation_count_accuracy_averaged",
             "root_dir": str(ROOT_DIR),
             "data_dir": str(DATA_DIR),
             "stats_log_path": str(current_stats_path),
-            "plot_dir": str(ROOT_DIR / "ycsb_tectonic_correctness_plots" / "thread_modes"),
-            "custom_tectonic_spec": str(spec_path),
+            "plot_dir": str(ROOT_DIR / "ycsb_xbench_correctness_plots" / "thread_modes"),
+            "custom_xbench_spec": str(spec_path),
             "workload": {
                 "name": "YCSB workload B compact value count accuracy",
                 "base_record_count": BASE_RECORD_COUNT,
@@ -567,7 +567,7 @@ def main() -> None:
             "thread_settings": thread_settings,
             "repetitions": args.repetitions,
             "tool_notes": {
-                "tectonic": "generate --threads divides the requested scale across worker output files.",
+                "xbench": "generate --threads divides the requested scale across worker output files.",
                 "YCSB": "Client.java divides operationcount across worker threads, but CoreWorkload selects the 95/5 mix probabilistically.",
                 "db_bench": "The adapter models native db_bench phase counters as per-worker counts, so threads multiply generated operations.",
             },

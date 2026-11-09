@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Compare native RocksDB db_bench with Tectonic db_bench-equivalent specs.
+"""Compare native RocksDB db_bench with X-Bench db_bench-equivalent specs.
 
 Native db_bench does not emit a separate workload trace. Its workload generator
 is embedded in the RocksDB benchmark process, so this script compares end-to-end
-RocksDB runs: db_bench internal generation + execution vs. Tectonic generation
-+ RocksDB execution through `tectonic-cli benchmark`.
+RocksDB runs: db_bench internal generation + execution vs. X-Bench generation
++ RocksDB execution through `xbench-cli benchmark`.
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ PLOT_SCRIPTS_DIR = ROOT_DIR / "plot_scripts"
 OUT_DIR = ROOT_DIR / "data" / "db_bench_exp_test" / "end_to_end"
 TMP_DIR = Path("/tmp/db_bench_exp_test")
 PLOT_SCRIPT = PLOT_SCRIPTS_DIR / "plot_db_bench_exp_test.py"
-DEFAULT_TECTONIC_CLI = ROOT_DIR / "target" / "release" / "tectonic-cli"
+DEFAULT_XBENCH_CLI = ROOT_DIR / "target" / "release" / "xbench-cli"
 ROCKSDB_VENDOR_DIR = ROOT_DIR / "rocksdb-benchmark-harness" / "vendor" / "rocksdb"
 DEFAULT_DB_BENCH_CANDIDATES = [
     ROCKSDB_VENDOR_DIR / "db_bench",
@@ -309,19 +309,19 @@ def resolve_db_bench_bin(cli_value: str | None) -> Path | None:
     return Path(found).resolve() if found else None
 
 
-def build_tectonic(tectonic_cli: Path, no_build: bool) -> None:
-    if no_build and tectonic_cli.exists():
+def build_xbench(xbench_cli: Path, no_build: bool) -> None:
+    if no_build and xbench_cli.exists():
         return
     if no_build:
-        ensure_file(tectonic_cli, "tectonic-cli")
+        ensure_file(xbench_cli, "xbench-cli")
         return
-    banner("build Tectonic with RocksDB support")
+    banner("build X-Bench with RocksDB support")
     subprocess.run(
         ["cargo", "build", "--release", "--features", "db-layer/rocksdb"],
         cwd=ROOT_DIR,
         check=True,
     )
-    ensure_file(tectonic_cli, "tectonic-cli")
+    ensure_file(xbench_cli, "xbench-cli")
 
 
 def maybe_build_db_bench(db_bench_bin: Path | None, no_build: bool) -> Path:
@@ -362,10 +362,10 @@ def db_bench_command(db_bench_bin: Path, workload: str, op_count: int, threads: 
     return cmd
 
 
-def tectonic_command(tectonic_cli: Path, workload: str, scale: float, threads: int, db_path: Path) -> list[str]:
+def xbench_command(xbench_cli: Path, workload: str, scale: float, threads: int, db_path: Path) -> list[str]:
     spec = WORKLOADS[workload]["spec"]
     return [
-        str(tectonic_cli),
+        str(xbench_cli),
         "benchmark",
         "-w",
         str(spec),
@@ -396,7 +396,7 @@ def run_workload(
     scale: float,
     op_count: int,
     threads: int,
-    tectonic_cli: Path,
+    xbench_cli: Path,
     db_bench_bin: Path,
 ) -> dict[str, Any]:
     cfg = WORKLOADS[workload]
@@ -404,9 +404,9 @@ def run_workload(
     generated_ops = generated_ops_for_workload(workload, op_count)
 
     db_bench_db = TMP_DIR / f"db_bench_w{workload}"
-    tectonic_db = TMP_DIR / f"tectonic_w{workload}"
+    xbench_db = TMP_DIR / f"xbench_w{workload}"
     remove_tree(db_bench_db)
-    remove_tree(tectonic_db)
+    remove_tree(xbench_db)
 
     db_bench_result = run_monitored(
         f"native db_bench workload {workload}",
@@ -414,10 +414,10 @@ def run_workload(
         OUT_DIR / f"db_bench_w{workload}.log",
         cwd=ROOT_DIR,
     )
-    tectonic_result = run_monitored(
-        f"Tectonic workload {workload}",
-        tectonic_command(tectonic_cli, workload, scale, threads, tectonic_db),
-        OUT_DIR / f"tectonic_w{workload}.log",
+    xbench_result = run_monitored(
+        f"X-Bench workload {workload}",
+        xbench_command(xbench_cli, workload, scale, threads, xbench_db),
+        OUT_DIR / f"xbench_w{workload}.log",
         cwd=ROOT_DIR,
     )
 
@@ -426,13 +426,13 @@ def run_workload(
         "description": cfg["description"],
         "note": cfg.get("note"),
         "operation_mix": cfg["operation_mix"],
-        "tectonic_spec": str(cfg["spec"]),
+        "xbench_spec": str(cfg["spec"]),
         "scale": scale,
         "scaled_ops_per_phase": op_count,
         "generated_operations_per_tool": generated_ops,
         "threads": threads,
         "native_db_bench": add_efficiency_metrics(db_bench_result, generated_ops),
-        "tectonic": add_efficiency_metrics(tectonic_result, generated_ops),
+        "xbench": add_efficiency_metrics(xbench_result, generated_ops),
     }
 
 
@@ -450,13 +450,13 @@ def write_results(payload: dict[str, Any]) -> Path:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Run db_bench vs Tectonic RocksDB resource experiment.",
+        description="Run db_bench vs X-Bench RocksDB resource experiment.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument("--workloads", default="1,2,4,5", help="comma-separated workload ids or all")
     parser.add_argument("--scale", type=float, default=DEFAULT_SCALE, help="scale applied to canonical 900M-op specs")
     parser.add_argument("--threads", type=int, default=DEFAULT_THREADS)
-    parser.add_argument("--tectonic-cli", default=str(DEFAULT_TECTONIC_CLI))
+    parser.add_argument("--xbench-cli", default=str(DEFAULT_XBENCH_CLI))
     parser.add_argument("--db-bench-bin", help="path to native RocksDB db_bench")
     parser.add_argument("--no-build", action="store_true", help="do not build missing binaries")
     parser.add_argument("--no-plot", action="store_true", help="skip PDF plot generation")
@@ -468,35 +468,35 @@ def main() -> None:
 
     workloads = parse_workloads(args.workloads)
     op_count = scaled_ops(args.scale)
-    tectonic_cli = Path(args.tectonic_cli).expanduser().resolve()
+    xbench_cli = Path(args.xbench_cli).expanduser().resolve()
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     TMP_DIR.mkdir(parents=True, exist_ok=True)
 
-    build_tectonic(tectonic_cli, args.no_build)
+    build_xbench(xbench_cli, args.no_build)
     for workload in workloads:
-        ensure_file(WORKLOADS[workload]["spec"], f"Tectonic db_bench workload {workload} spec")
+        ensure_file(WORKLOADS[workload]["spec"], f"X-Bench db_bench workload {workload} spec")
     db_bench_bin = maybe_build_db_bench(resolve_db_bench_bin(args.db_bench_bin), args.no_build)
 
     print(SEP)
-    print("  experiment : native RocksDB db_bench vs Tectonic on RocksDB")
+    print("  experiment : native RocksDB db_bench vs X-Bench on RocksDB")
     print(f"  workloads  : {workloads}")
     print(f"  scale      : {args.scale} ({op_count:,} ops per canonical phase)")
     print(f"  threads    : {args.threads}")
     print(f"  db_bench   : {db_bench_bin}")
-    print(f"  tectonic   : {tectonic_cli}")
+    print(f"  xbench   : {xbench_cli}")
     print(f"  results    : {OUT_DIR}")
     print("  monitors   : wait4 CPU time, pidstat when installed, /proc memory samples")
     print(SEP, flush=True)
 
     runs = [
-        run_workload(workload, args.scale, op_count, args.threads, tectonic_cli, db_bench_bin)
+        run_workload(workload, args.scale, op_count, args.threads, xbench_cli, db_bench_bin)
         for workload in workloads
     ]
 
     payload = {
         "experiment": "db_bench_exp_test",
-        "mode": "native_db_bench_vs_tectonic_rocksdb_end_to_end",
+        "mode": "native_db_bench_vs_xbench_rocksdb_end_to_end",
         "root_dir": str(ROOT_DIR),
         "run_script_dir": str(RUN_SCRIPTS_DIR),
         "output_dir": str(OUT_DIR),
@@ -506,7 +506,7 @@ def main() -> None:
         "threads": args.threads,
         "workloads": workloads,
         "db_bench_bin": str(db_bench_bin),
-        "tectonic_cli": str(tectonic_cli),
+        "xbench_cli": str(xbench_cli),
         "metric_definitions": {
             "duration_s": "wall-clock time around the benchmark process",
             "cpu_seconds": "wait4 user+system CPU seconds for the benchmark process",

@@ -1,4 +1,5 @@
 #!/bin/bash
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 set -e
 
 # Helper function to poll cluster size
@@ -31,10 +32,10 @@ wait_for_execution_phase() {
     done
 }
 
-cd /home/cc/Tectonic
+cd ${REPO_ROOT}
 
-# Compile Tectonic
-echo "[1] Building Tectonic..."
+# Compile X-Bench
+echo "[1] Building X-Bench..."
 cargo build --release --features db-layer/scylla
 
 # Setup Docker Network
@@ -79,10 +80,10 @@ CREATE TABLE IF NOT EXISTS usertable (
 );
 EOF
 
-echo "[5] Starting Tectonic Benchmark (Background)..."
+echo "[5] Starting X-Bench Benchmark (Background)..."
 # We scale the benchmark to 0.1x (100k inserts) as a proof of concept.
 # 16 threads strikes a balance between high throughput and not overloading the single Docker container.
-./target/release/tectonic-cli benchmark \
+./target/release/xbench-cli benchmark \
     --ycsb a \
     -d scylla \
     --database-path 127.0.0.1:9042 \
@@ -90,7 +91,7 @@ echo "[5] Starting Tectonic Benchmark (Background)..."
     -t 16 \
     --status-interval 1 \
     --csv-log metrics.csv &
-TECTONIC_PID=$!
+XBENCH_PID=$!
 
 wait_for_execution_phase
 
@@ -121,8 +122,8 @@ wait_for_nodes 3
 echo "Node 3 stabilized. Waiting 60 seconds for recovered steady-state baseline..."
 sleep 60
 
-echo "Cluster expansion complete! Killing Tectonic early..."
-kill $TECTONIC_PID || true
+echo "Cluster expansion complete! Killing X-Bench early..."
+kill $XBENCH_PID || true
 
 echo "[8] Experiment complete. Metrics saved to metrics.csv."
 # Cleanup

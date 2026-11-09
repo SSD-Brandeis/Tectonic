@@ -21,6 +21,8 @@ Output: data/revision/R1.O7-R1.O9_direct-io_iostat-vs-rocksdb-stats/plots/
           <workload>_<own-device|shared-sda>_{preview.png,throughput.pdf,latency.pdf,data_movement.pdf},
           x-bench_legend.pdf
 """
+from pathlib import Path as _Path
+REPO_ROOT = str(_Path(__file__).resolve().parents[1])
 import re
 import sys
 from pathlib import Path
@@ -36,12 +38,12 @@ sys.path.append(str(Path(__file__).resolve().parent.parent / "run_scripts"))
 import plot_style
 from run_ycsb_derivatives_fidelity import parse_execute_output
 
-DATA = Path("/home/cc/Tectonic/data/revision/R1.O7-R1.O9_direct-io_iostat-vs-rocksdb-stats")
+DATA = Path(REPO_ROOT + "/data/revision/R1.O7-R1.O9_direct-io_iostat-vs-rocksdb-stats")
 PLOT_DIR = DATA / "plots"
 CONFIG = "nowal"  # WAL off
 DEVICE_LABELS = {"loop": "own device", "sda": "shared sda"}
 DEVICE_NAMES = {"loop": "own-device", "sda": "shared-sda"}
-STYLE = "Tectonic"  # X-Bench's colours in the R1.O7 plots
+STYLE = "X-Bench"  # X-Bench's colours in the R1.O7 plots
 OP_LABELS = {"Insert": "insert", "Point Query": "PQ", "Update": "update", "Merge": "merge",
              "Range Query": "RQ", "Point Delete": "PD", "Range Delete": "RD"}
 # mixgraph: db_bench's names and order, as plot_mixgraph_fig12_style.py

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from pathlib import Path as _Path
+REPO_ROOT = str(_Path(__file__).resolve().parents[1])
 import os
 import sys
 import json
@@ -15,9 +17,9 @@ import matplotlib.font_manager as font_manager
 import plot_style
 
 
-STATS_DIR = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("/home/cc/Tectonic/data/rocksdb_similarity_ycsba")
+STATS_DIR = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(REPO_ROOT + "/data/rocksdb_similarity_ycsba")
 OUTPUT_NAME = sys.argv[2] if len(sys.argv) > 2 else "rocksdb_similarity_ycsba_accuracy"
-OUTPUT_DIR = Path("/home/cc/Tectonic/experiment_plots")
+OUTPUT_DIR = Path(REPO_ROOT + "/experiment_plots")
 OUTPUT_DIR.mkdir(exist_ok=True)
 
 BYTE_TO_GB = 1024**3
@@ -144,17 +146,17 @@ def main():
     print("Parsing experiment data...")
 
     # 1. IOSTAT throughput over time (Subplot A)
-    tec_iostat_runs = collect_iostat_runs("tectonic")
+    x_iostat_runs = collect_iostat_runs("xbench")
     ycsb_iostat_runs = collect_iostat_runs("ycsb")
-    r_tec, w_tec = average_iostat_runs(tec_iostat_runs)
+    r_x, w_x = average_iostat_runs(x_iostat_runs)
     r_ycsb, w_ycsb = average_iostat_runs(ycsb_iostat_runs)
 
     # 2. Latency boxplots (Subplot B)
-    tec_latency = average_latency_percentiles("tectonic")
+    x_latency = average_latency_percentiles("xbench")
     ycsb_latency = average_latency_percentiles("ycsb")
 
     # 3. Read/Write Data Movement (Subplot C)
-    m_tec = avg_metrics("tectonic")
+    m_x = avg_metrics("xbench")
     m_ycsb = avg_metrics("ycsb")
 
     # Calculate bytes
@@ -166,13 +168,13 @@ def main():
     ) / BYTE_TO_GB
     ycsb_bytes_vals = np.array([bytes_read_y, bytes_written_y])
 
-    bytes_read_t = (m_tec.get("rocksdb.bytes.read", 0) + m_tec.get("rocksdb.compact.read.bytes", 0)) / BYTE_TO_GB
+    bytes_read_t = (m_x.get("rocksdb.bytes.read", 0) + m_x.get("rocksdb.compact.read.bytes", 0)) / BYTE_TO_GB
     bytes_written_t = (
-        m_tec.get("rocksdb.wal.bytes", 0)
-        + m_tec.get("rocksdb.flush.write.bytes", 0)
-        + m_tec.get("rocksdb.compact.write.bytes", 0)
+        m_x.get("rocksdb.wal.bytes", 0)
+        + m_x.get("rocksdb.flush.write.bytes", 0)
+        + m_x.get("rocksdb.compact.write.bytes", 0)
     ) / BYTE_TO_GB
-    tec_bytes_vals = np.array([bytes_read_t, bytes_written_t])
+    x_bytes_vals = np.array([bytes_read_t, bytes_written_t])
 
     # 4. Cache hit/miss counts (Subplot D)
     ycsb_cache_vals = np.array([
@@ -180,9 +182,9 @@ def main():
         m_ycsb.get("rocksdb.block.cache.miss", 0)
     ]) / CONVERT_TO_MILLION
 
-    tec_cache_vals = np.array([
-        m_tec.get("rocksdb.block.cache.hit", 0),
-        m_tec.get("rocksdb.block.cache.miss", 0)
+    x_cache_vals = np.array([
+        m_x.get("rocksdb.block.cache.hit", 0),
+        m_x.get("rocksdb.block.cache.miss", 0)
     ]) / CONVERT_TO_MILLION
 
     print("Data parsing complete. Plotting...")
@@ -190,9 +192,9 @@ def main():
 
     # ------------------ (A) THROUGHPUT OVER TIME ------------------
     fig, ax = plt.subplots(figsize=FIGSIZE)
-    n_tec = len(r_tec)
+    n_x = len(r_x)
     n_ycsb = len(r_ycsb)
-    n = min(n_tec, n_ycsb)
+    n = min(n_x, n_ycsb)
 
     # Apply rolling average smoothing to reduce compaction noise
     WINDOW = 3  # 3-second rolling average
@@ -205,8 +207,8 @@ def main():
 
     sr_ycsb = smooth(r_ycsb[:n])
     sw_ycsb = smooth(w_ycsb[:n])
-    sr_tec  = smooth(r_tec[:n])
-    sw_tec  = smooth(w_tec[:n])
+    sr_x  = smooth(r_x[:n])
+    sw_x  = smooth(w_x[:n])
 
     # Each iostat sample is the average throughput over the 1-second interval
     # ending at that second, so sample i truthfully belongs at x=i+1. Prepend
@@ -214,8 +216,8 @@ def main():
     x = np.concatenate([[0], np.arange(1, n + 1)])
     sr_ycsb = np.concatenate([[0.0], sr_ycsb])
     sw_ycsb = np.concatenate([[0.0], sw_ycsb])
-    sr_tec  = np.concatenate([[0.0], sr_tec])
-    sw_tec  = np.concatenate([[0.0], sw_tec])
+    sr_x  = np.concatenate([[0.0], sr_x])
+    sw_x  = np.concatenate([[0.0], sw_x])
 
     # Apply standard LINE_STYLES, but without markers and with a thicker line
     # for this plot specifically (too many samples for markers to read well).
@@ -223,8 +225,8 @@ def main():
                                     "linewidth": plt.rcParams["lines.linewidth"] + 1}
     ax.plot(x, sr_ycsb, label="read (YCSB)", **{**no_marker_style('YCSB'), "linestyle": "-"})
     ax.plot(x, sw_ycsb, label="write (YCSB)", **{**no_marker_style('YCSB'), "linestyle": "--"})
-    ax.plot(x, sr_tec, label="read (X-Bench)", **{**no_marker_style('Tectonic'), "linestyle": "-"})
-    ax.plot(x, sw_tec, label="write (X-Bench)", **{**no_marker_style('Tectonic'), "linestyle": "--"})
+    ax.plot(x, sr_x, label="read (X-Bench)", **{**no_marker_style('X-Bench'), "linestyle": "-"})
+    ax.plot(x, sw_x, label="write (X-Bench)", **{**no_marker_style('X-Bench'), "linestyle": "--"})
 
     ax.set_xlabel(plot_style.format_label("time (s)"))
     ax.set_ylabel(plot_style.format_label("bytes transferred (MB)"))
@@ -249,7 +251,7 @@ def main():
     width = 0.25
 
     ycsb_box_stats = []
-    tec_box_stats = []
+    x_box_stats = []
     for op in operations:
         ycsb_box_stats.append({
             "med": ycsb_latency[op]["p50"],
@@ -259,12 +261,12 @@ def main():
             "whishi": ycsb_latency[op]["p99"],
             "label": "insert" if op == "insert" else ("PQ" if op == "pointquery" else "update")
         })
-        tec_box_stats.append({
-            "med": tec_latency[op]["p50"],
-            "q1": tec_latency[op]["p25"],
-            "q3": tec_latency[op]["p75"],
-            "whislo": tec_latency[op]["p0"],
-            "whishi": tec_latency[op]["p99"],
+        x_box_stats.append({
+            "med": x_latency[op]["p50"],
+            "q1": x_latency[op]["p25"],
+            "q3": x_latency[op]["p75"],
+            "whislo": x_latency[op]["p0"],
+            "whishi": x_latency[op]["p99"],
             "label": "insert" if op == "insert" else ("PQ" if op == "pointquery" else "update")
         })
 
@@ -277,12 +279,12 @@ def main():
         for item in bp_ycsb[element]:
             item.set_color("black")
 
-    bp_tec = ax.bxp(tec_box_stats, positions=positions + width/2, widths=0.25, patch_artist=True, showfliers=False)
-    for patch in bp_tec["boxes"]:
-        patch.set_facecolor(plot_style.BAR_STYLES['Tectonic']["facecolor"])
-        patch.set_edgecolor(plot_style.BAR_STYLES['Tectonic']["edgecolor"])
+    bp_x = ax.bxp(x_box_stats, positions=positions + width/2, widths=0.25, patch_artist=True, showfliers=False)
+    for patch in bp_x["boxes"]:
+        patch.set_facecolor(plot_style.BAR_STYLES['X-Bench']["facecolor"])
+        patch.set_edgecolor(plot_style.BAR_STYLES['X-Bench']["edgecolor"])
     for element in ["whiskers", "caps", "medians"]:
-        for item in bp_tec[element]:
+        for item in bp_x[element]:
             item.set_color("black")
 
     ax.set_xticks(positions)
@@ -306,7 +308,7 @@ def main():
     x = np.arange(len(categories)) * category_spacing
 
     ax.bar(x - width/2, ycsb_bytes_vals, width, label="YCSB", **plot_style.BAR_STYLES['YCSB'])
-    ax.bar(x + width/2, tec_bytes_vals, width, label="X-Bench", **plot_style.BAR_STYLES['Tectonic'])
+    ax.bar(x + width/2, x_bytes_vals, width, label="X-Bench", **plot_style.BAR_STYLES['X-Bench'])
 
     ax.set_xticks(x)
     ax.set_xticklabels(categories)
@@ -325,7 +327,7 @@ def main():
     x = np.arange(len(categories))
 
     ax.bar(x - width/2, ycsb_cache_vals, width, label="YCSB", **plot_style.BAR_STYLES['YCSB'])
-    ax.bar(x + width/2, tec_cache_vals, width, label="X-Bench", **plot_style.BAR_STYLES['Tectonic'])
+    ax.bar(x + width/2, x_cache_vals, width, label="X-Bench", **plot_style.BAR_STYLES['X-Bench'])
 
     ax.set_xticks(x)
     ax.set_xticklabels(categories)

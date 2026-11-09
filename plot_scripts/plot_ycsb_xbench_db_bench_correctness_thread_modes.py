@@ -17,8 +17,8 @@ import matplotlib.ticker as ticker
 import numpy as np
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
-RESULTS_PATH = ROOT_DIR / "data" / "ycsb_tectonic_correctness_thread_modes" / "results.json"
-PLOTS_DIR = ROOT_DIR / "ycsb_tectonic_correctness_plots" / "thread_modes"
+RESULTS_PATH = ROOT_DIR / "data" / "ycsb_xbench_correctness_thread_modes" / "results.json"
+PLOTS_DIR = ROOT_DIR / "ycsb_xbench_correctness_plots" / "thread_modes"
 FONT_PATH = ROOT_DIR / "LinLibertine_Mah.ttf"
 FONT_SIZE = 26
 
@@ -101,7 +101,7 @@ def plot_setting(data: dict, setting: str, title: str, reps: int) -> None:
     x_values = np.array([run["record_count"] for run in runs]) / 1000.0
     
     # Extract accuracies
-    tectonic_inserts_acc = np.array([run["tools"]["tectonic"]["accuracy_by_operation"]["I"] for run in runs])
+    xbench_inserts_acc = np.array([run["tools"]["xbench"]["accuracy_by_operation"]["I"] for run in runs])
     ycsb_inserts_acc = np.array([run["tools"]["ycsb"]["accuracy_by_operation"]["I"] for run in runs])
     ycsb_queries_acc = np.array([run["tools"]["ycsb"]["accuracy_by_operation"]["P"] for run in runs])
     ycsb_updates_acc = np.array([run["tools"]["ycsb"]["accuracy_by_operation"]["U"] for run in runs])
@@ -109,9 +109,9 @@ def plot_setting(data: dict, setting: str, title: str, reps: int) -> None:
     fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True, figsize=(6.0, 3.8), 
                                    gridspec_kw={'height_ratios': [5, 1]})
     
-    # Plot Tectonic+
-    ax1.plot(x_values, tectonic_inserts_acc, label="X-Bench", color="tab:blue", linestyle="-.", marker="s", markersize=15, markeredgewidth=1.2, markerfacecolor="none", markeredgecolor="tab:blue", linewidth=4.0)
-    ax2.plot(x_values, tectonic_inserts_acc, color="tab:blue", linestyle="-.", marker="s", markersize=15, markeredgewidth=1.2, markerfacecolor="none", markeredgecolor="tab:blue", linewidth=4.0)
+    # Plot X-Bench+
+    ax1.plot(x_values, xbench_inserts_acc, label="X-Bench", color="tab:blue", linestyle="-.", marker="s", markersize=15, markeredgewidth=1.2, markerfacecolor="none", markeredgecolor="tab:blue", linewidth=4.0)
+    ax2.plot(x_values, xbench_inserts_acc, color="tab:blue", linestyle="-.", marker="s", markersize=15, markeredgewidth=1.2, markerfacecolor="none", markeredgecolor="tab:blue", linewidth=4.0)
     
     # Plot YCSB - inserts
     ax1.plot(x_values, ycsb_inserts_acc, label="YCSB-inserts", color="grey", linestyle="-", marker="^", markersize=15, markeredgewidth=1.2, markerfacecolor="none", markeredgecolor="grey", linewidth=4.0)

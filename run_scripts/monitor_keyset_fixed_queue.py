@@ -22,6 +22,8 @@ in their own folder and tmux session.
 
 Usage: python3 run_scripts/monitor_keyset_fixed_queue.py [--exp kvbench|ycsb] [--rebalance]
 """
+from pathlib import Path as _Path
+REPO_ROOT = str(_Path(__file__).resolve().parents[1])
 import re
 import sys
 import json
@@ -47,9 +49,9 @@ if "--exp" in sys.argv and sys.argv[sys.argv.index("--exp") + 1] == "ycsb":
     EXP = "data/revision/R1.O8-R2.O2_keyset-selection/ycsb-fixed-empty"
     MACHINES = {"fixedkeyset2": "fixedkeyset-2"}
     SESSION = "keyset-ycsb"
-LOCAL = f"/home/cc/Tectonic/{EXP}"
-REMOTE = f"/home/cc/Tectonic/{EXP}"
-RUNNER = (f"cd /home/cc/Tectonic && tmux new-session -d -s {SESSION} "
+LOCAL = f"{REPO_ROOT}/{EXP}"
+REMOTE = f"{REPO_ROOT}/{EXP}"
+RUNNER = (f"cd {REPO_ROOT} && tmux new-session -d -s {SESSION} "
           f"\"python3 -u run_scripts/run_keyset_fixed_queue.py --out-dir {REMOTE} 2>&1 | tee -a {REMOTE}/logs/console.$(hostname).out\"")
 
 

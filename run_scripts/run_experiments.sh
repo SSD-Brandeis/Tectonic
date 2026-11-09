@@ -1,22 +1,23 @@
 #!/bin/bash
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 mkdir -p /tmp/logs_fig3
 mkdir -p /tmp/logs_fig4
 
-TECTONIC_CLI="/home/cc/Tectonic/target/release/tectonic-cli"
+XBENCH_CLI="${REPO_ROOT}/target/release/xbench-cli"
 KVBENCH_CLI="/home/cc/KV-WorkloadGenerator/bin/load_gen"
-YCSB_DIR="/home/cc/Tectonic/rocksdb-benchmark-harness/vendor/YCSB"
+YCSB_DIR="${REPO_ROOT}/rocksdb-benchmark-harness/vendor/YCSB"
 M2="/home/cc/.m2/repository"
 # Direct java -cp invocation: matches original paper harness (no Python/Maven wrapper overhead)
 YCSB_CP="${YCSB_DIR}/file/conf:${YCSB_DIR}/file/target/file-binding-0.18.0-SNAPSHOT.jar:${M2}/org/apache/htrace/htrace-core4/4.1.0-incubating/htrace-core4-4.1.0-incubating.jar:${M2}/org/hdrhistogram/HdrHistogram/2.1.12/HdrHistogram-2.1.12.jar:${M2}/org/codehaus/jackson/jackson-mapper-asl/1.9.4/jackson-mapper-asl-1.9.4.jar:${M2}/org/codehaus/jackson/jackson-core-asl/1.9.4/jackson-core-asl-1.9.4.jar:${YCSB_DIR}/core/target/core-0.18.0-SNAPSHOT.jar"
 
-# Ensure Tectonic is built
-cd /home/cc/Tectonic
+# Ensure X-Bench is built
+cd ${REPO_ROOT}
 cargo build --release
-cd /home/cc/Tectonic
+cd ${REPO_ROOT}
 
 # --- FIG 3: YCSB Workloads ---
-declare -A ycsb_tectonic_specs=(
+declare -A ycsb_xbench_specs=(
     ["A"]="a.spec.json"
     ["B"]="b.spec.json"
     ["C"]="c.spec.json"
@@ -42,11 +43,11 @@ echo ">>> Running Fig 3 Experiments (YCSB Workloads A-F)"
 for w in A B C D E F; do
     echo ">> Workload $w"
     
-    # 1. Tectonic
-    echo "Running Tectonic..."
-    spec="example-specs/ycsb/${ycsb_tectonic_specs[$w]}"
-    /usr/bin/time -v $TECTONIC_CLI generate -w $spec -o /tmp/tectonic_out.txt > /tmp/logs_fig3/Tectonic_${w}.log 2>&1
-    rm -f /tmp/tectonic_out.txt
+    # 1. X-Bench
+    echo "Running X-Bench..."
+    spec="example-specs/ycsb/${ycsb_xbench_specs[$w]}"
+    /usr/bin/time -v $XBENCH_CLI generate -w $spec -o /tmp/xbench_out.txt > /tmp/logs_fig3/XBench_${w}.log 2>&1
+    rm -f /tmp/xbench_out.txt
     
     # 2. KVBench (No F)
     if [ "$w" != "F" ]; then
@@ -83,7 +84,7 @@ done
 
 
 # --- FIG 4: KVBench Workloads ---
-declare -A kvbench_tectonic_specs=(
+declare -A kvbench_xbench_specs=(
     ["I"]="i.spec.json"
     ["II"]="ii.spec.json"
     ["III"]="iii.spec.json"
@@ -91,7 +92,7 @@ declare -A kvbench_tectonic_specs=(
     ["V"]="v.spec.json"
 )
 
-# Reverse engineered from tectonic specs to get same op count:
+# Reverse engineered from xbench specs to get same op count:
 # i: 1M insert load. 800k insert, 200k query.
 # ii: 100k insert load. 400k query, 100k insert, 150k update, 250k range.
 # iii: 1M insert load. 500k query, 250k insert, 250k update.
@@ -109,11 +110,11 @@ echo ">>> Running Fig 4 Experiments (KVBench Workloads I-V)"
 for w in I II III IV V; do
     echo ">> Workload $w"
     
-    # 1. Tectonic
-    echo "Running Tectonic..."
-    spec="example-specs/kvbench/${kvbench_tectonic_specs[$w]}"
-    /usr/bin/time -v $TECTONIC_CLI generate -w $spec -o /tmp/tectonic_out.txt > /tmp/logs_fig4/Tectonic_${w}.log 2>&1
-    rm -f /tmp/tectonic_out.txt
+    # 1. X-Bench
+    echo "Running X-Bench..."
+    spec="example-specs/kvbench/${kvbench_xbench_specs[$w]}"
+    /usr/bin/time -v $XBENCH_CLI generate -w $spec -o /tmp/xbench_out.txt > /tmp/logs_fig4/XBench_${w}.log 2>&1
+    rm -f /tmp/xbench_out.txt
     
     # 2. KVBench
     echo "Running KVBench..."

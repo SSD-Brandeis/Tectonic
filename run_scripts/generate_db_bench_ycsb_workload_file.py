@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Emit db_bench-style YCSB A-F workloads in Tectonic text format.
+"""Emit db_bench-style YCSB A-F workloads in X-Bench text format.
 
 Native RocksDB db_bench does not materialize generated operations as the
-line-oriented workload file used in the YCSB/Tectonic generator comparison.
+line-oriented workload file used in the YCSB/X-Bench generator comparison.
 This compatibility generator keeps the same full-scale YCSB operation counts
 and value sizes as example-specs/ycsb/*.spec.json, so it can be timed as an
 additional workload-file generation baseline.
@@ -162,7 +162,7 @@ def write_workload(args: argparse.Namespace) -> dict:
         "run_mix": mix,
         "operation_counts": {key: value for key, value in counts.items() if value},
         "total_operations": sum(counts.values()),
-        "format": "Tectonic text workload: I, P, U, SC, M",
+        "format": "X-Bench text workload: I, P, U, SC, M",
         "comparison_note": (
             "db_bench-compatible workload-file generator; native RocksDB db_bench "
             "does not emit comparable text workload files."

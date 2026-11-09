@@ -3,9 +3,9 @@
 run_keyset_fixed_peak_memory.py
 ===============================
 R2.O2 (ii): time and peak memory of fixed VecKeySet on the Table 4 workloads where it does not finish
-in 600 s (Tec-1, Tec-3, Tec-5, Tec-6), without running for days (decided with the authors, 2026-10-22).
+in 600 s (X-1, X-3, X-5, X-6), without running for days (decided with the authors, 2026-10-22).
 
-Two measurements, both with `tectonic-cli generate --keyset vec`, single-threaded, RUST_LOG=tectonic=debug,
+Two measurements, both with `xbench-cli generate --keyset vec`, single-threaded, RUST_LOG=xbench=debug,
 `sync; echo 3 > /proc/sys/vm/drop_caches` before every run, one run at a time:
 
 1. timeout   The real workload (x-bench-specs/table4/), killed after 600 s as in the KeySet experiment.
@@ -15,9 +15,9 @@ Two measurements, both with `tectonic-cli generate --keyset vec`, single-threade
              repeated in the KeySet experiment either).
 2. proxy     The same spec with `unique_inserts` turned into `inserts` (nothing else changed).
              VecKeySet then holds the same keys but skips the linear `contains` scan of every unique
-             insert, so the run finishes. Its peak RSS stands in for the full run's. Validated on Tec-2
-             and Tec-4, where fixed VecKeySet finishes with unique inserts: both forms run here.
-             Not for Tec-1: its 1M empty point queries also scan every key (hours with either form).
+             insert, so the run finishes. Its peak RSS stands in for the full run's. Validated on X-2
+             and X-4, where fixed VecKeySet finishes with unique inserts: both forms run here.
+             Not for X-1: its 1M empty point queries also scan every key (hours with either form).
              5 trials, shuffled order per trial.
 
 For every run that finishes, peak RSS comes from GNU time (as in the KeySet experiment) and the last
@@ -28,6 +28,8 @@ Output: data/revision/R1.O8-R2.O2_keyset-selection/table4-fixed-peak-memory/
   results/runs.json        one record per run
   runs/<mode>/<workload>/trial<k>.{stdout,stderr}.log
 """
+from pathlib import Path as _Path
+REPO_ROOT = str(_Path(__file__).resolve().parents[1])
 import os
 import re
 import json
@@ -35,8 +37,8 @@ import time
 import random
 import subprocess
 
-ROOT_DIR = "/home/cc/Tectonic"
-TECTONIC_CLI = f"{ROOT_DIR}/target/release/tectonic-cli"
+ROOT_DIR = REPO_ROOT
+XBENCH_CLI = f"{ROOT_DIR}/target/release/xbench-cli"
 OUT_DIR = f"{ROOT_DIR}/data/revision/R1.O8-R2.O2_keyset-selection/table4-fixed-peak-memory"
 RUNS_PATH = f"{OUT_DIR}/results/runs.json"
 TRACE_PATH = f"{OUT_DIR}/tmp/trace.txt"
@@ -45,17 +47,17 @@ TIMEOUT_S = 600
 TRIALS = 5
 SEED = 20261022
 SPECS = {
-    "Tec-1": "x-bench-specs/table4/Tec-1_multi_stage.spec.json",
-    "Tec-2": "x-bench-specs/table4/Tec-2_interleaved.spec.json",
-    "Tec-3": "x-bench-specs/table4/Tec-3_varied_sortedness.spec.json",
-    "Tec-4": "x-bench-specs/table4/Tec-4_slow_shift.spec.json",
-    "Tec-5": "x-bench-specs/table4/Tec-5_abrupt_shift.spec.json",
-    "Tec-6": "x-bench-specs/table4/Tec-6_varied_kv_size.spec.json",
+    "X-1": "x-bench-specs/table4/X-1_multi_stage.spec.json",
+    "X-2": "x-bench-specs/table4/X-2_interleaved.spec.json",
+    "X-3": "x-bench-specs/table4/X-3_varied_sortedness.spec.json",
+    "X-4": "x-bench-specs/table4/X-4_slow_shift.spec.json",
+    "X-5": "x-bench-specs/table4/X-5_abrupt_shift.spec.json",
+    "X-6": "x-bench-specs/table4/X-6_varied_kv_size.spec.json",
 }
-TIMEOUT_WORKLOADS = ["Tec-1", "Tec-3", "Tec-5", "Tec-6"]
+TIMEOUT_WORKLOADS = ["X-1", "X-3", "X-5", "X-6"]
 # (mode, workload): the proxy for the timed-out workloads, and both forms on the validation workloads
-PROXY_CONFIGS = [("upsert", w) for w in ("Tec-2", "Tec-3", "Tec-4", "Tec-5", "Tec-6")] + \
-                [("unique", w) for w in ("Tec-2", "Tec-4")]
+PROXY_CONFIGS = [("upsert", w) for w in ("X-2", "X-3", "X-4", "X-5", "X-6")] + \
+                [("unique", w) for w in ("X-2", "X-4")]
 
 
 def log(msg):
@@ -90,9 +92,9 @@ def run(mode, workload, trial, timeout):
     if os.path.exists(TRACE_PATH):
         os.remove(TRACE_PATH)
     subprocess.run(["sudo", "sh", "-c", "sync; echo 3 > /proc/sys/vm/drop_caches"], check=True)
-    cmd = ["/usr/bin/time", "-v", TECTONIC_CLI, "generate", "-w", spec, "-o", TRACE_PATH, "--keyset", KEYSET]
-    env = {k: v for k, v in os.environ.items() if k != "TECTONIC_PARALLEL_GEN"}  # single-threaded
-    env["RUST_LOG"] = "tectonic=debug"  # progress of every group in steps of 10%, on stdout
+    cmd = ["/usr/bin/time", "-v", XBENCH_CLI, "generate", "-w", spec, "-o", TRACE_PATH, "--keyset", KEYSET]
+    env = {k: v for k, v in os.environ.items() if k != "XBENCH_PARALLEL_GEN"}  # single-threaded
+    env["RUST_LOG"] = "xbench=debug"  # progress of every group in steps of 10%, on stdout
     stdout_path, stderr_path = f"{out_dir}/trial{trial}.stdout.log", f"{out_dir}/trial{trial}.stderr.log"
     log(f"{mode} {workload} trial {trial}: {' '.join(cmd)}")
     with open(stdout_path, "w") as out, open(stderr_path, "w") as err:
@@ -120,7 +122,7 @@ def run(mode, workload, trial, timeout):
     rec = {"mode": mode, "workload": workload, "keyset": KEYSET, "trial": trial,
            "spec": os.path.relpath(spec, ROOT_DIR), "wall_time_s": wall, "timed_out": timed_out,
            "vmhwm_mib_last_sample": hwm / 1024 if hwm else None,
-           "keysets_used": re.findall(r"\[Tectonic KeySet\] Section (\d+): (\S+)", stderr),
+           "keysets_used": re.findall(r"\[X-Bench KeySet\] Section (\d+): (\S+)", stderr),
            "last_group": (re.findall(r"\[Generating\] Section \d+ \| Group \d+", stderr) or [None])[-1],
            "last_progress_line": (re.findall(r"Generating operation \d+ \(\d+%\)", stdout) or [None])[-1],
            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")}

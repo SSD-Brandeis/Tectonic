@@ -1,7 +1,7 @@
-# Using `tectonic`
+# Using `xbench`
 
-> [!NOTE] > `tectonic` spec files have a schema, which can help when writing them.
-> Output it with `tectonic schema > workload_schema.json`. In each of your spec
+> [!NOTE] > `xbench` spec files have a schema, which can help when writing them.
+> Output it with `xbench schema > workload_schema.json`. In each of your spec
 > files, use the `$schema` key in your top level object
 > (`{"$schema": "./workload_schema.json"}`) and you will get autocomplete and
 > documentation in your code editor.
@@ -65,7 +65,7 @@ With these questions answered, you can plan the broad structure of the workload.
 
 > [!NOTE]
 > JSON files will use the JSONC standard so that comments can be added.
-> JSONC support for `tectonic` is planned, but not valid syntax right now.
+> JSONC support for `xbench` is planned, but not valid syntax right now.
 
 ```jsonc
 {

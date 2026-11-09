@@ -2,12 +2,14 @@
 """
 Exports complete raw per-trial CSV files from the raw JSON records and log references.
 """
+from pathlib import Path as _Path
+REPO_ROOT = str(_Path(__file__).resolve().parents[1])
 
 import csv
 import json
 from pathlib import Path
 
-ROOT = Path("/home/cc/Tectonic")
+ROOT = Path(REPO_ROOT)
 RESULTS_DIR = ROOT / "data" / "revision" / "R2.O2_ycsb-bounded-memory" / "results"
 
 # 1. YCSB raw trials (480 rows)

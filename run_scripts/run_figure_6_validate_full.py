@@ -3,14 +3,16 @@
 
 Runs fresh workload-generator measurements for:
   - YCSB workloads A-F
-  - X-Bench/Tectonic YCSB-shaped workloads A-F
+  - X-Bench YCSB-shaped workloads A-F
   - KVBench YCSB-shaped workloads A-E (KVBench has no F)
   - KVBench workloads I-V
-  - X-Bench/Tectonic KVBench-shaped workloads I-V
+  - X-Bench KVBench-shaped workloads I-V
 
 All traces are written under data/figure_6_validate/traces. This script never reads
 or writes data/generator_comparison.
 """
+from pathlib import Path as _Path
+REPO_ROOT = str(_Path(__file__).resolve().parents[1])
 
 import argparse
 import json
@@ -23,13 +25,13 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-ROOT = Path('/home/cc/Tectonic')
+ROOT = Path(REPO_ROOT)
 OUT_DIR = ROOT / 'data' / 'figure_6_validate'
 TRACE_DIR = OUT_DIR / 'traces'
 LOG_PATH = OUT_DIR / 'figure_6_validate_full.log'
 STATUS_PATH = OUT_DIR / 'figure_6_validate_status.json'
 
-TECTONIC_CLI = ROOT / 'target' / 'release' / 'tectonic-cli'
+XBENCH_CLI = ROOT / 'target' / 'release' / 'xbench-cli'
 KVBENCH_CLI = Path('/home/cc/KV-WorkloadGenerator/bin/load_gen')
 YCSB_DIR = ROOT / 'rocksdb-benchmark-harness' / 'vendor' / 'YCSB'
 M2 = Path('/home/cc/.m2/repository')
@@ -69,8 +71,8 @@ KVBENCH_ARGS = {
     'IV': '-I 1000000 -U 500000 -R 500000 -y 0.000001 --UD 3 --entry_size 1024',
     'V': '-I 950000 -Q 50000 -Z 0 --ID 3 --ED 0 --ZD 0 --entry_size 1024',
 }
-TECTONIC_YCSB_SPECS = {w: f'example-specs/ycsb_untracked/{w.lower()}.spec.json' for w in YCSB_WORKLOADS}
-TECTONIC_KV_SPECS = {w: f'example-specs/kvbench/{w.lower()}.spec.json' for w in KV_WORKLOADS}
+XBENCH_YCSB_SPECS = {w: f'example-specs/ycsb_untracked/{w.lower()}.spec.json' for w in YCSB_WORKLOADS}
+XBENCH_KV_SPECS = {w: f'example-specs/kvbench/{w.lower()}.spec.json' for w in KV_WORKLOADS}
 
 class HumanLog:
     def __init__(self, path: Path, append: bool):
@@ -180,7 +182,7 @@ def parse_generator_stdout(stdout_lines: list[str], prefix: str) -> dict:
             op_durations.update({op: float(parsed.get(op, 0.0) or 0.0) for op in ALL_OPS})
         elif stripped.startswith('KVbench_LoadPhase_End:'):
             load_phase_end = float(stripped.split(':', 1)[1].strip())
-        elif prefix == 'Tectonic' and '[Tectonic Sequential Gen] Section 0' in stripped and 'finished at' in stripped:
+        elif prefix == 'X-Bench' and '[X-Bench Sequential Gen] Section 0' in stripped and 'finished at' in stripped:
             try:
                 load_phase_end = float(stripped.split('finished at', 1)[1].strip().split('s')[0].strip())
             except Exception:
@@ -212,12 +214,12 @@ def run_kvbench(workload: str, args: str, log: HumanLog, label: str) -> dict:
     load_end = parsed['loading_phase_end_time']
     return {'tool': 'KVBench', 'workload': workload, 'workload_set': label, 'total_duration': raw['total_duration'], 'op_durations': parsed['op_durations'], 'empirical_op_durations': parsed['op_durations'], 'loading_phase_end_time': load_end, 'execution_phase_duration': raw['total_duration'] - load_end if load_end is not None else None, 'mem_log': raw['mem_log'], 'command': raw['command']}
 
-def run_tectonic(workload: str, spec: str, log: HumanLog, label: str) -> dict:
-    out = Path(f'/tmp/figure_6_validate_tectonic_{label}_{workload.lower()}.txt')
-    cmd = [TECTONIC_CLI, 'generate', '-w', spec, '-o', out]
-    log.write(f'\n=== X-Bench/Tectonic {label} workload {workload} ===')
+def run_xbench(workload: str, spec: str, log: HumanLog, label: str) -> dict:
+    out = Path(f'/tmp/figure_6_validate_xbench_{label}_{workload.lower()}.txt')
+    cmd = [XBENCH_CLI, 'generate', '-w', spec, '-o', out]
+    log.write(f'\n=== X-Bench {label} workload {workload} ===')
     raw = run_command(cmd, ROOT, out, log)
-    parsed = parse_generator_stdout(raw['stdout'], 'Tectonic')
+    parsed = parse_generator_stdout(raw['stdout'], 'X-Bench')
     op = parsed['op_durations']
     load_end = parsed['loading_phase_end_time']
     if load_end is None:
@@ -268,14 +270,14 @@ def main() -> int:
         jobs = []
         for w in YCSB_WORKLOADS:
             jobs.append((f'ycsb_{w.lower()}', TRACE_DIR / f'ycsb_{w.lower()}_trace.json', lambda w=w: run_ycsb(w, log)))
-        for w, spec in TECTONIC_YCSB_SPECS.items():
-            jobs.append((f'tectonic_{w.lower()}', TRACE_DIR / f'tectonic_{w.lower()}_trace.json', lambda w=w, spec=spec: run_tectonic(w, spec, log, 'ycsb')))
+        for w, spec in XBENCH_YCSB_SPECS.items():
+            jobs.append((f'xbench_{w.lower()}', TRACE_DIR / f'xbench_{w.lower()}_trace.json', lambda w=w, spec=spec: run_xbench(w, spec, log, 'ycsb')))
         for w, kv_args in KVBENCH_YCSB_ARGS.items():
             jobs.append((f'kvbench_{w.lower()}', TRACE_DIR / f'kvbench_{w.lower()}_trace.json', lambda w=w, kv_args=kv_args: run_kvbench(w, kv_args, log, 'ycsb')))
         for w, kv_args in KVBENCH_ARGS.items():
             jobs.append((f'kvbench_{w.lower()}', TRACE_DIR / f'kvbench_{w.lower()}_trace.json', lambda w=w, kv_args=kv_args: run_kvbench(w, kv_args, log, 'kvbench')))
-        for w, spec in TECTONIC_KV_SPECS.items():
-            jobs.append((f'tectonic_{w.lower()}', TRACE_DIR / f'tectonic_{w.lower()}_trace.json', lambda w=w, spec=spec: run_tectonic(w, spec, log, 'kvbench')))
+        for w, spec in XBENCH_KV_SPECS.items():
+            jobs.append((f'xbench_{w.lower()}', TRACE_DIR / f'xbench_{w.lower()}_trace.json', lambda w=w, spec=spec: run_xbench(w, spec, log, 'kvbench')))
 
         for name, path, fn in jobs:
             status['current'] = name

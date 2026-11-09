@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Emit db_bench-style workloads in Tectonic's text operation format.
+"""Emit db_bench-style workloads in X-Bench's text operation format.
 
 This is a compatibility generator, not a wrapper around native RocksDB
 db_bench. Native db_bench does not expose its generated operations as the
-line-oriented text file that Tectonic can execute. This script recreates the
+line-oriented text file that X-Bench can execute. This script recreates the
 db_bench workload families used by example-specs/db_bench/*.spec.json and
-writes them as executable Tectonic workload text.
+writes them as executable X-Bench workload text.
 """
 
 from __future__ import annotations
@@ -46,7 +46,7 @@ WORKLOADS = {
         "description": "fillrandom,seekrandom reverse",
         "phases": [("Load Phase", "insert"), ("Execution Phase", "range_query")],
         "note": (
-            "Tectonic's text format has SC start count but no reverse-scan opcode; "
+            "X-Bench's text format has SC start count but no reverse-scan opcode; "
             "this file preserves the range-query count, not reverse iterator direction."
         ),
     },
@@ -166,14 +166,14 @@ class WorkloadWriter:
             "scan_length": scan_length,
             "key_size": self.key_size,
             "value_size": self.value_size,
-            "format": "Tectonic text workload: I key value, P key, SC key count, U key value",
+            "format": "X-Bench text workload: I key value, P key, SC key count, U key value",
             "operation_counts": {key: value for key, value in self.operation_counts.items() if value},
             "total_operations": sum(self.operation_counts.values()),
         }
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Generate a db_bench-style Tectonic workload text file.")
+    parser = argparse.ArgumentParser(description="Generate a db_bench-style X-Bench workload text file.")
     parser.add_argument("--workload", required=True, choices=sorted(WORKLOADS))
     parser.add_argument("--output", required=True)
     parser.add_argument("--scale", type=float, default=DEFAULT_SCALE)

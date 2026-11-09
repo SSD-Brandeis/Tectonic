@@ -1,17 +1,19 @@
 #!/usr/bin/env python3
 """
-measure_tec2_range_delete_coverage.py
+measure_x2_range_delete_coverage.py
 =====================================
-R1.O8 / R2.O2 (ii), audit item B3: how much of the live key set each range delete of Tec-2 removes,
-measured on the final spec (x-bench-specs/table4/Tec-2_interleaved.spec.json) with the KeySet Algorithm 1
+R1.O8 / R2.O2 (ii), audit item B3: how much of the live key set each range delete of X-2 removes,
+measured on the final spec (x-bench-specs/table4/X-2_interleaved.spec.json) with the KeySet Algorithm 1
 selects (--keyset adaptive), as in the experiment.
 
-One `tectonic-cli generate` run (single-threaded, page cache dropped), then a replay of the trace:
+One `xbench-cli generate` run (single-threaded, page cache dropped), then a replay of the trace:
 the live keys are the inserted keys minus point deletes and range deletes. A range delete in StartCount
 format ("<op> <start key> <count>") removes the first <count> live keys >= <start key>.
 
-Output: data/revision/R1.O8-R2.O2_keyset-selection/analysis/tec2_range_delete_coverage.{json,md}
+Output: data/revision/R1.O8-R2.O2_keyset-selection/analysis/x2_range_delete_coverage.{json,md}
 """
+from pathlib import Path as _Path
+REPO_ROOT = str(_Path(__file__).resolve().parents[1])
 import os
 import json
 import time
@@ -19,19 +21,19 @@ import bisect
 import statistics
 import subprocess
 
-ROOT_DIR = "/home/cc/Tectonic"
-TECTONIC_CLI = f"{ROOT_DIR}/target/release/tectonic-cli"
-SPEC = f"{ROOT_DIR}/x-bench-specs/table4/Tec-2_interleaved.spec.json"
+ROOT_DIR = REPO_ROOT
+XBENCH_CLI = f"{ROOT_DIR}/target/release/xbench-cli"
+SPEC = f"{ROOT_DIR}/x-bench-specs/table4/X-2_interleaved.spec.json"
 OUT_DIR = f"{ROOT_DIR}/data/revision/R1.O8-R2.O2_keyset-selection/analysis"
-TRACE = f"{OUT_DIR}/tmp_tec2_trace.txt"
+TRACE = f"{OUT_DIR}/tmp_x2_trace.txt"
 
 
 def generate():
     subprocess.run(["sudo", "sh", "-c", "sync; echo 3 > /proc/sys/vm/drop_caches"], check=True)
-    env = {k: v for k, v in os.environ.items() if k != "TECTONIC_PARALLEL_GEN"}  # single-threaded
-    p = subprocess.run([TECTONIC_CLI, "generate", "-w", SPEC, "-o", TRACE, "--keyset", "adaptive"],
+    env = {k: v for k, v in os.environ.items() if k != "XBENCH_PARALLEL_GEN"}  # single-threaded
+    p = subprocess.run([XBENCH_CLI, "generate", "-w", SPEC, "-o", TRACE, "--keyset", "adaptive"],
                        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env, check=True)
-    return [line for line in p.stderr.splitlines() if "[Tectonic KeySet]" in line]
+    return [line for line in p.stderr.splitlines() if "[X-Bench KeySet]" in line]
 
 
 def replay():
@@ -72,13 +74,13 @@ def main():
            "range_delete_count_field": {"min": min(d["count"] for d in deletes),
                                         "max": max(d["count"] for d in deletes)},
            "elapsed_s": time.time() - t0}
-    with open(f"{OUT_DIR}/tec2_range_delete_coverage.json", "w") as f:
+    with open(f"{OUT_DIR}/x2_range_delete_coverage.json", "w") as f:
         json.dump(res, f, indent=2)
-    with open(f"{OUT_DIR}/tec2_range_delete_coverage.md", "w") as f:
-        f.write(f"""# Tec-2 range-delete coverage, final spec (audit item B3)
+    with open(f"{OUT_DIR}/x2_range_delete_coverage.md", "w") as f:
+        f.write(f"""# X-2 range-delete coverage, final spec (audit item B3)
 
-Measured {res['timestamp']} by `run_scripts/measure_tec2_range_delete_coverage.py`: one generation of
-`x-bench-specs/table4/Tec-2_interleaved.spec.json` with `--keyset adaptive` ({'; '.join(keysets)}), then a
+Measured {res['timestamp']} by `run_scripts/measure_x2_range_delete_coverage.py`: one generation of
+`x-bench-specs/table4/X-2_interleaved.spec.json` with `--keyset adaptive` ({'; '.join(keysets)}), then a
 replay of the trace that tracks the live keys.
 
 | | |

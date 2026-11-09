@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Detached supervisor for a RocksDB-only rerun of the YCSB/Tectonic similarity
+Detached supervisor for a RocksDB-only rerun of the YCSB/X-Bench similarity
 experiment.
 
 The supervisor is intentionally conservative:
@@ -13,6 +13,8 @@ The supervisor is intentionally conservative:
 """
 
 from __future__ import annotations
+from pathlib import Path as _Path
+REPO_ROOT = str(_Path(__file__).resolve().parents[1])
 
 import argparse
 import csv
@@ -27,12 +29,12 @@ import time
 from typing import Iterable
 
 
-ROOT = Path("/home/cc/Tectonic")
-OUT_DIR = ROOT / "data/ycsb_tectonic_similarity_all_dbs"
+ROOT = Path(REPO_ROOT)
+OUT_DIR = ROOT / "data/ycsb_xbench_similarity_all_dbs"
 RESULTS_PATH = OUT_DIR / "results.json"
-RUNNER = ROOT / "run_scripts/run_ycsb_tectonic_similarity_all_dbs.py"
-OP_PLOT = ROOT / "plot_scripts/plot_ycsb_tectonic_similarity_all_dbs.py"
-E2E_PLOT = ROOT / "plot_scripts/plot_ycsb_tectonic_similarity_end_to_end.py"
+RUNNER = ROOT / "run_scripts/run_ycsb_xbench_similarity_all_dbs.py"
+OP_PLOT = ROOT / "plot_scripts/plot_ycsb_xbench_similarity_all_dbs.py"
+E2E_PLOT = ROOT / "plot_scripts/plot_ycsb_xbench_similarity_end_to_end.py"
 
 DEFAULT_SCALES = [2**18, 2**19, 2**20, 2**21, 2**22]
 
@@ -182,7 +184,7 @@ def require_scale_valid(scale: int) -> dict:
     except KeyError as exc:
         raise RuntimeError(f"missing RocksDB result for scale {scale}") from exc
 
-    for workload in ("ycsb", "tectonic"):
+    for workload in ("ycsb", "xbench"):
         metrics = pair.get(workload, {})
         wall = metrics.get("wall_time_s")
         throughput = metrics.get("throughput_ops_s")
@@ -199,12 +201,12 @@ def require_scale_valid(scale: int) -> dict:
 
     comp = pair.get("trace_comparison", {})
     y_ops = comp.get("ycsb_ops", {})
-    t_ops = comp.get("tectonic_ops", {})
+    t_ops = comp.get("xbench_ops", {})
     if y_ops.get("I") != scale or t_ops.get("I") != scale:
-        raise RuntimeError(f"insert count mismatch for scale {scale}: ycsb={y_ops}, tectonic={t_ops}")
+        raise RuntimeError(f"insert count mismatch for scale {scale}: ycsb={y_ops}, xbench={t_ops}")
     expected_total = scale * 2
     if sum(y_ops.values()) != expected_total or sum(t_ops.values()) != expected_total:
-        raise RuntimeError(f"total op count mismatch for scale {scale}: ycsb={y_ops}, tectonic={t_ops}")
+        raise RuntimeError(f"total op count mismatch for scale {scale}: ycsb={y_ops}, xbench={t_ops}")
 
     return pair
 
@@ -237,14 +239,14 @@ def build_validation_summary(scales: Iterable[int], stamp: str, backup_dir: Path
         row = {
             "scale": scale,
             "ycsb_wall_time_s": pair["ycsb"]["wall_time_s"],
-            "tectonic_wall_time_s": pair["tectonic"]["wall_time_s"],
+            "xbench_wall_time_s": pair["xbench"]["wall_time_s"],
             "wall_time_delta_pct": (
-                pair["tectonic"]["wall_time_s"] / pair["ycsb"]["wall_time_s"] - 1.0
+                pair["xbench"]["wall_time_s"] / pair["ycsb"]["wall_time_s"] - 1.0
             ) * 100.0,
             "trace_comparison": pair.get("trace_comparison", {}),
         }
         prefix = OUT_DIR / f"rocksdb_scale{scale}"
-        for workload in ("ycsb", "tectonic"):
+        for workload in ("ycsb", "xbench"):
             stats_path = Path(f"{prefix}_{workload}_stats.txt")
             row[f"{workload}_stall_micros"] = read_rocksdb_counter(stats_path, "rocksdb.stall.micros")
             row[f"{workload}_compact_read_bytes"] = read_rocksdb_counter(stats_path, "rocksdb.compact.read.bytes")
@@ -311,10 +313,10 @@ def main() -> int:
     )
     sanity = require_scale_valid(args.sanity_scale)
     y_wall = sanity["ycsb"]["wall_time_s"]
-    t_wall = sanity["tectonic"]["wall_time_s"]
+    t_wall = sanity["xbench"]["wall_time_s"]
     log(
         f"sanity valid: scale={args.sanity_scale}, "
-        f"ycsb_wall={y_wall:.3f}s, tectonic_wall={t_wall:.3f}s, "
+        f"ycsb_wall={y_wall:.3f}s, xbench_wall={t_wall:.3f}s, "
         f"delta_pct={(t_wall / y_wall - 1.0) * 100.0:.2f}%"
     )
 

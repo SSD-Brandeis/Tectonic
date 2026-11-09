@@ -1,3 +1,5 @@
+from pathlib import Path as _Path
+REPO_ROOT = str(_Path(__file__).resolve().parents[1])
 import os
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
@@ -120,7 +122,7 @@ def save_legend(fig_or_ax, path_without_ext):
 
 def plot_fig3():
     workloads = ["A", "B", "C", "D", "E", "F"]
-    generators = ["Tectonic", "YCSB", "KVBench"]
+    generators = ["X-Bench", "YCSB", "KVBench"]
     
     times = {g: [] for g in generators}
     throughputs = {g: [] for g in generators}
@@ -136,7 +138,7 @@ def plot_fig3():
                 memory[g].append(0)
                 continue
 
-            log_file = f"/home/cc/Tectonic/data/overall_benchmarks/logs_fig3/{g}_{w}.log"
+            log_file = f"{REPO_ROOT}/data/overall_benchmarks/logs_fig3/{g}_{w}.log"
             if os.path.exists(log_file):
                 t, rss = parse_time_v_log(log_file)
                 times[g].append(t)
@@ -153,7 +155,7 @@ def plot_fig3():
     fig, axs = plt.subplots(1, 3, figsize=(15, 4))
 
     # (A) Latency: log scale, y starts at 10^0 = 1, pure 10^x tick labels
-    axs[0].bar(x - width, times["Tectonic"], width, label='Tectonic+', **plot_style.BAR_STYLES["Tectonic"])
+    axs[0].bar(x - width, times["X-Bench"], width, label='X-Bench+', **plot_style.BAR_STYLES["X-Bench"])
     axs[0].bar(x, times["YCSB"], width, label='YCSB', **plot_style.BAR_STYLES["YCSB"])
     axs[0].bar(x + width, times["KVBench"], width, label='KVBench', **plot_style.BAR_STYLES["KVBench"])
     axs[0].set_xticks(x)
@@ -166,7 +168,7 @@ def plot_fig3():
 
     # (B) Throughput: linear scale, y starts at 0
     # Ticks in units of 10^5, annotation "10^5" at top-left corner inside plot
-    axs[1].bar(x - width, [v/1e5 for v in throughputs["Tectonic"]], width, label='Tectonic+', **plot_style.BAR_STYLES["Tectonic"])
+    axs[1].bar(x - width, [v/1e5 for v in throughputs["X-Bench"]], width, label='X-Bench+', **plot_style.BAR_STYLES["X-Bench"])
     axs[1].bar(x, [v/1e5 for v in throughputs["YCSB"]], width, label='YCSB', **plot_style.BAR_STYLES["YCSB"])
     axs[1].bar(x + width, [v/1e5 for v in throughputs["KVBench"]], width, label='KVBench', **plot_style.BAR_STYLES["KVBench"])
     axs[1].set_xticks(x)
@@ -176,19 +178,19 @@ def plot_fig3():
     plot_style.apply_plot_style(axs[1], title='(b) operational throughput', ylabel='throughput (ops)')
 
     # (C) Memory: linear scale, y starts at 0
-    axs[2].bar(x - width, memory["Tectonic"], width, label='Tectonic+', **plot_style.BAR_STYLES["Tectonic"])
+    axs[2].bar(x - width, memory["X-Bench"], width, label='X-Bench+', **plot_style.BAR_STYLES["X-Bench"])
     axs[2].bar(x, memory["YCSB"], width, label='YCSB', **plot_style.BAR_STYLES["YCSB"])
     axs[2].bar(x + width, memory["KVBench"], width, label='KVBench', **plot_style.BAR_STYLES["KVBench"])
     axs[2].set_xticks(x)
     axs[2].set_xticklabels(workloads)
     plot_style.apply_plot_style(axs[2], title='(c) peak memory footprint', ylabel='memory footprint (MB)')
 
-    save_legend(fig, "/home/cc/Tectonic/experiment_plots/ycsb_workloads_comparison")
-    save_fig(fig, "/home/cc/Tectonic/experiment_plots/ycsb_workloads_comparison")
+    save_legend(fig, REPO_ROOT + "/experiment_plots/ycsb_workloads_comparison")
+    save_fig(fig, REPO_ROOT + "/experiment_plots/ycsb_workloads_comparison")
 
 def plot_fig4():
     workloads = ["I", "II", "III", "IV", "V"]
-    generators = ["Tectonic", "KVBench"]
+    generators = ["X-Bench", "KVBench"]
     
     times = {g: [] for g in generators}
     throughputs = {g: [] for g in generators}
@@ -198,7 +200,7 @@ def plot_fig4():
 
     for w in workloads:
         for g in generators:
-            log_file = f"/home/cc/Tectonic/data/overall_benchmarks/logs_fig4/{g}_{w}.log"
+            log_file = f"{REPO_ROOT}/data/overall_benchmarks/logs_fig4/{g}_{w}.log"
             if os.path.exists(log_file):
                 t, rss = parse_time_v_log(log_file)
                 times[g].append(t)
@@ -214,7 +216,7 @@ def plot_fig4():
 
     # (A) Latency: log scale, y starts at 10^0 = 1, pure 10^x tick labels
     fig_lat, ax_lat = plt.subplots(figsize=(6, 4.5))
-    ax_lat.bar(x - width/2, times["Tectonic"], width, label='Tectonic+', **plot_style.BAR_STYLES["Tectonic"])
+    ax_lat.bar(x - width/2, times["X-Bench"], width, label='X-Bench+', **plot_style.BAR_STYLES["X-Bench"])
     ax_lat.bar(x + width/2, times["KVBench"], width, label='KVBench', **plot_style.BAR_STYLES["KVBench"])
     ax_lat.set_xticks(x)
     ax_lat.set_xticklabels(workloads)
@@ -224,32 +226,32 @@ def plot_fig4():
     ax_lat.yaxis.set_minor_locator(mticker.NullLocator())
     plot_style.apply_plot_style(ax_lat, title='(a) end-to-end latency', ylabel='end-to-end latency (s)')
 
-    save_legend(fig_lat, "/home/cc/Tectonic/experiment_plots/kvbench_workloads_comparison_latency")
-    save_fig(fig_lat, "/home/cc/Tectonic/experiment_plots/kvbench_workloads_comparison_latency")
+    save_legend(fig_lat, REPO_ROOT + "/experiment_plots/kvbench_workloads_comparison_latency")
+    save_fig(fig_lat, REPO_ROOT + "/experiment_plots/kvbench_workloads_comparison_latency")
 
     # (C) Memory: linear scale, y starts at 0
     fig_mem, ax_mem = plt.subplots(figsize=(6, 4.5))
-    ax_mem.bar(x - width/2, memory["Tectonic"], width, label='Tectonic+', **plot_style.BAR_STYLES["Tectonic"])
+    ax_mem.bar(x - width/2, memory["X-Bench"], width, label='X-Bench+', **plot_style.BAR_STYLES["X-Bench"])
     ax_mem.bar(x + width/2, memory["KVBench"], width, label='KVBench', **plot_style.BAR_STYLES["KVBench"])
     ax_mem.set_xticks(x)
     ax_mem.set_xticklabels(workloads)
     plot_style.apply_plot_style(ax_mem, title='(c) peak memory footprint', ylabel='memory footprint (MB)')
 
-    save_legend(fig_mem, "/home/cc/Tectonic/experiment_plots/kvbench_workloads_comparison_memory")
-    save_fig(fig_mem, "/home/cc/Tectonic/experiment_plots/kvbench_workloads_comparison_memory")
+    save_legend(fig_mem, REPO_ROOT + "/experiment_plots/kvbench_workloads_comparison_memory")
+    save_fig(fig_mem, REPO_ROOT + "/experiment_plots/kvbench_workloads_comparison_memory")
 
 if __name__ == "__main__":
     import shutil
-    os.makedirs("/home/cc/Tectonic/experiment_plots", exist_ok=True)
-    os.makedirs("/home/cc/Tectonic/data/overall_benchmarks/logs_fig3", exist_ok=True)
-    os.makedirs("/home/cc/Tectonic/data/overall_benchmarks/logs_fig4", exist_ok=True)
+    os.makedirs(REPO_ROOT + "/experiment_plots", exist_ok=True)
+    os.makedirs(REPO_ROOT + "/data/overall_benchmarks/logs_fig3", exist_ok=True)
+    os.makedirs(REPO_ROOT + "/data/overall_benchmarks/logs_fig4", exist_ok=True)
     
     if os.path.exists("/tmp/logs_fig3"):
         for f in os.listdir("/tmp/logs_fig3"):
-            shutil.copy(os.path.join("/tmp/logs_fig3", f), "/home/cc/Tectonic/data/overall_benchmarks/logs_fig3/")
+            shutil.copy(os.path.join("/tmp/logs_fig3", f), REPO_ROOT + "/data/overall_benchmarks/logs_fig3/")
     if os.path.exists("/tmp/logs_fig4"):
         for f in os.listdir("/tmp/logs_fig4"):
-            shutil.copy(os.path.join("/tmp/logs_fig4", f), "/home/cc/Tectonic/data/overall_benchmarks/logs_fig4/")
+            shutil.copy(os.path.join("/tmp/logs_fig4", f), REPO_ROOT + "/data/overall_benchmarks/logs_fig4/")
 
     plot_fig3()
     plot_fig4()

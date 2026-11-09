@@ -7,7 +7,7 @@ authors, 2026-10-31). Fig. 7's harness, `run_figure_6_validate_full.py`, ran eac
 dropping the page cache, and its KV-Bench time splits came from timing code that is in no branch of KV-Bench.
 Here:
   - the same generators, commands and arguments, through the harness's own functions (`run_ycsb`,
-    `run_kvbench`, `run_tectonic`), unchanged;
+    `run_kvbench`, `run_xbench`), unchanged;
   - `sync; echo 3 > /proc/sys/vm/drop_caches` before every generator process (YCSB: before load and before
     run), wrapped around the harness's `run_command`;
   - TRIALS trials, one generator process at a time, nothing else on the machine;
@@ -23,7 +23,7 @@ Generators, all unmodified:
             for its YCSB-shaped A-E; I-V as the KVBench paper's Table 5 at 1/SCALE of Fig. 7's operation counts
             (run_scripts/make_kvbench_paper_specs.py), so that IV, which sorts every key on each range delete,
             finishes. A crash is recorded, not retried;
-  X-Bench   tectonic-cli of this repo, adaptive KeySet (default), 1 thread: example-specs/ycsb-untracked/ (YCSB
+  X-Bench   xbench-cli of this repo, adaptive KeySet (default), 1 thread: example-specs/ycsb-untracked/ (YCSB
             A-F, as Table 3) and example-specs/kvbench-1-20/ (I-V at 1/20; written by make_kvbench_paper_specs.py
             with the same operation counts as the KV-Bench arguments; until 2026-11-02 21:00 UTC this 1/20 copy
             was example-specs/kvbench/). Fig. 7 used example-specs/ycsb_untracked/,
@@ -41,6 +41,8 @@ kvbench_paper_scale and kvbench_args, and KV-Bench's printed operation totals (k
 Usage (on the run machine): python3 run_scripts/run_fig7_corrected.py [--only JOB ...] [--trials N] [--out-dir D]
                             [--kv-scales W=S ...]
 """
+from pathlib import Path as _Path
+REPO_ROOT = str(_Path(__file__).resolve().parents[1])
 import os
 import sys
 import json
@@ -61,7 +63,7 @@ KVBENCH_PATCH = f"{f7.ROOT}/data/revision/fig7-corrected/kvbench-minimal-fix/loa
 # recorded once the KV-Bench checkout has it (the YCSB-E/KV-Bench reruns, --redo-failed)
 KVBENCH_PATCH_RQ = f"{f7.ROOT}/data/revision/fig7-corrected/kvbench-minimal-fix/load_gen_rq_fixes.patch"
 
-OUT_DIR = "/home/cc/Tectonic/data/revision/fig7-corrected"
+OUT_DIR = REPO_ROOT + "/data/revision/fig7-corrected"
 TRIALS = 5
 XBENCH_YCSB_SPEC = "example-specs/ycsb-untracked/{}.spec.json"
 XBENCH_KV_SPEC = "example-specs/kvbench-1-20/{}.spec.json"  # 1/20, as the KVBench arguments
@@ -96,7 +98,7 @@ def run_command_caches_dropped(*args, **kwargs):
 last_stdout = []  # stdout of the last generator process (run_command_caches_dropped)
 
 
-f7.run_command = run_command_caches_dropped  # run_ycsb / run_kvbench / run_tectonic look it up at call time
+f7.run_command = run_command_caches_dropped  # run_ycsb / run_kvbench / run_xbench look it up at call time
 
 
 def sha256(path):
@@ -142,7 +144,7 @@ def run_job(tool, wset, w, log):
                 "kvbench_op_counts": kvbench_counts(last_stdout)}
     else:
         spec = (XBENCH_YCSB_SPEC if wset == "ycsb" else XBENCH_KV_SPEC).format(w.lower())
-        rec = f7.run_tectonic(w, str(f7.ROOT / spec), log, wset)
+        rec = f7.run_xbench(w, str(f7.ROOT / spec), log, wset)
     return {"wall_time_s": rec["total_duration"], "peak_rss_mib": f7.peak_mem(rec), "command": rec["command"]}
 
 
@@ -165,7 +167,7 @@ def main():
         # X-Bench's KV-Bench specs here are the 1/20 ones (XBENCH_KV_SPEC): only KV-Bench's generator in this mode
         assert not [j for j in args.only if j.startswith("KVBench-") and j.endswith("/X-Bench")], \
             "--kv-scales runs KV-Bench's generator only: pass --only KVBench-<W>/KV-Bench ..."
-    os.environ.pop("TECTONIC_PARALLEL_GEN", None)  # X-Bench single-threaded, as Fig. 7
+    os.environ.pop("XBENCH_PARALLEL_GEN", None)  # X-Bench single-threaded, as Fig. 7
     host = socket.gethostname()
     os.makedirs(f"{args.out_dir}/results", exist_ok=True)
     runs_path = f"{args.out_dir}/results/runs.{host}.json"
@@ -178,7 +180,7 @@ def main():
             json.dump(old_replaced + redo, f, indent=2)
         runs = [r for r in runs if r not in redo]
     log = f7.HumanLog(Path(f"{args.out_dir}/logs/generators.{host}.log"), append=True)
-    versions = {"xbench_tectonic_cli_sha256": sha256(f7.TECTONIC_CLI)}
+    versions = {"xbench_xbench_cli_sha256": sha256(f7.XBENCH_CLI)}
     # 2026-11-02: Table 3's rerun on revision-2, which has no KV-Bench, runs YCSB/X-Bench jobs only
     if any(tool == "KV-Bench" for job, tool, _, _ in JOBS if job in args.only) or os.path.exists(f7.KVBENCH_CLI):
         versions.update({

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Run a mixgraph empirical performance comparison, extract access heatmaps, and plot them.
 
-1. Generates Tectonic spec JSON.
-2. Generates flat trace files for both db_bench and Tectonic.
+1. Generates X-Bench spec JSON.
+2. Generates flat trace files for both db_bench and X-Bench.
 3. Executes both workloads empirically against RocksDB.
 4. Extracts access frequency vs key sequence heatmap data from traces.
 5. Generates Figure 11 style access heatmap PDF plots.
@@ -24,7 +24,7 @@ PLOT_SCRIPTS_DIR = ROOT_DIR / "plot_scripts"
 DATA_DIR = ROOT_DIR / "data" / "mixgraph_test"
 
 DEFAULT_DB_BENCH = ROOT_DIR / "rocksdb-benchmark-harness" / "cmake-build-release" / "vendor/rocksdb/db_bench"
-DEFAULT_TECTONIC_CLI = ROOT_DIR / "target" / "release" / "tectonic-cli"
+DEFAULT_XBENCH_CLI = ROOT_DIR / "target" / "release" / "xbench-cli"
 
 def fail(msg: str) -> None:
     print(f"[FATAL] {msg}", file=sys.stderr)
@@ -50,27 +50,27 @@ def find_latest_rocksdb_log(db_dir: Path) -> Path | None:
     return None
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Run mixgraph Tectonic spec and db_bench heatmap experiment.")
+    parser = argparse.ArgumentParser(description="Run mixgraph X-Bench spec and db_bench heatmap experiment.")
     parser.add_argument("--num", type=int, default=1000000, help="Total number of entries (FLAGS_num)")
     parser.add_argument("--reads", type=int, default=420000, help="Total operations to execute")
     parser.add_argument("--key-size", type=int, default=48, help="Key size in bytes")
     parser.add_argument("--db-bench-bin", default=str(DEFAULT_DB_BENCH))
-    parser.add_argument("--tectonic-cli", default=str(DEFAULT_TECTONIC_CLI))
+    parser.add_argument("--xbench-cli", default=str(DEFAULT_XBENCH_CLI))
     args = parser.parse_args()
 
     db_bench_bin = Path(args.db_bench_bin).resolve()
-    tectonic_cli = Path(args.tectonic_cli).resolve()
+    xbench_cli = Path(args.xbench_cli).resolve()
 
     ensure_file(db_bench_bin, "db_bench binary")
-    ensure_file(tectonic_cli, "tectonic-cli binary")
+    ensure_file(xbench_cli, "xbench-cli binary")
 
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     
     db_bench_db = Path("/tmp/mixgraph_db_bench")
-    tectonic_db = Path("/tmp/mixgraph_tectonic")
+    xbench_db = Path("/tmp/mixgraph_xbench")
     
     clean_dir(db_bench_db)
-    clean_dir(tectonic_db)
+    clean_dir(xbench_db)
 
     # Ensure scripts are executable
     os.chmod(RUN_SCRIPTS_DIR / "create_mixgraph_spec.py", 0o755)
@@ -84,7 +84,7 @@ def main() -> None:
     print("=" * 72)
 
     # =========================================================================
-    # STEP 1: GENERATE TECTONIC SPEC (.spec.json)
+    # STEP 1: GENERATE XBENCH SPEC (.spec.json)
     # =========================================================================
     spec_file = DATA_DIR / "mixgraph.spec.json"
     gen_cmd = [
@@ -95,25 +95,25 @@ def main() -> None:
         "--key-size", str(args.key_size),
         "--output", str(spec_file)
     ]
-    print(f"\n[1/6] Generating Tectonic spec JSON: {' '.join(gen_cmd)}")
+    print(f"\n[1/6] Generating X-Bench spec JSON: {' '.join(gen_cmd)}")
     subprocess.run(gen_cmd, check=True)
 
 
     # =========================================================================
     # STEP 2: GENERATE WORKLOAD TRACES FROM SPECS
     # =========================================================================
-    tectonic_trace = Path("/tmp/tectonic_trace.txt")
+    xbench_trace = Path("/tmp/xbench_trace.txt")
     db_bench_trace = Path("/tmp/db_bench_trace.txt")
 
-    # Generate Tectonic Spec Trace
-    tec_gen_cmd = [
-        str(tectonic_cli),
+    # Generate X-Bench Spec Trace
+    x_gen_cmd = [
+        str(xbench_cli),
         "generate",
         "-w", str(spec_file),
-        "-o", str(tectonic_trace)
+        "-o", str(xbench_trace)
     ]
-    print(f"\n[2/6] Generating Tectonic Spec Trace: {' '.join(tec_gen_cmd)}")
-    subprocess.run(tec_gen_cmd, check=True)
+    print(f"\n[2/6] Generating X-Bench Spec Trace: {' '.join(x_gen_cmd)}")
+    subprocess.run(x_gen_cmd, check=True)
 
     # Generate Matching db_bench Trace
     db_gen_cmd = [
@@ -172,27 +172,27 @@ def main() -> None:
         shutil.copy(db_bench_rocksdb_log, DATA_DIR / "db_bench_rocksdb.log")
         print(f"Copied db_bench RocksDB LOG to {DATA_DIR / 'db_bench_rocksdb.log'}")
 
-    # Execute Tectonic Trace
-    tectonic_cmd = [
-        str(tectonic_cli),
+    # Execute X-Bench Trace
+    xbench_cmd = [
+        str(xbench_cli),
         "execute",
-        "-i", str(tectonic_trace),
+        "-i", str(xbench_trace),
         "-d", "rocksdb",
-        "-p", str(tectonic_db),
+        "-p", str(xbench_db),
         "-c", str(db_bench_db),
         "-t", "1"
     ]
-    print(f"Executing Tectonic trace empirically: {' '.join(tectonic_cmd)}")
-    tectonic_log_path = DATA_DIR / "tectonic_run.log"
-    with tectonic_log_path.open("w") as log_file:
-        proc = subprocess.run(tectonic_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, check=True)
+    print(f"Executing X-Bench trace empirically: {' '.join(xbench_cmd)}")
+    xbench_log_path = DATA_DIR / "xbench_run.log"
+    with xbench_log_path.open("w") as log_file:
+        proc = subprocess.run(xbench_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, check=True)
         log_file.write(proc.stdout)
 
-    # Copy RocksDB LOG from Tectonic execution
-    tectonic_rocksdb_log = find_latest_rocksdb_log(tectonic_db)
-    if tectonic_rocksdb_log:
-        shutil.copy(tectonic_rocksdb_log, DATA_DIR / "tectonic_rocksdb.log")
-        print(f"Copied Tectonic RocksDB LOG to {DATA_DIR / 'tectonic_rocksdb.log'}")
+    # Copy RocksDB LOG from X-Bench execution
+    xbench_rocksdb_log = find_latest_rocksdb_log(xbench_db)
+    if xbench_rocksdb_log:
+        shutil.copy(xbench_rocksdb_log, DATA_DIR / "xbench_rocksdb.log")
+        print(f"Copied X-Bench RocksDB LOG to {DATA_DIR / 'xbench_rocksdb.log'}")
 
 
     # =========================================================================
@@ -203,7 +203,7 @@ def main() -> None:
         sys.executable,
         str(RUN_SCRIPTS_DIR / "generate_heatmap_data.py"),
         "--db-bench-trace", str(db_bench_trace),
-        "--tectonic-trace", str(tectonic_trace),
+        "--xbench-trace", str(xbench_trace),
         "--output", str(heatmap_json)
     ]
     print(f"\n[4/6] Extracting heatmap data from traces: {' '.join(parse_cmd)}")
@@ -230,7 +230,7 @@ def main() -> None:
         sys.executable,
         str(PLOT_SCRIPTS_DIR / "plot_mixgraph_distributions.py"),
         "--db-bench-trace", str(db_bench_trace),
-        "--tectonic-trace", str(tectonic_trace),
+        "--xbench-trace", str(xbench_trace),
         "--out-dir", str(DATA_DIR)
     ]
     print(f"\n[6/6] Generating distribution CDF plots: {' '.join(dist_plot_cmd)}")
@@ -239,7 +239,7 @@ def main() -> None:
     # Save trace files to preserve them
     print(f"\nSaving execution trace files to {DATA_DIR}...")
     shutil.copy(db_bench_trace, DATA_DIR / "db_bench_trace.txt")
-    shutil.copy(tectonic_trace, DATA_DIR / "tectonic_trace.txt")
+    shutil.copy(xbench_trace, DATA_DIR / "xbench_trace.txt")
 
     print("\n" + "=" * 72)
     print("  Mixgraph Heatmap & Distribution Experiment Finished Successfully!")

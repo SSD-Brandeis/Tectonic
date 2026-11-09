@@ -11,7 +11,7 @@ Style requirements (AGENTS.md):
   - All x/y axis labels in regular lowercase except YCSB, M, s.
   - Both numeric x and y-axis must start with 0 (explicitly tick/label both zeroes).
   - YCSB: Color 'grey', marker '^'.
-  - X-Bench: Color 'tab:red', marker 's' (replacing 'Tectonic' label with 'X-Bench').
+  - X-Bench: Color 'tab:red', marker 's' (replacing 'X-Bench' label with 'X-Bench').
   - Read vs Write styling:
       Read: Dotted line style (':')
       Write: Solid/dash-dot line style ('-' for YCSB, '-.' for X-Bench)
@@ -21,6 +21,8 @@ Style requirements (AGENTS.md):
   - Size: (5, 3.6).
   - PDF format only.
 """
+from pathlib import Path as _Path
+REPO_ROOT = str(_Path(__file__).resolve().parents[1])
 
 import os
 import sys
@@ -35,13 +37,13 @@ from matplotlib.lines import Line2D
 import matplotlib.pyplot as plt
 
 # ── Paths & Config ───────────────────────────────────────────────────────────
-FONT_PATH = "/home/cc/Tectonic/LinLibertine_Mah.ttf"
+FONT_PATH = REPO_ROOT + "/LinLibertine_Mah.ttf"
 if os.path.exists(FONT_PATH):
     fm.fontManager.addfont(FONT_PATH)
     prop = fm.FontProperties(fname=FONT_PATH)
     matplotlib.rcParams["font.family"] = prop.get_name()
 
-DATA_DIR = "/home/cc/Tectonic/data/ycsb_tectonic_similarity_io_bytes"
+DATA_DIR = REPO_ROOT + "/data/ycsb_xbench_similarity_io_bytes"
 SCALES = [262144, 524288, 1048576, 2097152, 4194304]
 DATABASES = ["rocksdb", "redis", "cassandra", "scylla"]
 DB_LABELS = {
@@ -56,9 +58,9 @@ FIGSIZE = (5, 3.6)
 LEGEND_FIGSIZE = (7.5, 1.2)
 
 YCSB_COLOR = "grey"
-TEC_COLOR = "tab:red"
+X_COLOR = "tab:red"
 YCSB_MARKER = "^"
-TEC_MARKER = "s"
+X_MARKER = "s"
 
 # ── Helper functions ──────────────────────────────────────────────────────────
 def load_csv(path):
@@ -107,10 +109,10 @@ def style_axis(ax):
 # ── Main plotting logic ───────────────────────────────────────────────────────
 def plot_db_scale(db, scale):
     ycsb_path = f"{DATA_DIR}/{db}_scale{scale}_ycsb_io_bytes.csv"
-    tec_path  = f"{DATA_DIR}/{db}_scale{scale}_tectonic_io_bytes.csv"
+    x_path  = f"{DATA_DIR}/{db}_scale{scale}_xbench_io_bytes.csv"
     
     yx, yr, yw = load_csv(ycsb_path)
-    tx, tr, tw = load_csv(tec_path)
+    tx, tr, tw = load_csv(x_path)
     
     if not yx and not tx:
         return # No data
@@ -141,12 +143,12 @@ def plot_db_scale(db, scale):
     # Plot X-Bench
     if tx:
         # Read
-        ax.plot(tx, cum_tr, color=TEC_COLOR, linestyle=":", marker=TEC_MARKER,
-                markersize=6, markerfacecolor="white", markeredgecolor=TEC_COLOR,
+        ax.plot(tx, cum_tr, color=X_COLOR, linestyle=":", marker=X_MARKER,
+                markersize=6, markerfacecolor="white", markeredgecolor=X_COLOR,
                 linewidth=1.5, markevery=t_mark_every)
         # Write
-        ax.plot(tx, cum_tw, color=TEC_COLOR, linestyle="-.", marker=TEC_MARKER,
-                markersize=6, markerfacecolor=TEC_COLOR, markeredgecolor=TEC_COLOR,
+        ax.plot(tx, cum_tw, color=X_COLOR, linestyle="-.", marker=X_MARKER,
+                markersize=6, markerfacecolor=X_COLOR, markeredgecolor=X_COLOR,
                 linewidth=1.8, markevery=t_mark_every)
                 
     style_axis(ax)
@@ -174,11 +176,11 @@ def plot_legend(scale):
         Line2D([0], [0], color=YCSB_COLOR, linestyle=":", marker=YCSB_MARKER,
                markersize=7, markerfacecolor="white", markeredgecolor=YCSB_COLOR,
                linewidth=2.0, label="YCSB read"),
-        Line2D([0], [0], color=TEC_COLOR, linestyle="-.", marker=TEC_MARKER,
-               markersize=7, markerfacecolor=TEC_COLOR, markeredgecolor=TEC_COLOR,
+        Line2D([0], [0], color=X_COLOR, linestyle="-.", marker=X_MARKER,
+               markersize=7, markerfacecolor=X_COLOR, markeredgecolor=X_COLOR,
                linewidth=2.0, label="X-Bench write"),
-        Line2D([0], [0], color=TEC_COLOR, linestyle=":", marker=TEC_MARKER,
-               markersize=7, markerfacecolor="white", markeredgecolor=TEC_COLOR,
+        Line2D([0], [0], color=X_COLOR, linestyle=":", marker=X_MARKER,
+               markersize=7, markerfacecolor="white", markeredgecolor=X_COLOR,
                linewidth=2.0, label="X-Bench read"),
     ]
     
@@ -203,7 +205,7 @@ def main():
         has_scale_data = False
         for db in DATABASES:
             y_path = f"{DATA_DIR}/{db}_scale{scale}_ycsb_io_bytes.csv"
-            t_path = f"{DATA_DIR}/{db}_scale{scale}_tectonic_io_bytes.csv"
+            t_path = f"{DATA_DIR}/{db}_scale{scale}_xbench_io_bytes.csv"
             if os.path.exists(y_path) or os.path.exists(t_path):
                 has_scale_data = True
                 plot_db_scale(db, scale)

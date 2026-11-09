@@ -18,6 +18,8 @@ Evaluates:
   8. (--stage small-caps) Part 3 at 6m and 8m (A-F, load and run, 5 trials), into the same
      ycsb_bounded_memory.json; each trial also records its exit code and OutOfMemoryError.
 """
+from pathlib import Path as _Path
+REPO_ROOT = str(_Path(__file__).resolve().parents[1])
 
 import os
 import re
@@ -30,13 +32,13 @@ import subprocess
 from pathlib import Path
 
 # Paths
-ROOT = Path("/home/cc/Tectonic")
+ROOT = Path(REPO_ROOT)
 EXP_DIR = ROOT / "data" / "revision" / "R2.O2_ycsb-bounded-memory"
 RESULTS_DIR = EXP_DIR / "results"
 LOGS_DIR = EXP_DIR / "logs"
 YCSB_DIR = ROOT / "rocksdb-benchmark-harness" / "vendor" / "YCSB"
 M2 = Path("/home/cc/.m2/repository")
-TECTONIC_CLI = ROOT / "target" / "release" / "tectonic-cli"
+XBENCH_CLI = ROOT / "target" / "release" / "xbench-cli"
 
 YCSB_CP = (
     f"{YCSB_DIR}/file/conf:"
@@ -458,7 +460,7 @@ def run_xbench_baseline():
 
         for t in range(1, NUM_TRIALS + 1):
             cmd = [
-                str(TECTONIC_CLI), "generate",
+                str(XBENCH_CLI), "generate",
                 "-w", str(spec_path),
                 "-o", str(TEMP_XBENCH_OUTPUT)
             ]
@@ -656,14 +658,14 @@ def run_xbench_breakdown():
     print("Part 6: X-Bench resident memory at peak RSS (smaps)")
     print("=======================================================")
     out_dir = LOGS_DIR / "xbench_breakdown"
-    results = {"binary_mtime": time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(TECTONIC_CLI.stat().st_mtime)),
+    results = {"binary_mtime": time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(XBENCH_CLI.stat().st_mtime)),
                "git_head": subprocess.run(["git", "-C", str(ROOT), "rev-parse", "--short", "HEAD"],
                                           capture_output=True, text=True).stdout.strip()}
     for w in WORKLOADS:
         spec_path = ROOT / "example-specs" / "ycsb" / f"{w}.spec.json"
         trials = []
         for t in range(1, NUM_TRIALS + 1):
-            cmd = [str(TECTONIC_CLI), "generate", "-w", str(spec_path), "-o", str(TEMP_XBENCH_OUTPUT)]
+            cmd = [str(XBENCH_CLI), "generate", "-w", str(spec_path), "-o", str(TEMP_XBENCH_OUTPUT)]
             cleanup_file(TEMP_XBENCH_OUTPUT)
             res = run_and_measure(cmd, log_path=out_dir / f"{w}_trial{t}.log", snapshot_smaps=True)
             size_mb = TEMP_XBENCH_OUTPUT.stat().st_size / (1024.0 * 1024.0) if TEMP_XBENCH_OUTPUT.exists() else 0.0

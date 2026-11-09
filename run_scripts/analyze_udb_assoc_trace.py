@@ -7,7 +7,7 @@ from collections import Counter
 def main():
     trace_path = "/tmp/udb_assoc_test.txt"
     if not os.path.exists(trace_path):
-        print(f"Error: trace file {trace_path} does not exist. Run tectonic-cli first.")
+        print(f"Error: trace file {trace_path} does not exist. Run xbench-cli first.")
         sys.exit(1)
 
     print("Analyzing trace file:", trace_path)

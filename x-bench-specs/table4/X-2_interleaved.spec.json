@@ -48,7 +48,7 @@
             "op_count": 1000,
             "selectivity": {
               "pareto": {
-                "scale": 1.0,
+                "scale": 0.01,
                 "shape": 2.0
               }
             },

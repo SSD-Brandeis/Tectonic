@@ -34,7 +34,11 @@ YCSB, which computes keys from key numbers (`example-specs/ycsb-untracked/`, wri
 Before it starts, the runner checks that no other `xbench-cli` (generate or execute) runs on the machine, so a
 machine never runs two experiments at once, also across output folders.
 
-Usage: python3 run_scripts/run_keyset_fixed_queue.py [--out-dir <dir>]   (on the run machine, inside tmux)
+X-2 (2026-11-09): a rerun with range-delete selectivity pareto scale 0.01 instead of 1.0 went to
+`R1.O8-R2.O2_keyset-selection/superseded/x2-range-delete-scale0.01/`. Reverted and stopped 2026-11-10 (authors): scale 1.0
+is not incorrect and keeps the paper consistent, so the spec is back to scale 1.0 and that rerun is not used.
+
+Usage: python3 run_scripts/run_keyset_fixed_queue.py [--out-dir <dir>] [--binary <xbench-cli>]   (on the run machine, inside tmux)
 
 Output (default --out-dir): data/revision/R1.O8-R2.O2_keyset-selection/table4-fixed-to-completion-multimachine/
   queue/<host>.txt                          the jobs of a machine
@@ -56,6 +60,8 @@ import subprocess
 
 ROOT_DIR = REPO_ROOT
 XBENCH_CLI = f"{ROOT_DIR}/target/release/xbench-cli"
+if "--binary" in sys.argv:  # a frozen copy, so a rebuild of target/ during a multi-day queue does not change it
+    XBENCH_CLI = os.path.abspath(sys.argv[sys.argv.index("--binary") + 1])
 OUT_DIR = f"{ROOT_DIR}/data/revision/R1.O8-R2.O2_keyset-selection/table4-fixed-to-completion-multimachine"
 if "--out-dir" in sys.argv:
     OUT_DIR = os.path.abspath(sys.argv[sys.argv.index("--out-dir") + 1])
@@ -67,6 +73,7 @@ LOCK_PATH = f"{OUT_DIR}/tmp/run.lock"
 SAMPLE_INTERVAL_S = 10
 WORKLOADS = {
     "X-1": "x-bench-specs/table4/X-1_multi_stage.spec.json",
+    "X-2": "x-bench-specs/table4/X-2_interleaved.spec.json",  # pareto scale 1.0, as in the paper (scale 0.01 reverted 2026-11-10)
     "X-3": "x-bench-specs/table4/X-3_varied_sortedness.spec.json",
     "X-3-0.1x": "x-bench-specs/table4/X-3_varied_sortedness_0.1x.spec.json",
     "X-5": "x-bench-specs/table4/X-5_abrupt_shift.spec.json",

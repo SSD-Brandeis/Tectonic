@@ -22,6 +22,16 @@ Stages: generate (both traces, once), execute (resumable: done trials are kept),
 Output: data/revision/Fig12_ycsb-a-x10/ (workloads/, results/generation.json) and its direct-io-wal-off/
         (results/execution.json, db_state/<side>/trial<n>/, logs/, progress.log).
 Plots : python3 plot_scripts/plot_r1o7_fig12_style.py --fig12
+
+FIG12_SCALE=1 (user, 2026-11-10): the same run at the paper's base scale, YCSB-A at 1x (1M records, 1M operations;
+X-Bench `-s 1`), into data/revision/Fig12_ycsb-a-x1/: the size of the R1.O7 and mixgraph reruns, where RocksDB's
+compaction does not split into two paths. Plots: FIG12_DIR=data/revision/Fig12_ycsb-a-x1/direct-io-wal-off
+python3 plot_scripts/plot_r1o7_fig12_style.py --fig12
+
+FIG12_PAPER_OPTIONS=1 (user, 2026-11-10): RocksDB as the paper's Fig. 12 harness had it, besides direct I/O and the
+WAL: `max_write_buffer_number=2;compression=none` (the executor otherwise has 4 and Snappy). Needs a binary with
+those executor options (TECTONIC_CLI). Writes into <OUT_DIR>/direct-io-wal-off-paper-options/; the traces are
+those of <OUT_DIR>/workloads/ (checked by sha256), so run it with --stage execute.
 """
 import os
 import sys
@@ -36,22 +46,25 @@ import run_ycsb_derivatives_fidelity as r1o7  # noqa: E402
 
 ROOT_DIR = r1o7.ROOT_DIR
 TECTONIC_CLI = os.environ.get("TECTONIC_CLI", f"{ROOT_DIR}/bin/tectonic-cli-bb407953")  # has disable_wal
-OUT_DIR = f"{ROOT_DIR}/data/revision/Fig12_ycsb-a-x10"
+SCALE = int(os.environ.get("FIG12_SCALE", "10"))  # 10: Fig. 12 as the paper ran it; 1: YCSB-A at 1x
+OUT_DIR = f"{ROOT_DIR}/data/revision/Fig12_ycsb-a-x{SCALE}"
 WORKLOAD_DIR = f"{OUT_DIR}/workloads"
 GEN_PATH = f"{OUT_DIR}/results/generation.json"
-RUN_DIR = f"{OUT_DIR}/direct-io-wal-off"
+PAPER_OPTIONS = os.environ.get("FIG12_PAPER_OPTIONS") == "1"
+RUN_DIR = f"{OUT_DIR}/direct-io-wal-off" + ("-paper-options" if PAPER_OPTIONS else "")
 EXEC_PATH = f"{RUN_DIR}/results/execution.json"
 DBSTATE_DIR = f"{RUN_DIR}/db_state"
 ROCKSDB_DIR = f"{RUN_DIR}/rocksdb_data"
-SHM_TRACE = "/dev/shm/fig12_trace.txt"
-EXECUTOR_CONFIG = "statistics=1;direct_io=1;disable_wal=1"
-NAME = "ycsb-a-x10"
+SHM_TRACE = f"/dev/shm/fig12_x{SCALE}_trace.txt"
+EXECUTOR_CONFIG = "statistics=1;direct_io=1;disable_wal=1" + (
+    ";max_write_buffer_number=2;compression=none" if PAPER_OPTIONS else "")
+NAME = f"ycsb-a-x{SCALE}"
 SIDES = ("ycsb", "xbench")
 TRIALS = 5
 
 # Fig. 12's generation, as run_rocksdb_similarity_ycsba_10x.sh
-OP_COUNT = 10_000_000
-XBENCH_SCALE = 10
+OP_COUNT = 1_000_000 * SCALE
+XBENCH_SCALE = SCALE
 YCSB_DIR = f"{ROOT_DIR}/rocksdb-benchmark-harness/vendor/YCSB"
 M2 = os.path.expanduser("~/.m2/repository")
 YCSB_CP = ":".join([
@@ -66,6 +79,14 @@ YCSB_CP = ":".join([
 # 1090 in the harness's copy; the first run of this script used that copy (superseded/update-1090/).
 XBENCH_SPEC = f"{ROOT_DIR}/x-bench-specs/fig12/workload-a.paper-run.spec.json"
 TRACES = {side: f"{WORKLOAD_DIR}/{side}.txt" for side in SIDES}
+# What every trial's RocksDB LOG must show (checked after each trial; added 2026-11-10 after the options of the
+# runs were found to differ from the paper's harness): the run stops on the first mismatch.
+EXPECTED_LOG_OPTIONS = {
+    "Options.use_direct_reads": "1",
+    "Options.use_direct_io_for_flush_and_compaction": "1",
+    "Options.max_write_buffer_number": "2" if PAPER_OPTIONS else "4",
+    "Options.compression": "NoCompression" if PAPER_OPTIONS else "Snappy",
+}
 
 log = r1o7.log
 
@@ -127,6 +148,22 @@ def stage_generate(args):
         progress(f"generated {side}: {gen[side]['op_counts']}")
 
 
+def check_log_options(log_path, tickers, what):
+    """Stop the run unless the LOG shows EXPECTED_LOG_OPTIONS (each line once) and the WAL wrote nothing."""
+    found = {}
+    with open(log_path) as f:
+        for line in f:
+            for key in EXPECTED_LOG_OPTIONS:
+                if line.rstrip().split(" ")[-2:-1] == [key + ":"]:
+                    found.setdefault(key, []).append(line.rstrip().split(" ")[-1])
+    for key, want in EXPECTED_LOG_OPTIONS.items():
+        if found.get(key) != [want]:
+            r1o7.fail(f"{what}: LOG has {key} {found.get(key)}, expected [{want!r}]")
+    if tickers.get("rocksdb.wal.bytes") != 0:
+        r1o7.fail(f"{what}: rocksdb.wal.bytes = {tickers.get('rocksdb.wal.bytes')}, expected 0")
+    log(f"  LOG options as expected: {EXPECTED_LOG_OPTIONS}, wal.bytes 0")
+
+
 def execute_trial(side, trial):
     if os.path.exists(ROCKSDB_DIR):
         shutil.rmtree(ROCKSDB_DIR)
@@ -160,6 +197,7 @@ def execute_trial(side, trial):
     if not tickers:
         r1o7.fail(f"no RocksDB statistics for {side} trial {trial}")
     shutil.copy2(f"{ROCKSDB_DIR}/LOG", f"{out_dir}/rocksdb_LOG.txt")
+    check_log_options(f"{out_dir}/rocksdb_LOG.txt", tickers, f"{side} trial {trial}")
     sst = [f for f in os.listdir(ROCKSDB_DIR) if f.endswith(".sst")]
     rocks["SST total size (MB)"] = sum(os.path.getsize(f"{ROCKSDB_DIR}/{f}") for f in sst) / 2 ** 20
     rocks["SST file count"] = len(sst)

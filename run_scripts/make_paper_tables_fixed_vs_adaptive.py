@@ -38,11 +38,14 @@ def runs(path):
 
 TABLE4 = "table4/results/runs.json"
 MM = "table4-fixed-to-completion-multimachine/results"
+# X-2 (authors, 2026-11-10): range-delete selectivity Pareto scale 0.01 (was 1.0, with which every range delete
+# removed all live keys), at 0.1x in both columns
+X2 = "x2-range-delete-scale0.01/results/runs.xbench-revision.json"
 # (row label, source file, workload name in the file, trials used, original generator: (file, job, KV-Bench scale)
 # or None)
 TABLE1 = [
     ("X-1", f"{MM}/runs.revision-2.json", "X-1", range(1, 6), None),
-    ("X-2", TABLE4, "X-2", range(1, 6), None),
+    ("X-2", X2, "X-2-0.1x", range(1, 6), None),
     ("X-3", f"{MM}/runs.fixedkeyset-2.json", "X-3-0.1x", range(31, 36), None),
     ("X-4", TABLE4, "X-4", range(1, 6), None),
     ("X-5", f"{MM}/runs.fixedkeyset-2.json", "X-5-0.1x", range(31, 36), None),
@@ -221,11 +224,12 @@ def main():
          "is peak RSS (KiB / 1024, labelled MB). Means at full precision, rounded half up: 0.01 s, 0.1 MB.",
          "- Each row compares the two KeySets on one machine (2x Xeon Gold 6126, 187 GB, same SSD model).", ""]
     L += markdown("Table 1: X-Bench workloads X-1..7, fixed VecKeySet", "VecKeySet", t1)
-    L += ["X-1 to X-7: X-Bench workloads X-1 to X-7 (authors, 2026-11-06). X-3, X-5 and X-6 are at 0.1x scale (every `op_count` / 10, nothing else changed: "
+    L += ["X-1 to X-7: X-Bench workloads X-1 to X-7 (authors, 2026-11-06). X-2, X-3, X-5 and X-6 are at 0.1x scale (every `op_count` / 10, nothing else changed: "
           "`x-bench-specs/table4/*_0.1x.spec.json`): with the fixed VecKeySet they take 85+ h (X-3 stopped at 50% "
-          "after 84.7 h), 27-40 h and 27 h at full scale. X-1, X-2, X-4 and X-7 are at full scale.", ""]
+          "after 84.7 h), 27-40 h and 27 h at full scale; X-2 (range-delete Pareto scale 0.01, authors 2026-11-10) "
+          "4.7-5.3 h per fixed trial at full scale (2 trials, `x2-range-delete-scale0.01/README.md`). X-1, X-4 and X-7 are at full scale.", ""]
     L += latex("Generation time and memory footprint of X-Bench workloads with the adaptive KeySet and the fixed "
-               "VecKeySet (mean of 5 trials; X-3, X-5, X-6 at 0.1x scale).", "tab:fixed-vs-adaptive-x", t1)
+               "VecKeySet (mean of 5 trials; X-2, X-3, X-5, X-6 at 0.1x scale).", "tab:fixed-vs-adaptive-x", t1)
     L += markdown("Table 2: KV-Bench I-V, fixed VecHashSetKeySet (KV-Bench's design)", "VecHashSetKeySet", t2,
                   "KV-Bench")
     L += ["† KV-I to KV-V: KV-Bench workloads I to V.", "",
@@ -259,7 +263,8 @@ def main():
     for title, rs in (("Table 1", t1), ("Table 2", t2), ("Table 3", t3)):
         L += [f"**{title}**", ""] + sources(rs)
     L += ["Binaries: Table 1: `table4/` rows ran on the local machine on 2026-10-22 with the binary of that day (see "
-          "`README.md`), the multimachine runs with 3b8e082 (sha256 `0cf9d251…`). Tables 2 and 3: `24f2dddf…` "
+          "`README.md`), the multimachine runs with 3b8e082 (sha256 `0cf9d251…`), X-2 with dffea48 (sha256 `1e19d4fd…`, "
+          "local machine, 2026-11-09). Tables 2 and 3: `24f2dddf…` "
           "(2026-11-02: `5b727191…`, the X-Bench binary of the corrected Fig. 7, plus `Scatter::apply` computing its "
           "multiplier once instead of for every number; same output, `ycsb-fixed-empty-24f2dddf/README.md`). Table 1's "
           "specs do not use `scatter`.", ""]

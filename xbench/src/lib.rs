@@ -851,6 +851,7 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
     )
     .enumerate()
     {
+        let group_start_elapsed = generation_start().elapsed().as_secs_f64();
         if group.enable_granular_stats {
             operation_handler.start_stat_flush(BenchmarkerType::Group)?;
         }
@@ -1644,6 +1645,17 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
         }
 
         progress_bar.finish_and_clear();
+        // Phase timing (e.g. YCSB-style load and execution groups), on the same clock as the section line
+        let group_end_elapsed = generation_start().elapsed().as_secs_f64();
+        println!(
+            "[X-Bench Group] Section {} Group {} ({}) started at {:.4}s, finished at {:.4}s (duration: {:.4}s)",
+            section_num,
+            group_num,
+            group.name.as_deref().unwrap_or("unnamed"),
+            group_start_elapsed,
+            group_end_elapsed,
+            group_end_elapsed - group_start_elapsed
+        );
     }
 
     if section.enable_granular_stats {
@@ -1658,8 +1670,17 @@ pub fn write_operations_with_keyset<KeySetT: KeySet, OP: OperationHandler>(
     return Ok(());
 }
 
+/// The start of workload generation: the clock of the `[X-Bench ... Gen]` section lines and the
+/// `[X-Bench Group]` lines. Reset at the start of every spec's generation; set by the first group otherwise.
+static GENERATION_START: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
+
+fn generation_start() -> std::time::Instant {
+    *GENERATION_START.lock().unwrap().get_or_insert_with(std::time::Instant::now)
+}
+
 fn generate_workload_spec(workload_spec: WorkloadSpec, output_file: &PathBuf, thread_id: Option<usize>) -> Result<()> {
     let global_start = std::time::Instant::now();
+    *GENERATION_START.lock().unwrap() = Some(global_start);
     if std::env::var("XBENCH_PARALLEL_GEN").is_ok() && workload_spec.sections.len() > 1 {
         println!("[X-Bench Parallel Gen] Spawning {} threads (one per section) to generate workload sections in parallel", workload_spec.sections.len());
         let workload_spec = Arc::new(workload_spec);

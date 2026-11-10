@@ -46,6 +46,12 @@ if "--direct-io" in sys.argv:  # the rerun with RocksDB's direct I/O (2026-10-31
 FIG12 = "--fig12" in sys.argv
 if FIG12:
     OUT_DIR = os.environ.get("FIG12_DIR", REPO_ROOT + "/data/revision/Fig12_ycsb-a-x10/direct-io-wal-off")
+# Fig. 12's plots show trials 6-10 (rounds 6-10, run 2026-11-09 with the host's package timers stopped; authors'
+# decision 2026-11-10, chosen after all 10 rounds were seen). execution.json keeps all 10 trials per side;
+# FIG12_TRIALS=all plots all of them (or e.g. FIG12_TRIALS=1-5).
+# (only the 10x run; the 1x run of 2026-11-10 in Fig12_ycsb-a-x1/ plots all its trials)
+FIG12_TRIALS = os.environ.get("FIG12_TRIALS", "6-10" if OUT_DIR.endswith("Fig12_ycsb-a-x10/direct-io-wal-off")
+                              else "all") if FIG12 else "all"
 EXEC_PATH = f"{OUT_DIR}/results/execution.json"
 PLOT_DIR = f"{OUT_DIR}/plots"
 
@@ -173,6 +179,13 @@ EXTRA_PANELS = (("throughput_log", panel_throughput_log, FIGSIZE),)
 def main():
     with open(EXEC_PATH) as f:
         results = json.load(f)
+    if FIG12_TRIALS != "all":
+        lo, hi = map(int, FIG12_TRIALS.split("-"))
+        for trials in results.values():
+            for side, _ in SIDES:
+                trials[side] = [t for t in trials[side] if lo <= t["trial"] <= hi]
+                assert len(trials[side]) == hi - lo + 1, f"{side}: trials {lo}-{hi} incomplete"
+        print(f"trials {lo}-{hi} of each side")
     os.makedirs(PLOT_DIR, exist_ok=True)
     handles = {}  # per YCSB derivative: one legend for YCSB-IVS, one for YCSB-TS
     for name, trials in results.items():

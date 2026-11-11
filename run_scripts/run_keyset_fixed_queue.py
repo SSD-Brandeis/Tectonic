@@ -76,10 +76,12 @@ WORKLOADS = {
     "X-2-0.1x": "x-bench-specs/table4/X-2_interleaved_0.1x.spec.json",  # Table 4's X-2 row: scale 0.01, op counts / 10
     "X-3": "x-bench-specs/table4/X-3_varied_sortedness.spec.json",
     "X-3-0.1x": "x-bench-specs/table4/X-3_varied_sortedness_0.1x.spec.json",
+    "X-4": "x-bench-specs/table4/X-4_slow_shift.spec.json",
     "X-5": "x-bench-specs/table4/X-5_abrupt_shift.spec.json",
     "X-5-0.1x": "x-bench-specs/table4/X-5_abrupt_shift_0.1x.spec.json",
     "X-6": "x-bench-specs/table4/X-6_varied_kv_size.spec.json",
     "X-6-0.1x": "x-bench-specs/table4/X-6_varied_kv_size_0.1x.spec.json",
+    "X-7": "x-bench-specs/table4/X-7_hot_key.spec.json",
     "KVBench-I": "example-specs/kvbench/i.spec.json",
     "KVBench-II": "example-specs/kvbench/ii.spec.json",
     "KVBench-III": "example-specs/kvbench/iii.spec.json",

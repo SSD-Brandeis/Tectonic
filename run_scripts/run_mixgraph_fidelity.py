@@ -37,7 +37,11 @@ TRACE_ANALYZER = f"{ROCKSDB_SRC}/trace_analyzer"
 DB_BENCH_SCANLOG = f"{ROOT_DIR}/rocksdb-v10.4.2-scanlog/db_bench"
 XBENCH_CLI = os.environ.get("XBENCH_CLI", f"{ROOT_DIR}/target/release/xbench-cli")  # override: the WAL-off rerun
 
-OUT_DIR = f"{ROOT_DIR}/data/revision/R1.O9-R2.O1_mixgraph"
+# MIXGRAPH_SCALE=1 (user, 2026-11-11): the paper's full scale, 50M keys and 420M queries, into full-scale/ of the
+# experiment, on fixedkeyset-1, 3 trials. Only the traces the paper uses: the db_bench run with the scan-length log
+# (the reference) and X-Bench; no unmodified db_bench rerun, no YCSB. Default: the 1/10 scale, unchanged.
+FULL_SCALE = os.environ.get("MIXGRAPH_SCALE", "0.1") == "1"
+OUT_DIR = f"{ROOT_DIR}/data/revision/R1.O9-R2.O1_mixgraph" + ("/full-scale" if FULL_SCALE else "")
 DBBENCH_DIR = f"{OUT_DIR}/dbbench"
 DBBENCH_SCANLOG_DIR = f"{OUT_DIR}/dbbench-scanlog"
 DB_DIR = f"{OUT_DIR}/dbbench_db"
@@ -45,8 +49,8 @@ RESULTS_DIR = f"{OUT_DIR}/results"
 LOG_PATH = f"{OUT_DIR}/logs/run.log"
 
 # The paper runs 50M keys and 420M queries (traces of ~85 GB); 1/10 of both, nothing else scaled.
-NUM = 5_000_000
-READS = 42_000_000
+NUM = 50_000_000 if FULL_SCALE else 5_000_000
+READS = 420_000_000 if FULL_SCALE else 42_000_000
 
 # Appendix A.3 of Cao et al., FAST '20, verbatim except -num, -reads, -db and the tracing flags.
 FILLRANDOM = ["--benchmarks=fillrandom", "--perf_level=3", "-use_direct_io_for_flush_and_compaction=true",
@@ -366,8 +370,9 @@ def characterize(a):
 
 def stage_characterize(args):
     sides = {"dbbench": dbbench_arrays(DBBENCH_SCANLOG_DIR, "dbbench",
-                                       f"{DBBENCH_SCANLOG_DIR}/mixgraph.scan_lengths.txt"),
-             "dbbench_rerun": dbbench_arrays(DBBENCH_DIR, "dbbench_rerun")}
+                                       f"{DBBENCH_SCANLOG_DIR}/mixgraph.scan_lengths.txt")}
+    if not FULL_SCALE:  # the full scale has no unmodified rerun
+        sides["dbbench_rerun"] = dbbench_arrays(DBBENCH_DIR, "dbbench_rerun")
     out = {}
     for side, arr in sides.items():
         log(f"  characterize {side}")
@@ -376,7 +381,8 @@ def stage_characterize(args):
         json.dump(out, f)
     ref = out["dbbench"]
     log(f"  op counts {ref['op_counts']}, load distinct keys {ref['load_distinct_keys']}")
-    log(f"  Get found {ref['get_found_ratio']:.4f} (rerun {out['dbbench_rerun']['get_found_ratio']:.4f})")
+    log(f"  Get found {ref['get_found_ratio']:.4f}" + (f" (rerun {out['dbbench_rerun']['get_found_ratio']:.4f})"
+                                                      if "dbbench_rerun" in out else ""))
     log(f"  key-range share (all ops): " + " ".join(f"{x:.3f}" for x in ref["keyrange_share"]["all"]))
     log(f"  reuse distance mean {ref['reuse_distance_mean']:.0f} median {ref['reuse_distance_median']:.0f}; "
         f"first accesses {ref['first_access_fraction']:.4f}")
@@ -386,7 +392,7 @@ def stage_characterize(args):
 #  STEP 3: X-BENCH SPEC FROM THE EXTRACTED PROPERTIES, AND ITS STATISTICAL DISTANCE TO THE TRACE
 # =============================================================================
 SPEC_DIR = f"{ROOT_DIR}/example-specs/db_bench-mixgraph"
-SPEC_PATH = f"{SPEC_DIR}/prefix_dist.spec.json"
+SPEC_PATH = f"{SPEC_DIR}/prefix_dist{'_full_scale' if FULL_SCALE else ''}.spec.json"
 XBENCH_DIR = f"{OUT_DIR}/xbench"
 KEY_WIDTH = 16  # the key id in decimal, zero-padded: sorts like db_bench's 8-byte big-endian id
 KEY_PAD = "0" * (48 - KEY_WIDTH)  # db_bench pads its 48-byte keys with ASCII '0'
@@ -527,7 +533,7 @@ def fit_rows(arrays, shares, slot_scale, slot_shape):
     hot = int(np.argmax(shares["all"]))
     rng = np.random.default_rng(FIT_SEED)
     slots = scatter_np(np.floor(slot_scale * (-np.log1p(-rng.random(KEYRANGE_SIZE))) ** (1 / slot_shape)), KEYRANGE_SIZE)
-    n_max = 8_000_000
+    n_max = 8_000_000 * NUM // 5_000_000  # the most rows any type may get; scales with the key space
     u_range, u_slot, u_seen = rng.random(n_max), rng.random(n_max), rng.random(n_max)
     u_attr = rng.random((2, n_max))
 
@@ -802,7 +808,7 @@ def stage_distance(args):
     chars["xbench"] = characterize(xbench_arrays(f"{XBENCH_DIR}/mixgraph.txt", "xbench", ref["load_puts"]))
     with open(f"{RESULTS_DIR}/characterization.json", "w") as f:
         json.dump(chars, f)
-    out = {side: distances(ref, chars[side]) for side in ("xbench", "dbbench_rerun")}
+    out = {side: distances(ref, chars[side]) for side in ("xbench", "dbbench_rerun") if side in chars}
     with open(f"{RESULTS_DIR}/distances.json", "w") as f:
         json.dump(out, f, indent=2)
     for side, d in out.items():
@@ -971,7 +977,7 @@ def stage_ycsb(args):
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import run_ycsb_derivatives_fidelity as r1o7  # noqa: E402
 
-EXEC_SIDES = ("dbbench", "xbench", "ycsb")
+EXEC_SIDES = ("dbbench", "xbench") if FULL_SCALE else ("dbbench", "xbench", "ycsb")
 RUN_WINDOWS = 10
 TRIALS = 5
 EXEC_DIR = f"{OUT_DIR}/execute"
@@ -1054,9 +1060,6 @@ def marked_copy(src, dst, load_ops, scan_count=False):
 def executor_traces():
     with open(f"{RESULTS_DIR}/characterization.json") as f:
         ref = json.load(f)["dbbench"]
-    with open(f"{RESULTS_DIR}/ycsb.json") as f:
-        ycsb = json.load(f)
-    best = ycsb["candidates"][ycsb["chosen"]]
     os.makedirs(EXEC_DIR, exist_ok=True)
     traces = {side: f"{EXEC_DIR}/{side}.marked.txt" for side in EXEC_SIDES}
     if not os.path.exists(traces["dbbench"]):
@@ -1066,7 +1069,10 @@ def executor_traces():
                                    traces["dbbench"])
     if not os.path.exists(traces["xbench"]):
         marked_copy(f"{XBENCH_DIR}/mixgraph.txt", traces["xbench"], ref["load_puts"])
-    if not os.path.exists(traces["ycsb"]):
+    if "ycsb" in traces and not os.path.exists(traces["ycsb"]):
+        with open(f"{RESULTS_DIR}/ycsb.json") as f:
+            ycsb = json.load(f)
+        best = ycsb["candidates"][ycsb["chosen"]]
         marked_copy(best["trace"], traces["ycsb"], best["properties"]["recordcount"], scan_count=True)
     return traces
 

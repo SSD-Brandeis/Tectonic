@@ -32,7 +32,7 @@ TRIALS = 5
 
 
 def runs(path):
-    with open(f"{EXP}/{path}") as f:
+    with open(path if path.startswith("/") else f"{EXP}/{path}") as f:
         return json.load(f)
 
 
@@ -41,11 +41,23 @@ MM = "table4-fixed-to-completion-multimachine/results"
 # X-2 (authors, 2026-11-10): range-delete selectivity Pareto scale 0.01 (was 1.0, with which every range delete
 # removed all live keys), at 0.1x in both columns
 X2 = "x2-range-delete-scale0.01/results/runs.xbench-revision.json"
+# 2026-11-11 (authors): X-2 at full scale, X-Bench HEAD (c481d18d), fixedkeyset-2, from the full Table 4 rerun; used as
+# soon as all 5 + 5 trials are in (until then, the 0.1x run above, marked * in the table)
+X2_FULL = ("table4-full-rerun-278e9a8-PROVISIONAL/results/runs.fixedkeyset-2.json", "X-2")
+
+
+def x2_full_done():
+    try:
+        data = runs(X2_FULL[0])
+    except FileNotFoundError:
+        return False
+    return all(len({r["trial"] for r in data if r["workload"] == "X-2" and r["keyset"] == k}) >= TRIALS
+               for k in ("adaptive", "vec"))
 # (row label, source file, workload name in the file, trials used, original generator: (file, job, KV-Bench scale)
 # or None)
 TABLE1 = [
     ("X-1", f"{MM}/runs.revision-2.json", "X-1", range(1, 6), None),
-    ("X-2", X2, "X-2-0.1x", range(1, 6), None),
+    ("X-2", *(X2_FULL if x2_full_done() else (X2, "X-2-0.1x")), range(1, 6), None),
     ("X-3", f"{MM}/runs.fixedkeyset-2.json", "X-3-0.1x", range(31, 36), None),
     ("X-4", TABLE4, "X-4", range(1, 6), None),
     ("X-5", f"{MM}/runs.fixedkeyset-2.json", "X-5-0.1x", range(31, 36), None),
@@ -57,15 +69,20 @@ TABLE1 = [
 # KVBench I-V as the KVBench paper defines them (superseded: kvbench-fixed-vec-hashset/ with the earlier specs,
 # kvbench-paper-full-fixed-vec-hashset/ with X-Bench 5b727191, the KV-Bench column at 1/20 from the corrected Fig. 7).
 KVB = "kvbench-paper-full-fixed-vec-hashset-24f2dddf/results/runs.fixedkeyset-2.json"
-KVB_IV = "kvbench-iv-0.1x-fixed-vec-hashset-24f2dddf/results/runs.fixedkeyset-2.json"
-KVGEN = "kvbench-generator-table2/results/runs.fixedkeyset-2.json"
-TABLE2 = [(f"KV-{n}†", KVB_IV if n == "IV" else KVB, "KVBench-IV-0.1x" if n == "IV" else f"KVBench-{n}", range(1, 6),
-           (KVGEN, f"KVBench-{n}/KV-Bench", 10 if n == "IV" else 1)) for n in ("I", "II", "III", "IV", "V")]
+# 2026-11-11 (authors): KV-IV at full size (KV-Bench's range deletes sort once since tectonic-plus 4a333fd), X-Bench
+# HEAD (c481d18d) on fixedkeyset-2; KV-V with the two-group V spec (fbd10c75), whose only X-Bench run is the HEAD
+# rerun in table4-full-rerun-278e9a8-PROVISIONAL/ (fixedkeyset-2)
+KVB_IV = "kvbench-iv-full-50e8548/results/runs.fixedkeyset-2.json"
+KVB_V = "table4-full-rerun-278e9a8-PROVISIONAL/results/runs.fixedkeyset-2.json"
+# 2026-11-11 (authors): the KV-Bench and YCSB generator columns are the Fig. 7 runs (revision-2, 5 trials), so that
+# Table 4 and Fig. 7 show the same numbers
+FIG7 = REPO_ROOT + "/data/revision/fig7-load-execution/results/runs.revision-2.json"
+TABLE2 = [(f"KV-{n}†", {"IV": KVB_IV, "V": KVB_V}.get(n, KVB), f"KVBench-{n}", range(1, 6),
+           (FIG7, f"KVBench-{n}/KV-Bench", 1)) for n in ("I", "II", "III", "IV", "V")]
 # Table 3 (authors, 2026-11-02): every column on revision-2, X-Bench 24f2dddf (superseded: ycsb-fixed-empty/ with
 # X-Bench ef9e19b3, the YCSB column from the corrected Fig. 7 on fixedkeyset-2)
 YCSB = "ycsb-fixed-empty-24f2dddf/results/runs.revision-2.json"
-YCSBGEN = "ycsb-generator-table3/results/runs.revision-2.json"
-TABLE3 = [(f"YCSB-{w}", YCSB, f"YCSB-{w}", range(1, 6), (YCSBGEN, f"YCSB-{w}/YCSB", None)) for w in "ABCDEF"]
+TABLE3 = [(f"YCSB-{w}", YCSB, f"YCSB-{w}", range(1, 6), (FIG7, f"YCSB-{w}/YCSB", None)) for w in "ABCDEF"]
 
 
 def rnd(x, q):
@@ -105,7 +122,7 @@ def original(gen):
         data = []
     rs = [r for r in data if r["job"] == job and r["trial"] in range(1, TRIALS + 1)]
     if scale is not None:
-        assert all(r["kvbench_paper_scale"] == scale for r in rs), (job, scale)
+        assert all(r.get("kvbench_scale", r.get("kvbench_paper_scale")) == scale for r in rs), (job, scale)
     ok = [r for r in rs if not r["failed"]]
     return {"n": len(ok), "failed": len(rs) - len(ok),
             "time": mean(r["wall_time_s"] for r in ok) if ok else None,
@@ -203,6 +220,61 @@ def latex(caption, label, rs, generator=None, generator_scale="", merge_selected
     return L
 
 
+OFFICIAL = f"{EXP}/table4_official.tex"
+
+
+def official_latex(t1, t2, t3):
+    """The paper's Table 4 (the one official table, authors 2026-11-11): panels (A) YCSB, (B) KVBench, (C) X-Bench in
+    the authors' LaTeX layout. Bold: the lower of adaptive and fixed (after rounding), both when equal."""
+    def ks(r, fixed):
+        name = r["selected"] + "KS"
+        return name + (r"$^\ddagger$" if r["selected"] == fixed else "")
+
+    def pair(x, y, fmt):
+        a, b = fmt(x), fmt(y)
+        av, bv = Decimal(a.replace(",", "")), Decimal(b.replace(",", ""))
+        bold = lambda v, w: rf"\textbf{{{v}}}" if w else v
+        return bold(a, av == min(av, bv)), bold(b, bv == min(av, bv))
+
+    def cells(r, gen):
+        ta, tf = pair(r["time"][0], r["time"][1], fmt_time)
+        ma, mf = pair(r["mem"][0], r["mem"][1], fmt_mem)
+        o = orig_cells(r) if gen else ("-", "-")
+        return f"{ta} & {tf} & {o[0]} & {ma} & {mf} & {o[1]}"
+
+    def head(gen):
+        g = rf"\textbf{{{gen}}}" if gen else ""
+        return (rf"& \textbf{{w/l}} & \textbf{{adaptive \textit{{KeySet}} (KS)}} & \textbf{{adaptive}} & \textbf{{fixed}} & {g} "
+                rf"& \textbf{{adaptive}} & \textbf{{fixed}} & {g} \\")
+
+    star = lambda r: r"$^{*}$" if r["source"].split("`")[3].endswith("-0.1x") else ""
+    L = [r"\begin{table}[t]", r"\scriptsize", r"\centering", r"\setlength{\tabcolsep}{2pt}",
+         r"\renewcommand{\arraystretch}{0.9}",
+         r"\caption{\blue{Generation time and memory footprint for \bench{}, YCSB, and KVBench workloads, showing "
+         r"improvement gains due to \bench{}'s adaptive \textit{KeySets}.}}\label{tab:fixed-vs-adaptive-paper}",
+         r"\vspace{-1.8em}", r"\begin{tabular}{@{}cllrrrrrr@{}}", r"\toprule",
+         r"& & & \multicolumn{3}{c}{\textbf{generation time (s)}} & \multicolumn{3}{c}{\textbf{memory (MB)}} \\",
+         r"\cmidrule(lr){4-6} \cmidrule(lr){7-9}", head("YCSB"), r"\midrule",
+         r"\multirow{5}{*}{\rotatebox[origin=c]{90}{\textit{YCSB}}}"]
+    for i, r in enumerate(t3):
+        lead = r"\textbf{(A)}" if i == len(t3) - 1 else ""
+        sel = (rf"\multirow{{{len(t3)}}}{{*}}{{{ks(r, 'Empty')}}}" if i == 0 else "")
+        L.append(f"{lead}  & {r['label'].removeprefix('YCSB-')} & {sel} & {cells(r, True)} " + r"\\")
+    L += [r"\midrule", head("KVBench"), r"\midrule", r"\multirow{3}{*}{\rotatebox[origin=c]{90}{\textit{KVBench}}}"]
+    for i, r in enumerate(t2):
+        lead = r"\textbf{(B)}" if i == len(t2) - 1 else ""
+        L.append(f"{lead}  & {r['label'].removeprefix('KV-').removesuffix('†')}{star(r)} & {ks(r, 'VecHashSet')} & "
+                 f"{cells(r, True)} " + r"\\")
+    L += [r"\midrule", head(""), r"\midrule", r"\multirow{6}{*}{\rotatebox[origin=c]{90}{\textit{\bench{}}}}"]
+    for i, r in enumerate(t1):
+        lead = r"\textbf{(C)}" if i == len(t1) - 1 else ""
+        L.append(f"{lead}  & {r['label'].removeprefix('X-')}{star(r)} & {ks(r, 'Vec')} & {cells(r, False)} " + r"\\")
+    L += [r"\bottomrule", r"\end{tabular}", r"\par\smallskip\vspace{-0.2em}",
+          r"{\footnotesize Each cell is a mean across 5 runs; $^\ddagger$ the \textit{fixed} \textit{KeySet} for all "
+          r"workloads of that benchmark; $*$ is for $0.1\times$ scaled workload}", r"\vspace{-1.5em}", r"\end{table}", ""]
+    return L
+
+
 def sources(rs):
     L = ["| Row | Source (adaptive and fixed) | Machine |", "| --- | --- | --- |"]
     for r in rs:
@@ -214,6 +286,8 @@ def main():
     t1, t2, t3 = rows(TABLE1, "vec"), rows(TABLE2, "vec-hashset", True), rows(TABLE3, "empty", True)
     provisional = [r["label"] for r in t1 + t2 + t3 if r["n"] != (TRIALS, TRIALS)]
     L = ["# Paper tables: adaptive KeySet vs. fixed KeySet (R1.O8, R2.O2)", "",
+         "**The one official table is the paper's Table 4: `table4_official.tex`** (written by this script with the "
+         "same numbers; panels (A) YCSB = Table 3 below, (B) KVBench = Table 2, (C) X-Bench = Table 1).", "",
          "Written by `run_scripts/make_paper_tables_fixed_vs_adaptive.py` from the raw result files (rerun it to "
          "update). Every cell is the mean of 5 trials"
          + (f"; provisional rows (fewer finished trials): {', '.join(provisional)}." if provisional else "."), "",
@@ -236,15 +310,13 @@ def main():
           "Specs: KVBench I-V as the KVBench paper defines them (Table 5: operation percentages and distributions; "
           "KV-Bench's defaults where it gives none), with Fig. 7's operation counts "
           "(`example-specs/kvbench/`, written by `run_scripts/make_kvbench_paper_specs.py`, 2026-11-02).", "",
-          "**Every column of a row has the same operation counts** (authors, 2026-11-02): KV-I, II, III, V at full size; "
-          "**KV-IV at 0.1x in every column** (every operation count / 10: `example-specs/kvbench-0.1x/iv.spec.json`, "
-          "KV-Bench `-I 100000 -U 50000 -R 50000`), because KV-Bench's generator sorts every key on each range delete "
-          "and needs about 2 days for one full-size IV (137,387 of 500,000 range deletes after 15 h).", "",
-          "KV-Bench generator: KV-Bench's own C++ generator (`load_gen`, branch `refactor` 699bc10, built as its README "
-          "says) with two bug fixes (`../fig7-corrected/kvbench-minimal-fix/`: an update past the key pool, which "
-          "crashed workload II in every branch; range queries, which KV-I-V do not have), measured as the corrected "
-          "Fig. 7: wall clock of the process, peak VmRSS sampled every 10 ms, caches dropped "
-          "(`kvbench-generator-table2/README.md`). All columns on fixedkeyset-2.", ""]
+          "**Every row at full size** (authors, 2026-11-11: KV-IV was at 0.1x until KV-Bench's range deletes sorted "
+          "once). KV-IV's X-Bench columns: `kvbench-iv-full-50e8548/` (HEAD c481d18d, fixedkeyset-2). KV-V's X-Bench "
+          "columns use the two-group V spec (fbd10c75): the HEAD rerun in `table4-full-rerun-278e9a8-PROVISIONAL/` "
+          "(fixedkeyset-2). KV-I, II, III: X-Bench 24f2dddf (fixedkeyset-2).", "",
+          "KV-Bench generator column: the Fig. 7 runs (`../fig7-load-execution/`, revision-2, 5 trials; authors "
+          "2026-11-11), KV-Bench branch `tectonic-plus` 4a333fd with Fig. 7's thresholds, wall clock of the process, "
+          "peak VmRSS sampled every 10 ms, caches dropped.", ""]
     L += latex("Generation time and memory footprint of KV-Bench workloads with the adaptive KeySet, "
                "KV-Bench's VecHashSetKeySet, and KV-Bench's generator (mean of 5 trials; KV-IV at 0.1x scale). "
                "$^\\dagger$KV-I to KV-V: KV-Bench workloads I to V.", "tab:fixed-vs-adaptive-kvbench", t2, "KV-Bench")
@@ -252,10 +324,10 @@ def main():
     L += ["Specs: `example-specs/ycsb-untracked/`, every operation untracked as in YCSB (details: "
           "`ycsb-fixed-empty/README.md`), so Algorithm 1 selects `EmptyKeySet` too and the two columns differ only "
           "by run-to-run noise.", ""]
-    L += ["YCSB generator: YCSB 0.18.0-SNAPSHOT (`rocksdb-benchmark-harness/vendor/YCSB` 0bedec5, unmodified; "
-          "CoreWorkload + FileClient), workloads a-f with 1M records and 1M operations, measured as the corrected "
-          "Fig. 7: load + run wall clock, the larger peak VmRSS of the two processes, caches dropped "
-          "(`ycsb-generator-table3/README.md`). All columns on revision-2 (authors, 2026-11-02).", ""]
+    L += ["YCSB generator column: the Fig. 7 runs (`../fig7-load-execution/`, revision-2, 5 trials; authors "
+          "2026-11-11): YCSB 0.18.0-SNAPSHOT (`rocksdb-benchmark-harness/vendor/YCSB` 0bedec5, unmodified; "
+          "CoreWorkload + FileClient), 1M records and 1M operations, load + run wall clock, the larger peak VmRSS of "
+          "the two processes, caches dropped. X-Bench columns: revision-2, 24f2dddf.", ""]
     L += latex("Generation time and memory footprint of YCSB workloads with the adaptive KeySet, YCSB's "
                "EmptyKeySet, and YCSB's generator (mean of 5 trials).", "tab:fixed-vs-adaptive-ycsb", t3, "YCSB",
                merge_selected=True, tabcolsep="2pt")
@@ -271,6 +343,9 @@ def main():
     with open(OUT, "w") as f:
         f.write("\n".join(L))
     print(OUT)
+    with open(OFFICIAL, "w") as f:
+        f.write("\n".join(official_latex(t1, t2, t3)))
+    print(OFFICIAL)
 
 
 if __name__ == "__main__":

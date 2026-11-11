@@ -101,16 +101,16 @@ SPLIT_PHASES = ["execution", "load"]  # top to bottom
 # Both panels span 0-30 s. Bars taller than that (KVBench's execution of II and IV,
 # and its loading of I) are clipped at the top and labeled with their value.
 SPLIT_YTOP = {"execution": 30, "load": 30}
-SPLIT_YTICK_STEP = 10
+SPLIT_YTICK_STEP = 15  # ticks 0, 15, 30 (authors, 2026-11-11)
 SPLIT_PANEL_LABEL = {"execution": "execution", "load": "loading"}
 SPLIT_HSPACE_IN = 0.22  # room for a clipped-bar value above the lower panel
 # Panel labels ("execution", "loading"): inside each panel at its top right,
 # italic, dark grey; inset from the frame corner as a fraction of the panel.
 SPLIT_PANEL_LABEL_INSET = 0.03
 # Panels whose top corners are taken by tall bars get the label centered above a
-# workload with short bars instead: KVBench loading, where I (32 s) and V (26 s)
-# fill the corners.
-SPLIT_PANEL_LABEL_ABOVE = {("kvbench", "load"): "IV"}
+# workload with short bars instead: KVBench loading, where I (32 s), III (29 s),
+# IV (27 s, full size) and V (26 s) are tall and only II's bars are short.
+SPLIT_PANEL_LABEL_ABOVE = {("kvbench", "load"): "II"}
 # 15 pt: at 18 pt they ran into the tallest bars (KVBench IV, YCSB E).
 SPLIT_PANEL_LABEL_COLOR = "dimgrey"
 SPLIT_PANEL_LABEL_FONTSIZE = 15
@@ -314,8 +314,8 @@ def plot_latency_split(results, suite, canvas, out_path):
     """
     fig, axes = plt.subplots(len(SPLIT_PHASES), 1, sharex=True, figsize=FIGSIZE)
     for ax, phase in zip(axes, SPLIT_PHASES):
-        # The bottom panel's top tick would sit right under the top panel's 0.
-        style_y_axis_linear(ax, SPLIT_YTOP[phase], show_top_tick=ax is axes[0])
+        # Both panels show their top tick, 30 (authors, 2026-11-11).
+        style_y_axis_linear(ax, SPLIT_YTOP[phase], show_top_tick=True)
         draw_bars(ax, results, suite, phase,
                   label_clipped="above",
                   label_tool=VALUE_LABEL_TOOL if phase == "execution" else None)

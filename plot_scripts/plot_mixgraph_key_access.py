@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
 """
-Cao et al. (FAST '20) Fig. 5 and Fig. 11, redrawn for the two mixgraph workload files executed in Fig. 16:
+Key-access patterns of the two mixgraph workload files executed in Fig. 16:
 db_bench mixgraph Prefix_dist (`execute/dbbench.marked.txt`) and X-Bench (`execute/xbench.marked.txt`).
 
-- Fig. 5 style: CDF of the access count per KV-pair, one curve per operation type (Get, Put, Iterator_Seek).
-  Mixgraph issues no Deletes. A Seek counts once, for its start key (Cao: "start-key access count").
-- Fig. 11 style: the Get count of every key, by key sequence (key id 0 .. 5M-1, i.e. sorted key order).
+- mixgraph_access_count_cdf: CDF of the access count per KV-pair, one curve per operation type (Get, Put,
+  Scan). Mixgraph issues no Deletes. A Seek counts once, for its start key.
+- mixgraph_get_keyspace_heatmap: the Get count of every key, by key sequence (key id 0 .. 5M-1, i.e. sorted
+  key order).
 
 Only the run phase is counted (the 42M operations after the 5M-insert load group).
 
-  python3 plot_scripts/plot_mixgraph_cao_fig5_fig11.py --stage count   # reads the two files (~2.9 GB each)
-  python3 plot_scripts/plot_mixgraph_cao_fig5_fig11.py --stage plot
+  python3 plot_scripts/plot_mixgraph_key_access.py --stage count   # reads the two files (~2.9 GB each)
+  python3 plot_scripts/plot_mixgraph_key_access.py --stage plot
 """
 from pathlib import Path as _Path
 import sys
@@ -26,6 +27,12 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import plot_style
 
+# plot_style sets text.usetex with font.family = the LinLibertine_Mah.ttf face, but under usetex LaTeX typesets all
+# text and ignores font.family: the PDFs came out in Computer Modern (pdffonts: CMR12/CMR17). Linux Libertine is
+# selected in the LaTeX preamble instead, as the repo-root plot_style.py does for Fig. 7 (user, 2026-11-11).
+plt.rcParams["text.latex.preamble"] = r"\usepackage{libertine}\usepackage[libertine]{newtxmath}"
+plt.rcParams["font.family"] = "serif"
+
 
 REPO = _Path(__file__).resolve().parents[1]
 EXP = REPO / "data/revision/R1.O9-R2.O1_mixgraph"
@@ -33,7 +40,7 @@ OUT = EXP / "key-access-figs"
 SIDES = {"dbbench": "db_bench", "xbench": "X-Bench"}
 NUM_KEYS = 5_000_000
 OPS = {b"BP": "Get", b"I": "Put", b"BR": "Seek"}
-OP_LABEL = {"Get": "Get", "Put": "Put", "Seek": "Iterator\\_Seek"}
+OP_LABEL = {"Get": "Get", "Put": "Put", "Seek": "Scan"}
 OP_STYLE = {
     "Get": {"color": "tab:blue", "linestyle": "-"},
     "Put": {"color": "black", "linestyle": "--"},
@@ -77,27 +84,18 @@ def stage_count():
                 }
                 for op, c in counts.items()
             }
-    # KS distance between db_bench and X-Bench per operation type (access count per accessed key)
-    a = np.load(OUT / "key_access_counts_dbbench.npz")
-    b = np.load(OUT / "key_access_counts_xbench.npz")
-    summary["ks_distance_access_count"] = {op: round(ks(a[op][a[op] > 0], b[op][b[op] > 0]), 4) for op in OP_STYLE}
     (OUT / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
     print(json.dumps(summary, indent=2))
-
-
-def ks(x, y):
-    grid = np.union1d(x, y)
-    cx = np.searchsorted(np.sort(x), grid, side="right") / len(x)
-    cy = np.searchsorted(np.sort(y), grid, side="right") / len(y)
-    return float(np.abs(cx - cy).max())
 
 
 def stage_plot():
     data = {side: np.load(OUT / f"key_access_counts_{side}.npz") for side in SIDES}
 
-    # Fig. 5 style: access count CDF per operation type
+    # access count CDF per operation type; db_bench on top, X-Bench below, compact, no panel letters, x tick labels
+    # and x label on the bottom panel only (user, 2026-11-11)
     x_max = max(int(d[op].max()) for d in data.values() for op in OP_STYLE)
-    fig, axes = plt.subplots(1, 2, figsize=(11, 4.0), sharey=True)
+    assert x_max < 1e5, x_max  # x ticks are 10^0 .. 10^5
+    fig, axes = plt.subplots(2, 1, figsize=(3.8, 3.0), sharex=True)
     for ax, (side, name) in zip(axes, SIDES.items()):
         for op, style in OP_STYLE.items():
             c = np.sort(data[side][op][data[side][op] > 0])
@@ -105,18 +103,39 @@ def stage_plot():
             cdf = np.append(idx[1:], len(c)) / len(c)
             ax.step(vals, cdf, where="post", label=OP_LABEL[op], linewidth=2.2, **style)
         ax.set_xscale("log")
-        ax.set_xlim(1, x_max * 1.2)
+        # name inside the empty lower-right corner instead of a title, to save height (user, 2026-11-11)
+        ax.text(0.97, 0.1, name, transform=ax.transAxes, ha="right", va="bottom")
+        plot_style.apply_plot_style(ax, xlabel="access count" if ax is axes[-1] else None)
+        ax.set_xlim(1, 1e5)
+        ax.set_xticks([10 ** k for k in range(6)])
         ax.set_ylim(0, 1.02)
-        ax.set_title(name)
-        plot_style.apply_plot_style(ax, xlabel="access count", ylabel="CDF" if ax is axes[0] else None)
-        ax.set_ylim(0, 1.02)
-    axes[0].set_ylabel("CDF", labelpad=8)
-    axes[1].legend(loc="lower right", frameon=False)
-    plot_style.save_preview(fig, axes, f"{OUT}/cao_fig5_access_count_cdf")
+        ax.set_yticks([0, 0.5, 1])
+    axes[0].tick_params(labelbottom=False)
+    # move the 10^0 label slightly right so it is not cut off at the left edge (user, 2026-11-11)
+    first = axes[-1].xaxis.get_major_ticks()[0].label1
+    first.set_transform(first.get_transform() + matplotlib.transforms.ScaledTranslation(6 / 72, 0, fig.dpi_scale_trans))
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.tight_layout(pad=0.3, h_pad=0.3)
+    axes[-1].xaxis.labelpad = 2  # "access count" close to the tick labels (user, 2026-11-11)
+    # one y label for both panels, centred on the two panels, not on the whole figure (user, 2026-11-11)
+    # placed just left of the y tick labels (user, 2026-11-11: less space between "CDF" and the ticks)
+    y_mid = (axes[0].get_position().y1 + axes[-1].get_position().y0) / 2
+    renderer = fig.canvas.get_renderer()
+    tick_left = min(t.get_window_extent(renderer).x0 for ax in axes for t in ax.get_yticklabels())
+    x_fig = fig.transFigure.inverted().transform((tick_left - 4, 0))[0]
+    fig.text(x_fig, y_mid, "CDF", rotation=90, ha="right", va="center", fontsize=plt.rcParams["axes.labelsize"])
+    for ext in ("png", "pdf"):
+        fig.savefig(f"{OUT}/mixgraph_access_count_cdf.{ext}", dpi=120, bbox_inches="tight", pad_inches=0.03)
     plt.close(fig)
+    # legend as a separate file, one row (user, 2026-11-11)
+    leg_fig = plt.figure(figsize=(4.4, 0.4))
+    leg_fig.legend(handles, labels, loc="center", ncol=3, frameon=False, fontsize=16, handlelength=1.6, columnspacing=0.8)
+    for ext in ("png", "pdf"):
+        leg_fig.savefig(f"{OUT}/mixgraph_access_count_cdf_legend.{ext}", dpi=120, bbox_inches="tight", pad_inches=0.03)
+    plt.close(leg_fig)
 
-    # Fig. 11 style: Get count by key sequence.
-    # Each accessed key is one point (key id, Get count), as in Cao's figure. The points are drawn as one image
+    # Get count by key sequence.
+    # Each accessed key is one point (key id, Get count). The points are drawn as one image
     # (a cell is green if at least one key falls in it): a rasterized scatter came out shifted inside the PDF.
     # The y-axis is log scale (a few keys get up to ~7e4 Gets and would flatten the rest on a linear axis); the
     # image is placed in log10 space on a linear axis, with ticks labelled 10^k.
@@ -148,7 +167,7 @@ def stage_plot():
         ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"$10^{{{int(v)}}}$"))
         ax.set_yticks(np.log10([m * 10 ** k for k in range(0, int(y_top) + 1) for m in range(2, 10)
                                 if m * 10 ** k <= 10 ** y_top]), minor=True)
-    plot_style.save_preview(fig, axes, f"{OUT}/cao_fig11_get_heatmap")
+    plot_style.save_preview(fig, axes, f"{OUT}/mixgraph_get_keyspace_heatmap")
     plt.close(fig)
     print(f"plots in {OUT}")
 

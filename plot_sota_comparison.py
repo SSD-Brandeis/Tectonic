@@ -90,24 +90,27 @@ UNSUPPORTED_COLOR = "#404040"
 MB_PER_GB = 1024
 # Top of the memory axis per suite, in GB.
 MEMORY_TOP_GB = {"kvbench": 2.1, "ycsb": 2}
-# Top of the log latency axis per suite, in seconds. KVBench's IV takes about
-# 2,000 s and its YCSB D and E about 300 s.
-LATENCY_TOP = {"kvbench": 1e4, "ycsb": 1e3}
+# Top of the log latency axis per suite, in seconds. KVBench's IV takes about 2,000 s.
+LATENCY_TOP = {"kvbench": 1e4, "ycsb": 1e2}
 
 # Split latency figures: execution phase (top panel) over loading phase (bottom
 # panel), sharing the x-axis. Each panel has its own linear y-range, in seconds.
 # Same canvas as the single-panel figures: drawn at FIGSIZE and cropped to the
 # box of the single-panel latency figure, with the plot frame at the same left edge.
 SPLIT_PHASES = ["execution", "load"]  # top to bottom
-# Both panels span 0-22.5 s. Bars taller than that (KVBench II and IV execution)
-# are clipped at the top and labeled with their value.
-SPLIT_YTOP = {"execution": 22.5, "load": 22.5}
+# Both panels span 0-30 s. Bars taller than that (KVBench's execution of II and IV,
+# and its loading of I) are clipped at the top and labeled with their value.
+SPLIT_YTOP = {"execution": 30, "load": 30}
 SPLIT_YTICK_STEP = 10
 SPLIT_PANEL_LABEL = {"execution": "execution", "load": "loading"}
 SPLIT_HSPACE_IN = 0.22  # room for a clipped-bar value above the lower panel
 # Panel labels ("execution", "loading"): inside each panel at its top right,
 # italic, dark grey; inset from the frame corner as a fraction of the panel.
 SPLIT_PANEL_LABEL_INSET = 0.03
+# Panels whose top corners are taken by tall bars get the label centered above a
+# workload with short bars instead: KVBench loading, where I (32 s) and V (26 s)
+# fill the corners.
+SPLIT_PANEL_LABEL_ABOVE = {("kvbench", "load"): "IV"}
 # 15 pt: at 18 pt they ran into the tallest bars (KVBench IV, YCSB E).
 SPLIT_PANEL_LABEL_COLOR = "dimgrey"
 SPLIT_PANEL_LABEL_FONTSIZE = 15
@@ -325,11 +328,17 @@ def plot_latency_split(results, suite, canvas, out_path):
                         bottom=m["bottom"] / h, top=1 - m["top"] / h,
                         hspace=SPLIT_HSPACE_IN / panel_h)
     pad = plt.rcParams["savefig.pad_inches"]
-    # Panel labels: inside each panel at its top right, italic, dark grey.
+    # Panel labels: inside each panel at its top right (centered above a
+    # workload where SPLIT_PANEL_LABEL_ABOVE says), italic, dark grey.
     for ax, phase in zip(axes, SPLIT_PHASES):
-        ax.text(1 - SPLIT_PANEL_LABEL_INSET, 1 - SPLIT_PANEL_LABEL_INSET,
+        above = SPLIT_PANEL_LABEL_ABOVE.get((suite, phase))
+        if above:
+            x = (SUITE_WORKLOADS[suite].index(above) + 0.5) / len(SUITE_WORKLOADS[suite])
+        else:
+            x = 1 - SPLIT_PANEL_LABEL_INSET
+        ax.text(x, 1 - SPLIT_PANEL_LABEL_INSET,
                 rf"\textit{{{SPLIT_PANEL_LABEL[phase]}}}", transform=ax.transAxes,
-                ha="right", va="top", color=SPLIT_PANEL_LABEL_COLOR,
+                ha="center" if above else "right", va="top", color=SPLIT_PANEL_LABEL_COLOR,
                 fontsize=SPLIT_PANEL_LABEL_FONTSIZE)
     # Overall label: axes.labelpad left of the widest tick label (as a normal
     # y-label), its top YLABEL_TOP_DROP_IN below the top edge of the canvas.

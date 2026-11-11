@@ -4,7 +4,7 @@
     {
       "groups": [
         {
-          "name": "Execution Phase",
+          "name": "Load Phase",
           "enable_granular_stats": true,
           "inserts": {
             "op_count": 950000,
@@ -36,7 +36,11 @@
                 ]
               }
             }
-          },
+          }
+        },
+        {
+          "name": "Execution Phase",
+          "enable_granular_stats": true,
           "point_queries": {
             "op_count": 50000
           }

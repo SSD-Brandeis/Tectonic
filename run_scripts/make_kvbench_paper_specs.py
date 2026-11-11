@@ -21,6 +21,8 @@ defaults (beta alpha = beta = 1, Zipf alpha = 1, 62 x 62 key prefixes):
        (one key per range delete in both generators).
   V    95% insert with Zipfian key prefixes, 5% non-empty PQ (uniform). The prefix is a Zipf(3844, 1) number
        written with 4 digits (3,844 = 62 x 62 prefixes, as KVBench), then 508 uniform characters: 512 B keys.
+       All inserts first (Load Phase), then the point queries, as KVBench writes V (authors, 2026-11-11; before,
+       one group mixed them).
 Zipfian updates select from the preloaded keys: zipf n = the number of preloaded keys, s = 1.
 Keys and values are 512 B (KVBench: --entry_size 1024, key size 512).
 
@@ -90,10 +92,12 @@ def specs(scale):
         "iv": spec(load(c["IV"]["I"]), group("Execution Phase",
                    updates={"op_count": c["IV"]["U"], "val": VAL, "selection": zipf(c["IV"]["I"])},
                    range_deletes={"op_count": c["IV"]["R"], "selectivity": 1e-06, "range_format": "StartEnd"})),
-        "v": spec(group("Execution Phase",
+        # V: all inserts first, then the point queries, as KVBench writes V (authors, 2026-11-11; until then one
+        # group that mixed the inserts and the point queries)
+        "v": spec(group("Load Phase",
                         inserts={"op_count": c["V"]["I"], "val": VAL, "key": {"segmented": {"separator": "", "segments": [
-                            {"number": {"value": {"zipf": {"n": 3844, "s": 1}}, "width": 4}}, {"uniform": {"len": 508}}]}}},
-                        point_queries={"op_count": c["V"]["Q"]})),
+                            {"number": {"value": {"zipf": {"n": 3844, "s": 1}}, "width": 4}}, {"uniform": {"len": 508}}]}}}),
+                  group("Execution Phase", point_queries={"op_count": c["V"]["Q"]})),
     }
 
 

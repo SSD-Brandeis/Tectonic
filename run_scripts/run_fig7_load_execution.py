@@ -64,7 +64,10 @@ import make_kvbench_paper_specs as kvspecs  # noqa: E402
 ROOT = Path(REPO_ROOT)
 OUT_DIR = ROOT / "data/revision/fig7-load-execution"
 XBENCH_CLI = OUT_DIR / "bin/xbench-cli-c481d18d"
-KVBENCH_BIN = Path("/home/cc/kvbench-builds/bin")
+# KV-Bench branch tectonic-plus (SSD-Brandeis/KV-WorkloadGenerator), commit 4a333fd: upstream refactor 699bc10 + the
+# two bug fixes + build-time thresholds / load-end marker + sort once for range deletes (authors, 2026-11-11)
+KVBENCH_COMMIT = "tectonic-plus 4a333fd"
+KVBENCH_BIN = Path("/home/cc/kvbench-builds/tectonic-plus-4a333fd")
 TMP = Path("/tmp")
 TRIALS = 5
 POLL_S = 0.01
@@ -74,14 +77,19 @@ POLL_S = 0.01
 KVBENCH_VARIANT_FLAGS = {
     "std-rd1": "-DRD_THRESHOLD=1",                                          # all inserts first (shipped U/PQ/RQ = 1)
     "ii": "-DPD_THRESHOLD=0.2 -DU_THRESHOLD=0.2 -DPQ_THRESHOLD=0.2",        # II: 100K of 500K inserts preloaded
-    "v": "-DPQ_THRESHOLD=0",                                                # V: one interleaved group
-    "de": "-DPQ_THRESHOLD=0.95238095 -DRQ_THRESHOLD=0.95238095",            # YCSB D, E: 1M of 1.05M inserts loaded
+    # V as one interleaved group. Superseded 2026-11-11: the authors split X-Bench's V spec into all inserts first,
+    # then the point queries, and KV-Bench V runs with std-rd1 (PQ = 1, as shipped).
+    "v": "-DPQ_THRESHOLD=0",
+    # YCSB D, E with 1M of 1.05M inserts loaded. Superseded 2026-11-11: once KV-Bench has sorted its insert pool (first
+    # skewed point query / first range query), each later insert is an O(n) vector insert, ~280 s for the 50K
+    # run-phase inserts. The authors chose all inserts first for D and E (std-rd1, as shipped for PQ/RQ).
+    "de": "-DPQ_THRESHOLD=0.95238095 -DRQ_THRESHOLD=0.95238095",
 }
 KVBENCH_VARIANT = {("ycsb", "A"): "std-rd1", ("ycsb", "B"): "std-rd1", ("ycsb", "C"): "std-rd1",
-                   ("ycsb", "D"): "de", ("ycsb", "E"): "de",
+                   ("ycsb", "D"): "std-rd1", ("ycsb", "E"): "std-rd1",  # all 1.05M inserts first (authors, 2026-11-11)
                    ("kvbench", "I"): "std-rd1", ("kvbench", "II"): "ii", ("kvbench", "III"): "std-rd1",
-                   ("kvbench", "IV"): "std-rd1", ("kvbench", "V"): "v"}
-KV_SCALE = {"I": 1, "II": 1, "III": 1, "IV": 10, "V": 1}  # letter Table 3: IV at 0.1x in every column
+                   ("kvbench", "IV"): "std-rd1", ("kvbench", "V"): "std-rd1"}  # V: all inserts first (authors, 2026-11-11)
+KV_SCALE = {"I": 1, "II": 1, "III": 1, "IV": 1, "V": 1}  # all full size; IV was 0.1x until 2026-11-11 (sort once)
 KVBENCH_ARGS = {w: kvspecs.kvbench_args(KV_SCALE[w])[w] for w in f7.KV_WORKLOADS}
 XBENCH_YCSB_SPEC = "example-specs/ycsb-untracked/{}.spec.json"
 XBENCH_KV_SPEC = {w: (f"example-specs/kvbench-0.1x/{w.lower()}.spec.json" if KV_SCALE[w] == 10
@@ -219,6 +227,7 @@ def run_job(tool, wset, w, keyset, log):
         return {**r, "loading_s": arrival, "execution_s": r["wall_time_s"] - arrival,
                 "load_end_reported_s": reported, "kvbench_variant": variant,
                 "kvbench_variant_flags": KVBENCH_VARIANT_FLAGS[variant], "kvbench_binary_sha256": sha256(binary),
+                "kvbench_commit": KVBENCH_COMMIT,
                 "kvbench_args": args, "kvbench_scale": (KV_SCALE[w] if wset == "kvbench" else 1)}
     spec = ROOT / (XBENCH_YCSB_SPEC.format(w.lower()) if wset == "ycsb" else XBENCH_KV_SPEC[w])
     out = TMP / f"fig7le_xbench_{wset}_{w.lower()}_{keyset}.txt"

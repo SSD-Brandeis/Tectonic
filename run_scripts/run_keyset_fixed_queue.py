@@ -34,9 +34,8 @@ YCSB, which computes keys from key numbers (`example-specs/ycsb-untracked/`, wri
 Before it starts, the runner checks that no other `xbench-cli` (generate or execute) runs on the machine, so a
 machine never runs two experiments at once, also across output folders.
 
-X-2 (2026-11-09): a rerun with range-delete selectivity pareto scale 0.01 instead of 1.0 went to
-`R1.O8-R2.O2_keyset-selection/superseded/x2-range-delete-scale0.01/`. Reverted and stopped 2026-11-10 (authors): scale 1.0
-is not incorrect and keeps the paper consistent, so the spec is back to scale 1.0 and that rerun is not used.
+X-2 (official, authors 2026-11-11): range-delete selectivity pareto scale 0.01 (with 1.0 every range delete removed
+all live keys); Table 4's X-2 row is X-2-0.1x (op counts / 10), both KeySets, 5 trials each.
 
 Usage: python3 run_scripts/run_keyset_fixed_queue.py [--out-dir <dir>] [--binary <xbench-cli>]   (on the run machine, inside tmux)
 
@@ -73,7 +72,8 @@ LOCK_PATH = f"{OUT_DIR}/tmp/run.lock"
 SAMPLE_INTERVAL_S = 10
 WORKLOADS = {
     "X-1": "x-bench-specs/table4/X-1_multi_stage.spec.json",
-    "X-2": "x-bench-specs/table4/X-2_interleaved.spec.json",  # pareto scale 1.0, as in the paper (scale 0.01 reverted 2026-11-10)
+    "X-2": "x-bench-specs/table4/X-2_interleaved.spec.json",  # range-delete pareto scale 0.01 (official, authors 2026-11-11)
+    "X-2-0.1x": "x-bench-specs/table4/X-2_interleaved_0.1x.spec.json",  # Table 4's X-2 row: scale 0.01, op counts / 10
     "X-3": "x-bench-specs/table4/X-3_varied_sortedness.spec.json",
     "X-3-0.1x": "x-bench-specs/table4/X-3_varied_sortedness_0.1x.spec.json",
     "X-5": "x-bench-specs/table4/X-5_abrupt_shift.spec.json",

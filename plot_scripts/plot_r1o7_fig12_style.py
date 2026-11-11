@@ -46,12 +46,11 @@ if "--direct-io" in sys.argv:  # the rerun with RocksDB's direct I/O (2026-10-31
 FIG12 = "--fig12" in sys.argv
 if FIG12:
     OUT_DIR = os.environ.get("FIG12_DIR", REPO_ROOT + "/data/revision/Fig12_ycsb-a-x10/direct-io-wal-off")
-# Fig. 12's plots show trials 6-10 (rounds 6-10, run 2026-11-09 with the host's package timers stopped; authors'
-# decision 2026-11-10, chosen after all 10 rounds were seen). execution.json keeps all 10 trials per side;
-# FIG12_TRIALS=all plots all of them (or e.g. FIG12_TRIALS=1-5).
-# (only the 10x run; the 1x run of 2026-11-10 in Fig12_ycsb-a-x1/ plots all its trials)
-FIG12_TRIALS = os.environ.get("FIG12_TRIALS", "6-10" if OUT_DIR.endswith("Fig12_ycsb-a-x10/direct-io-wal-off")
-                              else "all") if FIG12 else "all"
+# Fig. 12's plots show all trials of the run (FIG12_TRIALS=lo-hi picks a range). Since 2026-11-11 the 10x run in
+# Fig12_ycsb-a-x10/direct-io-wal-off/ is the paper-options run (5 trials). The run it replaced, 4 memtables + Snappy,
+# is in Fig12_ycsb-a-x10/superseded/direct-io-wal-off-4memtables-snappy/; its plots were trials 6-10
+# (FIG12_DIR=<that folder> FIG12_TRIALS=6-10 redraws them).
+FIG12_TRIALS = os.environ.get("FIG12_TRIALS", "all") if FIG12 else "all"
 EXEC_PATH = f"{OUT_DIR}/results/execution.json"
 PLOT_DIR = f"{OUT_DIR}/plots"
 
@@ -96,6 +95,16 @@ def smooth(arr):
     return np.convolve(arr, np.ones(WINDOW) / WINDOW, mode="same")
 
 
+def set_xticks_to_data_end(ax, x_max, pad=0.03):
+    """Fig. 12 only: ticks every step (1, 2, 2.5 or 5 times a power of 10, the largest that gives at least 4
+    ticks) from 0 up to x_max, and an axis that ends at x_max, not at the next tick. Both ends get the same pad."""
+    import math
+    steps = sorted(m * 10 ** e for e in range(-1, int(math.log10(max(x_max, 1))) + 1) for m in (1, 2, 2.5, 5))
+    step = max(st for st in steps if math.floor(x_max / st + 1e-9) + 1 >= 4)
+    ax.set_xticks([i * step for i in range(math.floor(x_max / step + 1e-9) + 1)])
+    ax.set_xlim(-pad * x_max, (1 + pad) * x_max)
+
+
 def panel_throughput(ax, trials, ycsb, log=False):
     series = {side: mean_iostat(trials[side]) for side, _ in SIDES}
     n = min(len(r) for r, _ in series.values())
@@ -112,7 +121,10 @@ def panel_throughput(ax, trials, ycsb, log=False):
     if log:  # the y-axis starts strictly at 10^0 MB; seconds that move less than 1 MB fall below it
         ax.set_yscale("log")
     plot_style.apply_plot_style(ax)
-    plot_style.set_even_xticks(ax, n)
+    if FIG12:  # the axis ends where the data ends (no blank after the shortest trial); round ticks inside it
+        set_xticks_to_data_end(ax, n)
+    else:
+        plot_style.set_even_xticks(ax, n)
     if log:
         ax.set_ylim(bottom=1.0)
 
